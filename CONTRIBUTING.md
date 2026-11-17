@@ -93,4 +93,4 @@ Examples:
 1. Open a Pull Request targeting `dev`. Only `release/<version>` PRs target `main` (see section 2). Fill in the description from `docs/pull_request_template.md`. Title format: `<type>(<scope>): <description>`, the same as the commit message. One concern per PR.
 2. Ensure automated CI checks pass completely with Exit Code 0.
 3. Verify that all functional requirements marked `MUST` contain matching `@impl` and `@test` tags.
-4. PRs require review and approval from at least one repository maintainer prior to merge.
+4. Every PR merges through a Pull Request; direct pushes to `main` and `dev` are rejected by repository rules. The repository owner may merge their own PR after steps 1 to 3 pass. Record the review as a PR comment before merging: what was checked, the verification output, and any residual risk.
