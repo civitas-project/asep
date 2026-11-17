@@ -1,6 +1,6 @@
 [package]
 name = "asep"
-version = "1.0.0-alpha"
+version = "1.1.0-alpha"
 edition = "2021"
 authors = ["da578 & AI Assistant"]
 description = "Axiomatic Systems Engineering Protocol (ASEP): Deterministic SDLC validator, traceability graph checker, and living spec engine"
