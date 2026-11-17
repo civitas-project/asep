@@ -1,0 +1,92 @@
+// =============================================================================
+// DUDUNG Design Tokens Source Specification
+// Traceability: @token:TK-CORE-FOUNDATION-01
+// - Requirement: @impl:FR-DS-01
+// - Design: @design:FR-DS-01
+// =============================================================================
+
+group "color" type="color" {
+    description "Core color foundation and semantic palette"
+
+    group "brand" {
+        color "primary-500" colorSpace="oklch" fallbackHex="#0066cc" {
+            components 0.65 0.28 250.0
+            description "Primary interactive brand color with guaranteed sRGB fallback"
+        }
+        color "primary-600" colorSpace="oklch" fallbackHex="#0052a3" {
+            components 0.58 0.26 250.0
+            description "Primary hover state color"
+        }
+        color "primary-700" colorSpace="oklch" fallbackHex="#003d7a" {
+            components 0.50 0.24 250.0
+            description "Primary active state color"
+        }
+    }
+
+    group "neutral" {
+        color "gray-50"  colorSpace="srgb" hex="#fafafa" { components 0.98 0.98 0.98; }
+        color "gray-100" colorSpace="srgb" hex="#f5f5f5" { components 0.96 0.96 0.96; }
+        color "gray-200" colorSpace="srgb" hex="#e5e5e5" { components 0.90 0.90 0.90; }
+        color "gray-500" colorSpace="srgb" hex="#737373" { components 0.45 0.45 0.45; }
+        color "gray-900" colorSpace="srgb" hex="#171717" { components 0.09 0.09 0.09; }
+    }
+
+    group "semantic" {
+        color "surface-canvas" {
+            default "{color.neutral.gray-50}"
+        }
+        color "text-primary" {
+            default "{color.neutral.gray-900}"
+        }
+        color "border-subtle" {
+            default "{color.neutral.gray-200}"
+        }
+        color "feedback-critical" colorSpace="oklch" fallbackHex="#dc2626" {
+            components 0.60 0.24 28.0
+            description "Error and critical destructive action color"
+        }
+    }
+}
+
+group "space" type="dimension" {
+    description "Layout spacing and component dimension scales"
+    dimension "none" 0 unit="px"
+    dimension "xs"   4 unit="px"
+    dimension "sm"   8 unit="px"
+    dimension "md"   16 unit="px"
+    dimension "lg"   24 unit="px"
+    dimension "xl"   32 unit="px"
+}
+
+group "duration" type="duration" {
+    description "Motion and transition timings"
+    duration "fast"   150 unit="ms"
+    duration "normal" 300 unit="ms"
+    duration "slow"   500 unit="ms"
+}
+
+group "component" {
+    description "Component-specific token contracts"
+
+    group "button" {
+        color "primary-bg" {
+            default "{color.brand.primary-500}"
+            state:hover "{color.brand.primary-600}"
+            state:active "{color.brand.primary-700}"
+            state:disabled "{color.neutral.gray-200}"
+            state:focus-visible "{color.brand.primary-500}"
+        }
+
+        dimension "padding-x" {
+            default 16 unit="px"
+            breakpoint:tablet 20 unit="px"
+            breakpoint:desktop 24 unit="px"
+        }
+
+        dimension "padding-y" {
+            default 8 unit="px"
+            breakpoint:tablet 10 unit="px"
+            breakpoint:desktop 12 unit="px"
+        }
+    }
+}

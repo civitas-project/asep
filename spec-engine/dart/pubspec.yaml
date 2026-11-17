@@ -1,0 +1,13 @@
+name: asep
+description: Universal zero-dependency Dart runner for the Axiomatic Systems Engineering Protocol (ASEP) native engine.
+version: 2.1.0
+homepage: https://github.com/civitas-project/asep
+repository: https://codeberg.org/civitas-project/asep
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+executables:
+  asep: run
+  spec-engine: run
+

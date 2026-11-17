@@ -1,0 +1,58 @@
+@startuml checkout_bce
+title Checkout BCE Architecture (Catppuccin Mocha)
+
+' === MODEL 3: DENERT 1991 BCE SEQUENCE ===
+skinparam backgroundColor #1E1E2E
+skinparam defaultFontColor #CDD6F4
+skinparam defaultFontName Monospace
+skinparam ArrowColor #89B4FA
+skinparam ArrowFontColor #CDD6F4
+skinparam ActorBorderColor #F38BA8
+skinparam ActorBackgroundColor #313244
+skinparam ActorFontColor #CDD6F4
+skinparam BoundaryBorderColor #89B4FA
+skinparam BoundaryBackgroundColor #313244
+skinparam BoundaryFontColor #CDD6F4
+skinparam ControlBorderColor #F9E2AF
+skinparam ControlBackgroundColor #313244
+skinparam ControlFontColor #CDD6F4
+skinparam EntityBorderColor #A6E3A1
+skinparam EntityBackgroundColor #313244
+skinparam EntityFontColor #CDD6F4
+skinparam SequenceLifeLineBorderColor #89B4FA
+skinparam SequenceLifeLineBackgroundColor #45475A
+skinparam SequenceGroupBorderColor #45475A
+skinparam SequenceGroupBackgroundColor #181825
+skinparam SequenceGroupHeaderFontColor #F9E2AF
+skinparam SequenceGroupFontColor #CDD6F4
+
+autonumber
+skinparam shadowing false
+
+actor "Client" as User
+boundary "CheckoutEndpoint\n(Boundary)" as API <<Boundary>>
+control "OrderService\n(Control)" as CTRL <<Control>>
+entity "OrderLedger\n(Entity)" as DB <<Entity>>
+
+User -> API : POST /v1/checkout/orders (payload)
+activate API
+
+API -> CTRL : ProcessCheckout(orderRequest)
+activate CTRL
+
+CTRL -> DB : PersistPendingOrder(order)
+activate DB
+DB --> CTRL : orderId (UUID)
+deactivate DB
+
+alt Sufficient Funds / Inventory
+    CTRL --> API : CheckoutSuccess(orderId)
+    API --> User : 201 Created (OrderDetails)
+else Insufficient Funds / Out of Stock
+    CTRL --> API : CheckoutFailed(ErrReason)
+    API --> User : 400 Bad Request
+end
+
+deactivate CTRL
+deactivate API
+@enduml

@@ -1,0 +1,5 @@
+# ASEP Traceability Ignore Specification
+# Ignore template files and adaptive skeletons containing illustrative token placeholders
+**/templates/**
+**/skeletons/**
+

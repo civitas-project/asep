@@ -1,0 +1,64 @@
+@startuml use_case_template
+title Use Case Diagram - System Boundary & Functional Scoping (ISO/IEC/IEEE 29148:2018)
+
+' === MODEL 1: USE CASE (Catppuccin Mocha) ===
+skinparam backgroundColor #1E1E2E
+skinparam defaultFontColor #CDD6F4
+skinparam defaultFontName Monospace
+skinparam ArrowColor #89B4FA
+skinparam ArrowFontColor #CDD6F4
+skinparam ActorBorderColor #F38BA8
+skinparam ActorBackgroundColor #313244
+skinparam ActorFontColor #CDD6F4
+skinparam UsecaseBorderColor #89B4FA
+skinparam UsecaseBackgroundColor #181825
+skinparam UsecaseFontColor #CDD6F4
+skinparam PackageBorderColor #45475A
+skinparam PackageBackgroundColor #11111B
+skinparam PackageFontColor #CDD6F4
+
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam roundcorner 8
+
+actor "Primary User" as User
+actor "Identity Provider" as IdP <<Secondary>>
+actor "Audit Service" as Auditor <<Secondary>>
+
+rectangle "System Boundary" {
+    package "Authentication & Session Management" {
+        usecase "UC-01: Sign In" as UC_SignIn
+        usecase "UC-02: Multi-Factor Auth" as UC_MFA
+        usecase "UC-03: Session Invalidation" as UC_SignOut
+    }
+
+    package "Core Domain Operations" {
+        usecase "UC-10: Execute Operation" as UC_Execute
+        usecase "UC-11: Validate Payload" as UC_Validate
+        usecase "UC-12: Handle Fault Condition" as UC_Fault
+        usecase "UC-13: Log Audit Event" as UC_Audit
+    }
+}
+
+' Primary Actor Associations
+User --> UC_SignIn
+User --> UC_SignOut
+User --> UC_Execute
+
+' Secondary Actor Associations
+UC_SignIn --> IdP : <<federates>>
+UC_Audit --> Auditor : <<emits>>
+
+' Stereotype Connectors
+UC_SignIn .> UC_MFA : <<include>>
+UC_Execute .> UC_Validate : <<include>>
+UC_Execute .> UC_Audit : <<include>>
+UC_Validate <. UC_Fault : <<extend>> \n [on validation failure]
+
+note right of UC_Execute
+  <b>Precondition:</b> Valid authenticated session.
+  <b>Postcondition:</b> State persisted and audit logged.
+end note
+
+@enduml

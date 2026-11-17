@@ -1,0 +1,81 @@
+@startuml sequence_bce_template
+title Sequence Diagram - Denert Boundary-Control-Entity (BCE) Architecture
+
+' === MODEL 3: DENERT 1991 BCE SEQUENCE (Catppuccin Mocha) ===
+skinparam backgroundColor #1E1E2E
+skinparam defaultFontColor #CDD6F4
+skinparam defaultFontName Monospace
+skinparam ArrowColor #89B4FA
+skinparam ArrowFontColor #CDD6F4
+skinparam ActorBorderColor #F38BA8
+skinparam ActorBackgroundColor #313244
+skinparam ActorFontColor #CDD6F4
+skinparam BoundaryBorderColor #89B4FA
+skinparam BoundaryBackgroundColor #313244
+skinparam BoundaryFontColor #CDD6F4
+skinparam ControlBorderColor #F9E2AF
+skinparam ControlBackgroundColor #313244
+skinparam ControlFontColor #CDD6F4
+skinparam EntityBorderColor #A6E3A1
+skinparam EntityBackgroundColor #313244
+skinparam EntityFontColor #CDD6F4
+skinparam SequenceLifeLineBorderColor #89B4FA
+skinparam SequenceLifeLineBackgroundColor #45475A
+skinparam SequenceGroupBorderColor #45475A
+skinparam SequenceGroupBackgroundColor #181825
+skinparam SequenceGroupHeaderFontColor #F9E2AF
+skinparam SequenceGroupFontColor #CDD6F4
+
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+actor "Client / Caller" as Caller
+boundary "API Handler / CLI" as Boundary <<Boundary>>
+control "Domain Interactor" as Control <<Control>>
+entity "Domain Entity / Aggregate" as Entity <<Entity>>
+database "Persistence Repository" as Database <<Entity>>
+
+autonumber "<b>[00]</b>"
+
+Caller -> Boundary : ExecuteCommand(request)
+activate Boundary
+
+Boundary -> Boundary : ValidateRequestSyntax(request)
+alt Syntax Invalid
+    Boundary --> Caller : Return 400 Bad Request
+else Syntax Valid
+    Boundary -> Control : Dispatch(commandContext)
+    activate Control
+
+    Control -> Database : FindById(entityId)
+    activate Database
+    Database --> Control : entityRecord
+    deactivate Database
+
+    alt Entity Not Found
+        Control --> Boundary : Return Error(NotFound)
+        Boundary --> Caller : Return 404 Not Found
+    else Entity Found
+        Control -> Entity : ApplyStateTransition(eventData)
+        activate Entity
+        Entity -> Entity : AssertInvariants()
+        Entity --> Control : StateTransitionResult(Success)
+        deactivate Entity
+
+        Control -> Database : Save(updatedEntity)
+        activate Database
+        Database --> Control : CommitReceipt
+        deactivate Database
+
+        Control --> Boundary : OperationSuccess(result)
+        deactivate Control
+
+        Boundary --> Caller : Return 200 OK(resultPayload)
+    end
+end
+
+deactivate Boundary
+
+@enduml

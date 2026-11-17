@@ -1,0 +1,12 @@
+[package]
+name = "srcwalk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ignore = { workspace = true }
+glob = "0.3"
+anyhow = { workspace = true }

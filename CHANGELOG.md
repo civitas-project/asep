@@ -1,0 +1,42 @@
+# Changelog
+
+All notable changes to `ASEP` (Axiomatic Systems Engineering Protocol) will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0-alpha] - 2026-11-16
+
+### Added
+- Multi-language CLI test harness (`asep harness complexity`, `asep harness memory`) for empirical asymptotic slope and peak process RSS verification (ARCH-10).
+- MVCC snapshot isolation engine (`MvccStore`, `SnapshotCoordinator`) with 128-slot atomic reader pool and min_active_seq epoch tombstone reclamation (ARCH-12).
+- Asymptotic complexity and zero-allocation tracking harness (`AsymptoticAnalyzer`, `TrackingAllocator`) with peak budget and zero-leak assertions (ARCH-07, ARCH-08).
+- Anti-slop and guard clause auditor detecting banners, workflow narration, AI buzzwords, and excessive nesting in CI Gate 1 (ARCH-05, ARCH-09).
+- Shared walker crate (`srcwalk`) with cross-platform circular symlink detection and SIMD binary scanning (ARCH-01).
+- Multi-agent presets for OpenCode (`lead`, `executor`, `judge`, `explorer`) (ARCH-06).
+- Multi-language integration test suite for Rust, TypeScript, Python, and Go indexing (ARCH-03, BUG-13).
+- **First release of ASEP:** Axiomatic Systems Engineering Protocol. Deterministic SDLC validator, traceability graph checker, and living specification engine.
+- **ASEP Core Protocol Suite** (6 self-contained engineering protocols):
+  - `system-architecture`: 2-Phase SDLC (Exploratory Spike → Vertical-Slice TDD + Systematic Debugging), Rich ADRs, Alloy/TLA+ formal proofs, 5-Gate CI
+  - `engineering-specs`: ISO 29148 PRD/TDD grammar, Architecture-as-Code (DBML, OpenAPI, Alloy, TLA+), PlantUML SVG diagrams, zero-slop technical prose
+  - `code-contracts`: Meyer's Design by Contract docstrings, strict conditionality, zero parroting, memory ownership & concurrency contracts
+  - `repository-governance`: SWEBOK v4 README, 5-part ARCHITECTURE, Diátaxis MANUAL (ISO 26514), CVD SECURITY, CONTRIBUTING
+  - `design-tokens`: KDL design tokens, OKLCH color math, WCAG AA/AAA contrast, UI state tokens, 44px tap targets
+  - `workflow-router`: Master dispatch orchestrating all 5 domain skills
+- **asep CLI** (Rust, `unsafe_code = "deny"`):
+  - `asep check`: 1:1 traceability (@req↔@design↔@impl↔@test) + CODET auditor (renamed to docstring contract auditor)
+  - `asep ci`: 5-Gate pipeline (Formal Specs → Traceability → Clippy → Tests → Benchmarks)
+  - `asep pack`: Universal skill installer for 11 agentic AI tools
+  - `asep skill`: Full lifecycle (search, fork, install, merge, bundle, purge, state tracking)
+  - `asep mcp`: Model Context Protocol server for IDE integration
+  - `asep adr` / `asep render` / `asep init` / `asep update`
+- **Advanced Skill Features**:
+  - Remote skill fetch (Git + HTTP) with semantic version resolution (`^1.0.0`, `~2.1.0`)
+  - 3-way merge with interactive conflict resolution TUI (`--interactive`)
+  - Watch mode daemon (`--watch`) with 300ms debounce
+  - Requirement-to-test coverage mapper (`--coverage lcov.info`)
+  - Cascade purge across all agent tool directories
+- **Diátaxis Living Manual** (MANUAL.md, Parts I–V) per ISO/IEC/IEEE 26514:2022
+
+### Notes
+- Pre-release / alpha: `1.0.0-alpha`. First tagged release (`v1.0.0-alpha`).

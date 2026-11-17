@@ -1,0 +1,66 @@
+@startuml activity_template
+title Activity Diagram - Workflow Pipeline & Decision Logic (Modern Beta Syntax)
+
+' === MODEL 2: ACTIVITY DIAGRAM (Catppuccin Mocha) ===
+skinparam backgroundColor #1E1E2E
+skinparam defaultFontColor #CDD6F4
+skinparam defaultFontName Monospace
+skinparam ArrowColor #89B4FA
+skinparam ArrowFontColor #CDD6F4
+skinparam ActivityBorderColor #89B4FA
+skinparam ActivityBackgroundColor #181825
+skinparam ActivityFontColor #CDD6F4
+skinparam ActivityStartColor #A6E3A1
+skinparam ActivityEndColor #F38BA8
+skinparam ActivityDiamondBorderColor #F9E2AF
+skinparam ActivityDiamondBackgroundColor #313244
+skinparam ActivityDiamondFontColor #CDD6F4
+skinparam DiamondBorderColor #F9E2AF
+skinparam DiamondBackgroundColor #313244
+skinparam DiamondFontColor #CDD6F4
+skinparam PartitionBorderColor #45475A
+skinparam PartitionBackgroundColor #11111B
+
+skinparam shadowing false
+skinparam roundcorner 8
+
+start
+
+:Receive Inbound Request;
+:Parse and Validate Syntax;
+
+if (Is Payload Valid?) then (yes)
+    :Extract Domain Context;
+    
+    fork
+        :Verify User Authorization;
+    fork again
+        :Check Rate Limit Token Bucket;
+    end fork
+
+    if (Authorized & Within Quota?) then (yes)
+        :Apply Business Invariants;
+        :Commit State Transition;
+        
+        fork
+            :Dispatch Async Domain Events;
+        fork again
+            :Write Structured Audit Log;
+        end fork
+
+        :Assemble Success Response (200 OK);
+    else (no)
+        :Generate Security Rejection Audit;
+        :Build Authorization Error (403 Forbidden);
+    endif
+
+else (no)
+    :Build Validation Error (422 Unprocessable);
+endif
+
+:Serialize Response;
+:Emit Telemetry Metrics;
+
+stop
+
+@enduml

@@ -1,0 +1,76 @@
+@startuml class_diagram_template
+title Class Diagram - Domain Entity Structure & Relationships (SWEBOK KA 11)
+
+' === MODEL 4: CLASS DIAGRAM (Catppuccin Mocha) ===
+skinparam backgroundColor #1E1E2E
+skinparam defaultFontColor #CDD6F4
+skinparam defaultFontName Monospace
+skinparam ArrowColor #89B4FA
+skinparam ArrowFontColor #CDD6F4
+skinparam ClassBorderColor #A6E3A1
+skinparam ClassBackgroundColor #181825
+skinparam ClassFontColor #CDD6F4
+skinparam InterfaceBorderColor #F9E2AF
+skinparam InterfaceBackgroundColor #313244
+skinparam InterfaceFontColor #CDD6F4
+
+skinparam classAttributeIconSize false
+skinparam shadowing false
+skinparam roundcorner 8
+
+interface Repository<T, ID> <<Trait / Interface>> {
+    + find_by_id(id: ID): Result<Option<T>, StorageError>
+    + save(entity: T): Result<ID, StorageError>
+    + delete(id: ID): Result<(), StorageError>
+}
+
+abstract class AggregateRoot {
+    # id: String
+    # version: u64
+    # pending_events: List<DomainEvent>
+    + get_id(): String
+    + get_version(): u64
+    + take_events(): List<DomainEvent>
+    # {abstract} validate_invariants(): Result<(), InvariantError>
+}
+
+class OrderAggregate {
+    - customer_id: String
+    - items: List<OrderItem>
+    - total_amount: MonetaryAmount
+    - status: OrderStatus
+    + new(customer_id: String): OrderAggregate
+    + add_item(item: OrderItem): Result<(), OrderError>
+    + transition_to(new_status: OrderStatus): Result<(), OrderError>
+    # validate_invariants(): Result<(), InvariantError>
+}
+
+class OrderItem <<Value Object>> {
+    - sku: String
+    - quantity: u32
+    - unit_price: MonetaryAmount
+    + get_subtotal(): MonetaryAmount
+}
+
+enum OrderStatus <<Enumeration>> {
+    DRAFT
+    COMMITTED
+    FULFILLED
+    CANCELLED
+}
+
+class SqlOrderRepository {
+    - connection_pool: DbPool
+    + find_by_id(id: String): Result<Option<OrderAggregate>, StorageError>
+    + save(entity: OrderAggregate): Result<String, StorageError>
+    + delete(id: String): Result<(), StorageError>
+}
+
+' Relationships & Multiplicities
+AggregateRoot <|-- OrderAggregate : inherits
+Repository <|.. SqlOrderRepository : implements
+OrderAggregate "1" *-- "1..*" OrderItem : composition
+OrderAggregate "1" o-- "1" OrderStatus : aggregation
+SqlOrderRepository ..> OrderAggregate : persists
+
+@enduml

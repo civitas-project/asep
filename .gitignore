@@ -1,0 +1,9 @@
+.superpowers/
+superpowers/
+**/target/
+Cargo.lock
+.agents/
+.spec-engine/
+
+.opencode/
+*.bak

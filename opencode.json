@@ -1,0 +1,30 @@
+{
+  "agents": {
+    "executor": {
+      "description": "Fast coding executor in a bounded executor-judge pipeline.",
+      "mode": "subagent"
+    },
+    "explorer": {
+      "description": "Fast explorer subagent for codebase exploration.",
+      "mode": "subagent"
+    },
+    "judge": {
+      "description": "Read-only reviewer verifying executor output against task, diff, and test evidence.",
+      "mode": "subagent"
+    },
+    "lead": {
+      "description": "Orchestrator for the bounded executor-judge workflow.",
+      "mode": "primary"
+    }
+  },
+  "mcp": {
+    "asep": {
+      "args": [
+        "mcp"
+      ],
+      "command": "asep",
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}

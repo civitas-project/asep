@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = ["srcidx", "srcdump", "spec-engine", "srcwalk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["da578"]
+license = "MIT OR Apache-2.0"
+rust-version = "1.80"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+syn = { version = "2.0", features = ["full", "visit", "visit-mut", "extra-traits", "proc-macro"] }
+quote = "1.0"
+proc-macro2 = { version = "1.0", features = ["span-locations"] }
+tree-sitter = "0.27"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.25"
+tree-sitter-dart = "0.3"
+tree-sitter-go = "0.25"
+tree-sitter-php = "0.25"
+tree-sitter-java = "0.23"
+codebook-tree-sitter-typst = "0.12"
+ignore = "0.4"
+walkdir = "2.4"
+clap = { version = "4.5", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+toml = "0.8"
+num_cpus = "1.16"

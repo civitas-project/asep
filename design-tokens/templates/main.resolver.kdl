@@ -1,0 +1,44 @@
+// =============================================================================
+// DUDUNG Context Resolver Specification
+// Traceability: @token:TK-RESOLVER-MAIN-01
+// - Requirement: @impl:FR-DS-RESOLVE-01
+// - Design: @design:FR-DS-RESOLVE-01
+// =============================================================================
+
+resolver name="Core System Resolver" version="2025.10" {
+    description "Multi-theme and density orchestration manifest"
+
+    sets {
+        set "foundation" {
+            sources {
+                ref "tokens/main.tokens.kdl"
+            }
+        }
+    }
+
+    modifiers {
+        modifier "theme" default="light" {
+            context "light" {
+                ref "tokens/themes/light.tokens.kdl"
+            }
+            context "dark" {
+                ref "tokens/themes/dark.tokens.kdl"
+            }
+        }
+
+        modifier "density" default="comfortable" {
+            context "comfortable" {
+                ref "tokens/density/comfortable.tokens.kdl"
+            }
+            context "compact" {
+                ref "tokens/density/compact.tokens.kdl"
+            }
+        }
+    }
+
+    resolutionOrder {
+        ref "#/sets/foundation"
+        ref "#/modifiers/theme"
+        ref "#/modifiers/density"
+    }
+}

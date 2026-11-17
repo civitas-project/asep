@@ -1,0 +1,45 @@
+[package]
+name = "srcidx"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Semantic source indexer for Rust, TypeScript, Python, Dart, Go: extracts symbols and emits NDJSON with self-describing header"
+
+[dependencies]
+# Workspace dependencies
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Parsing - Rust (syn)
+syn = { workspace = true }
+quote = { workspace = true }
+proc-macro2 = { workspace = true }
+
+# Parsing - Multi-language (tree-sitter)
+tree-sitter = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+tree-sitter-python = { workspace = true }
+tree-sitter-dart = { workspace = true }
+tree-sitter-go = { workspace = true }
+tree-sitter-php = { workspace = true }
+tree-sitter-java = { workspace = true }
+codebook-tree-sitter-typst = { workspace = true }
+
+# File walking
+srcwalk = { path = "../srcwalk" }
+ignore = "0.4"
+walkdir = "2.4"
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3.10"
