@@ -90,7 +90,7 @@ Examples:
 
 ## 5. Pull Request Lifecycle
 
-1. Open a Pull Request targeting `dev`. Only `release/<version>` PRs target `main` (see section 2).
+1. Open a Pull Request targeting `dev`. Only `release/<version>` PRs target `main` (see section 2). Fill in the description from `docs/pull_request_template.md`. Title format: `<type>(<scope>): <description>`, the same as the commit message. One concern per PR.
 2. Ensure automated CI checks pass completely with Exit Code 0.
 3. Verify that all functional requirements marked `MUST` contain matching `@impl` and `@test` tags.
 4. PRs require review and approval from at least one repository maintainer prior to merge.
