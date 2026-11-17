@@ -5,6 +5,23 @@ All notable changes to `ASEP` (Axiomatic Systems Engineering Protocol) will be d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-alpha] - 2026-11-17
+
+### Added
+- Git topology rules in the workflow router: branches from `dev`, seven prefixes by commit type, release branches, and back-merge (`CONTRIBUTING.md` section 2).
+- Pull request template at `docs/pull_request_template.md`.
+- Repository ruleset on GitHub: `main` and `dev` accept changes only through pull requests.
+- Explorer, executor, judge, and lead presets now carry steps, system prompts, and permissions in the repo `opencode.json`.
+
+### Changed
+- Scope checks: the executor returns `BLOCKED` for tasks without a file and a function; the lead checks scope before delegating; the judge flags out-of-scope changes.
+- Executor status line is one of `DONE`, `UNCERTAIN: <reason>`, or `BLOCKED: <reason>`.
+- Judge steps raised to 20, executor steps to 30.
+- Owner may merge own pull requests after review comment (`CONTRIBUTING.md` section 5).
+
+### Fixed
+- Harness: RSS sampled before the child process can exit, so short commands report a real peak instead of 0.
+
 ## [1.0.0-alpha] - 2026-11-16
 
 ### Added
