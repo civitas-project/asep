@@ -114,7 +114,7 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
                  │
      ┌───────────┘
      └── Step 6: Pull Request
-                 • Push the branch and open a PR to `dev`, never to `main`
+                 • Push the branch and open a PR to `dev`. Only a `release/<version>` branch opens a PR to `main` (Sequencing Rule 7).
                  • Do not merge until Gates 0-4 pass with Exit Code 0
 ```
 
@@ -145,8 +145,15 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
      - `refactor/<topic>`: restructuring without behavior change (`refactor:` commits)
      - `docs/<topic>`: documentation only (`docs:` commits)
      - `test/<topic>`: tests only (`test:` commits)
-     - `chore/<topic>`: maintenance, releases, tooling (`chore:` commits)
-   - Merge to `dev` only through a Pull Request. `main` receives PRs from `dev` at release time only.
+     - `chore/<topic>`: maintenance and tooling (`chore:` commits)
+     - `release/<version>`: release cut from `dev` (`chore(release):` commits)
+   - Merge to `dev` only through a Pull Request. Only `release/<version>` may open a PR to `main`.
+   - Release procedure:
+     1. Cut `release/<version>` from `dev` (example: `release/1.1.0`).
+     2. Allowed on the release branch: version bump, changelog, and small fixes. No new features.
+     3. Open a PR from `release/<version>` to `main`. This is the only PR that targets `main`.
+     4. After the merge, create an annotated tag `v<version>` on `main` (example: `v1.1.0`).
+     5. Run `git rev-list --count dev..main`. If the count is 0, stop. If it is greater than 0, back-merge: cut `chore/back-merge-<version>` from `dev`, merge `main` into it, and open a PR to `dev`.
 
 ---
 
