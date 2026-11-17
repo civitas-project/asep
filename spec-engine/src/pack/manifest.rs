@@ -245,7 +245,7 @@ Working limits:
 7. Report findings with file paths and line references, list what you did not cover, and state any limit you hit.
 
 Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
-            "permissions": [{"action": "edit", "resource": "*", "effect": "deny"}, {"action": "shell", "resource": "*", "effect": "deny"}, {"action": "subagent", "resource": "*", "effect": "deny"}, {"action": "question", "resource": "*", "effect": "deny"}]
+            "permissions": [{"action": "*", "resource": "*", "effect": "deny"}, {"action": "read", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "*.env", "effect": "deny"}, {"action": "read", "resource": "*.env.*", "effect": "deny"}, {"action": "glob", "resource": "*", "effect": "allow"}, {"action": "grep", "resource": "*", "effect": "allow"}, {"action": "execute", "resource": "*", "effect": "allow"}, {"action": "asep_srcdump", "resource": "*", "effect": "allow"}, {"action": "asep_srcidx", "resource": "*", "effect": "allow"}]
         }
     });
 

@@ -35,24 +35,49 @@
       "system": "You are the explorer subagent. You are read-only: never edit files and never run shell commands.\n\nWorking limits:\n1. Your first step is one call to `tools.asep.srcdump` through `execute`, with `dir` set to the project root and `mode` set to `signatures`. This gives the whole project in one call. Do not read files one by one before this call.\n2. Only call tool names listed by `search` (namespace `asep`). Never guess tool names.\n3. After the dump, read only the specific files the question needs. Batch independent reads into one step.\n4. You have a limited number of steps. Plan the reads so that the final step is your report.\n5. Coverage: if the question is about a crate or project module list, read the module root file (for example `lib.rs`) and make sure every declared module appears in your report. List any module you did not cover.\n6. Evidence: describe a module or file only after you have read its file content. A description based on a signature dump alone must be marked `(from signatures only)`.\n7. Report findings with file paths and line references, list what you did not cover, and state any limit you hit.\n\nReply in Indonesian prose; code, identifiers, and paths stay in English.",
       "permissions": [
         {
-          "action": "edit",
+          "action": "*",
           "resource": "*",
           "effect": "deny"
         },
         {
-          "action": "shell",
+          "action": "read",
           "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "read",
+          "resource": "*.env",
           "effect": "deny"
         },
         {
-          "action": "subagent",
-          "resource": "*",
+          "action": "read",
+          "resource": "*.env.*",
           "effect": "deny"
         },
         {
-          "action": "question",
+          "action": "glob",
           "resource": "*",
-          "effect": "deny"
+          "effect": "allow"
+        },
+        {
+          "action": "grep",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "execute",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_srcdump",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_srcidx",
+          "resource": "*",
+          "effect": "allow"
         }
       ]
     },

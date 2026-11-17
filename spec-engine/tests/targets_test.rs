@@ -275,4 +275,15 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     assert!(exec_system.contains("BLOCKED: task needs smaller scope"));
     let judge_system = parsed["agents"]["judge"]["system"].as_str().unwrap();
     assert!(judge_system.contains("at most 20 steps"));
+
+    // Explorer must stay read-only while keeping read + srcdump/srcidx access.
+    let explorer_perms = parsed["agents"]["explorer"]["permissions"].as_array().unwrap();
+    let has = |action: &str, effect: &str| explorer_perms.iter().any(|r| {
+        r["action"].as_str() == Some(action) && r["effect"].as_str() == Some(effect)
+    });
+    assert!(has("*", "deny"), "explorer must have a broad deny rule");
+    assert!(has("execute", "allow"), "explorer needs execute for srcdump");
+    assert!(has("asep_srcdump", "allow"), "explorer needs srcdump access");
+    assert!(has("asep_srcidx", "allow"), "explorer needs srcidx access");
+    assert!(!has("asep_adr_new", "allow"), "explorer must not be allowed to write ADRs");
 }
