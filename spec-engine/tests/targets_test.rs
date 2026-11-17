@@ -248,3 +248,31 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
     // Backup of the original file was created.
     assert!(tmp.path().join("opencode.json.bak").exists());
 }
+
+#[test]
+fn test_scaffold_opencode_agents_writes_full_presets() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    scaffold_opencode_agents(&config_file).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    for name in ["lead", "executor", "judge", "explorer"] {
+        let agent = &parsed["agents"][name];
+        assert!(agent["system"].as_str().is_some_and(|s| !s.is_empty()), "{name}: system missing");
+        assert!(agent["steps"].is_u64(), "{name}: steps missing");
+        assert!(agent["permissions"].is_array(), "{name}: permissions missing");
+    }
+
+    // Lead must know when to delegate mapping to the explorer.
+    let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
+    assert!(lead_system.contains("`explorer` subagent"), "lead prompt lacks explorer rule");
+
+    // Executor and judge carry their own scope and step rules.
+    let exec_system = parsed["agents"]["executor"]["system"].as_str().unwrap();
+    assert!(exec_system.contains("BLOCKED: task needs smaller scope"));
+    let judge_system = parsed["agents"]["judge"]["system"].as_str().unwrap();
+    assert!(judge_system.contains("at most 20 steps"));
+}
