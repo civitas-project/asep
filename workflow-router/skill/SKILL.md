@@ -58,6 +58,11 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
                                   │
                                   ▼
          ┌─────────────────────────────────────────────────┐
+         │ 0. WORKING BRANCH (git)                         │
+         └────────┬────────────────────────────────────────┘
+                  │
+                  ▼
+         ┌─────────────────────────────────────────────────┐
          │ 1. CLASSIFY INTENT                              │
          └────────┬───────────────────────────────┬────────┘
                   │                               │
@@ -107,7 +112,12 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
                  ├── Gate 1: 1:1 Symmetrical Traceability (`asep_check trace`)
                  ├── Gate 2: Zero-Warning Linter (`clippy -D warnings`)
                  ├── Gate 3: Native Test Suite, Doctests & Seeded Fuzz Smoke
-                 └── Gate 4: Continuous Performance & Noise-Floor Budget Gate
+                 ├── Gate 4: Continuous Performance & Noise-Floor Budget Gate
+                 │
+     ┌───────────┘
+     └── Step 6: Pull Request
+                 • Push the branch and open a PR to `dev`, never to `main`
+                 • Do not merge until Gates 0-4 pass with Exit Code 0
 ```
 
 ---
@@ -128,6 +138,17 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
    - Never declare a task finished based on mental execution. Always run the verification command in the terminal and inspect the actual output.
 6. **Sovereign & Self-Contained Ecosystem:**
    - All engineering capabilities (interactive brainstorming, requirements elicitation, task slicing, TDD, systematic debugging, comment hygiene, human copywriting, and accessible design tokens) are natively integrated into the 6 internal `asep:*` skills. External plugins are never required or invoked within ASEP-governed repositories.
+7. **Git Topology & Branching:**
+   - Every change lives on a branch cut from `dev`. Never commit directly to `dev` or `main`.
+   - Branch prefix follows the commit type:
+     - `feat/<topic>`: new behavior (`feat:` commits)
+     - `fix/<topic>`: bug fixes (`fix:` commits)
+     - `perf/<topic>`: performance work (`perf:` commits)
+     - `refactor/<topic>`: restructuring without behavior change (`refactor:` commits)
+     - `docs/<topic>`: documentation only (`docs:` commits)
+     - `test/<topic>`: tests only (`test:` commits)
+     - `chore/<topic>`: maintenance, releases, tooling (`chore:` commits)
+   - Merge to `dev` only through a Pull Request. `main` receives PRs from `dev` at release time only.
 
 ---
 

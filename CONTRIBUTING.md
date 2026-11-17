@@ -35,6 +35,9 @@ Branch names follow Conventional Commits and map to the active SDLC mode:
   - **Bug Fixes:** `fix/<topic>` (example: `fix/token-refresh-race`)
   - **Performance:** `perf/<topic>` (example: `perf/zero-alloc-buffer`)
   - **Refactoring:** `refactor/<topic>` (example: `refactor/isolate-storage`)
+  - **Documentation:** `docs/<topic>` (example: `docs/governance-readme`)
+  - **Tests:** `test/<topic>` (example: `test/harness-rss-bounds`)
+  - **Maintenance:** `chore/<topic>` (example: `chore/release-v1-alpha`)
   - **In-Place Hardening:** On the existing `feat/<topic>` branch before merging into `dev`, graduate `@req:*:DRAFT` to `@req:*:MUST`, write failing TDD assertions (`// @test:FR-*`), and verify via `asep check --mode axiomatic`.
 
 ---
