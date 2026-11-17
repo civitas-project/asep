@@ -41,16 +41,15 @@ Infer the project tier automatically from `Cargo.toml`, `package.json`, or `pypr
 ## 1. The SWEBOK v4 Standard for `README.md`
 
 Every `README.md` must include these annotated governance sections:
-1. **Header & Identity (`<!-- @gov:README-HEADER -->`):** Project title, single-sentence technical definition, and status badges (Version, License, Language Edition, Memory Safety `#![deny(unsafe_code)]`, Build Status).
+1. **Header & Identity (`<!-- @gov:README-HEADER -->`):** Project title, single-sentence technical definition.
 2. **Executive Technical Summary (`<!-- @gov:README-SUMMARY -->`):** High-density paragraph explaining the core architecture and storage/execution model without subjective hype.
-3. **Target Platform & Prerequisites (`<!-- @gov:README-PREREQ -->`):** OS/architecture support, MSRV/runtime version, and filesystem/kernel prerequisites.
-4. **Architectural Highlights (`<!-- @gov:README-HIGHLIGHTS -->`):** Bullet points detailing concrete data structures, concurrency models, and safety boundaries.
-5. **Quantitative Verification & Benchmarks (`<!-- @gov:README-BENCH -->`):** Calibrated hardware baseline (`<!-- @gov:BENCH-BASELINE -->`), 6-column measurement matrix with discrete traceability tags (`@gov:BENCH-*`), and the exact reproduction command (`cargo bench`).
-6. **Known Limitations & System Limits (`<!-- @lim -->`):** Hard operational bounds (`@lim:LIM-*`) and explicit negative scope.
-7. **Workspace Layout (`<!-- @gov:README-LAYOUT -->`):** Physical directory tree matching actual repository folders 1:1 annotated with traceability tags, followed by the 4-column Software Configuration Items (SCI) Traceability Matrix (`@gov:MOD-*`).
-8. **Quick Start (`<!-- @gov:README-QUICKSTART -->`):** Copy-pasteable, runnable code and CLI examples (Embedded API, Interactive REPL, TCP Daemon).
-9. **Contributing & Quality Gates (`<!-- @gov:README-CONTRIB -->`):** Local CI commands (`cargo run --package ci_local` / `task ci`) linking to `CONTRIBUTING.md`.
-10. **Governance, Provenance & Security (`<!-- @gov:README-LEGAL -->`):** 3-column governance matrix with discrete traceability tags (`@gov:ARCH-OVERVIEW`, `@gov:CONTRIB-VERIFY`, `@gov:SEC-SLA`, `@gov:GOV-RELEASE`, `@gov:GOV-LICENSE`, `@gov:GOV-MANIFEST`) linking to `ARCHITECTURE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `LICENSE`, and `trace_manifest.json`.
+3. **Target Platforms & Prerequisites (`<!-- @gov:README-PREREQ -->`):** OS/architecture support (`Target Platforms`), MSRV/runtime version, and filesystem/kernel prerequisites (`Prerequisites`).
+4. **Architecture Highlights (`<!-- @gov:README-HIGHLIGHTS -->`):** Bullet points detailing concrete data structures, concurrency models, and safety boundaries, followed by the Workspace Layout (`<!-- @gov:README-LAYOUT -->`) and SCI Traceability Matrix.
+5. **Known Limitations (`<!-- @lim -->`):** Hard operational bounds (`@lim:LIM-*`) and explicit negative scope.
+6. **Quick Start (`<!-- @gov:README-QUICKSTART -->`):** Copy-pasteable, runnable code and CLI examples (Embedded API, Interactive REPL, TCP Daemon).
+7. **Quality Gates (`<!-- @gov:README-CONTRIB -->`):** Local CI commands (`cargo run --package ci_local` / `task ci`) linking to `CONTRIBUTING.md`.
+8. **Benchmarks (`<!-- @gov:README-BENCH -->`):** Calibrated hardware baseline (`<!-- @gov:BENCH-BASELINE -->`), 6-column measurement matrix with discrete traceability tags (`@gov:BENCH-*`), and the exact reproduction command (`cargo bench`).
+9. **Governance (`<!-- @gov:README-LEGAL -->`):** 3-column governance matrix with discrete traceability tags (`@gov:ARCH-OVERVIEW`, `@gov:CONTRIB-VERIFY`, `@gov:SEC-SLA`, `@gov:GOV-RELEASE`, `@gov:GOV-LICENSE`, `@gov:GOV-MANIFEST`) linking to `ARCHITECTURE.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md`, `LICENSE`, and `trace_manifest.json`.
 
 ---
 
