@@ -1,25 +1,39 @@
 # ASEP: Axiomatic Systems Engineering Protocol
 
-[![Version](https://img.shields.io/badge/version-v1.0.0--alpha-blue.svg)](CHANGELOG.md)
-[![Rust](https://img.shields.io/badge/CLI-Rust%202021-orange.svg)](spec-engine/Cargo.toml)
-[![MSRV](https://img.shields.io/badge/MSRV-1.80%2B-informational.svg)](spec-engine/Cargo.toml)
-[![Traceability](https://img.shields.io/badge/traceability-100%25%20Closed--Loop-brightgreen.svg)](#7-traceability-metadata-taxonomy)
-[![Option C](https://img.shields.io/badge/Option%20C-100%25%20Verified-blue.svg)](#7-traceability-metadata-taxonomy)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
-
 > Spec-Driven Extreme Programming (FXP) engineering protocol featuring a two-phase SDLC, 1:1 closed-loop traceability, multi-language contracts, formal methods (Alloy/TLA+), and high-performance Rust deterministic validation.
 
 ---
 
 <!-- @gov:README-SUMMARY -->
-## Executive Overview
+## Overview
 
 `ASEP` (Axiomatic Systems Engineering Protocol) formalizes an autonomous, sovereign software engineering discipline that removes administrative overhead during exploratory phases while enforcing mathematical rigor during stabilization. The framework implements ISO/IEC/IEEE 29148 requirements grammar, canonical PlantUML visual modeling, idiomatic Design by Contract across five programming languages (Rust, TypeScript, Python, Go, C/C++), zero-dependency repository governance, Diátaxis + Progressive Disclosure manuals (`MANUAL.md`), and a native Rust verification engine (`asep`).
 
 ---
 
+<!-- @gov:README-PREREQ -->
+## Target Platforms
+
+### Supported Operating Systems
+Linux (x86_64, aarch64), macOS (Apple Silicon, x86_64), Windows (x86_64)
+
+---
+
+## Prerequisites
+
+### Rust Version (MSRV)
+Rust 1.80.0+ (Edition 2021)
+
+### Core Toolchain
+cargo and rustc (official Rust toolchain)
+
+### Optional Diagram Tools
+plantuml and graphviz (for local .puml compilation to SVG vector assets)
+
+---
+
 <!-- @gov:README-HIGHLIGHTS -->
-## Architectural Highlights
+## Architecture Highlights
 
 ### Isolated Two-Phase SDLC (Spec-Driven XP)
 Strict separation between Phase 1 (Exploratory Spike), where linter and tag requirements are disabled to allow rapid hypothesis testing without bureaucracy, and Phase 2 (Production Rigor), which mandates strict Test-Driven Development (TDD), Systematic Debugging, and 5-Gate CI automated verification.
@@ -36,26 +50,7 @@ Formal architectural models: Use Case and Activity for PRDs; Denert 1991 Boundar
 ### 5-Gate Local CI Verification Pipeline
 Five deterministic quality gates: Gate 0 Formal Specs, Gate 1 Symmetrical Traceability (`asep check`), Gate 2 Static Analysis (`clippy -D warnings`), Gate 3 Test & Fuzz Suite, and Gate 4 Continuous Performance Budgeting.
 
----
-
-<!-- @gov:README-PREREQ -->
-## Target Platform & Prerequisites
-
-### Rust Version (MSRV)
-Rust 1.80.0+ (Edition 2021)
-
-### Supported Operating Systems
-Linux (x86_64, aarch64), macOS (Apple Silicon, x86_64), Windows (x86_64)
-
-### Core Toolchain
-cargo and rustc (official Rust toolchain)
-
-### Optional Diagram Tools
-plantuml and graphviz (for local .puml compilation to SVG vector assets)
-
----
-
-## 1. Two-Phase SDLC Architecture
+### Two-Phase SDLC Architecture
 
 ```mermaid
 flowchart TD
@@ -82,9 +77,7 @@ flowchart TD
     GatePipeline --> Complete([Release & Deployment Ready])
 ```
 
----
-
-## 2. Canonical Protocol Modules & Skills
+### Canonical Protocol Modules & Skills
 
 The ASEP architecture comprises five self-contained domain skills orchestrated by the Master Dispatch Router:
 
@@ -97,46 +90,8 @@ The ASEP architecture comprises five self-contained domain skills orchestrated b
 | **Repository-Governance** | **Repository Governance & Manuals**<br>README structure, directory topology, Diátaxis MANUAL.md, CVSS response SLAs. | [`repository-governance/repository-governance.md`](repository-governance/repository-governance.md) | [`repository-governance`](repository-governance/skill/SKILL.md) |
 | **Design-Tokens** | **Deterministic Design Tokens**<br>KDL-based token AST, 14 color spaces, unit invariance constraints. | [`design-tokens/design-tokens.md`](design-tokens/design-tokens.md) | [`design-tokens`](design-tokens/skill/SKILL.md) |
 
----
-
-<!-- @gov:README-BENCH -->
-## 3. Quantitative Verification & Benchmarks
-
-<!-- @gov:BENCH-BASELINE -->
-All performance claims are bounded by reproducible micro-benchmarks evaluated against a calibrated hardware baseline:
-- **Baseline Hardware:** 8 cores @ 3.2 GHz, 32 GB RAM, NVMe PCIe 4.0 Storage
-- **Operating Environment:** Linux x86_64 kernel 6.6+ (MSRV 1.80.0)
-
-| Operation | Traceability Tag | Workload Benchmark | Latency (p50) | Latency (p99) | Memory / Throughput |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **AST Tag Lexing**<br>Regex-based tag extractor | `<!-- @gov:BENCH-LEXER -->`<br>`@gov:BENCH-LEXER` | 10,000 source code lines | 4.8 ms | 5.1 ms | Zero heap leak |
-| **Traceability Graph Resolution**<br>Bipartite 1:1 closure validator | `<!-- @gov:BENCH-GRAPH -->`<br>`@gov:BENCH-GRAPH` | 500 bipartite 1:1 relations | 1.9 ms | 2.1 ms | O(V + E) linear space |
-| **Docstring Contract Parsing**<br>Docstring contract auditor | `<!-- @gov:BENCH-DOC-CONTRACT -->`<br>`@gov:BENCH-DOC-CONTRACT` | 100 module files | 0.9 ms | 1.0 ms | Bounded stack buffers |
-
-Reproduce benchmarks locally:
-```bash
-cd spec-engine
-cargo bench
-```
-
----
-
-<!-- @lim:README-LIMITS -->
-## 4. Known Limitations & System Limits
-
-### @lim:LIM-SCAN-01
-Directory traversal strictly respects `.gitignore` rules. Files located in ignored paths (such as `target/` or `node_modules/`) are excluded from scanning.
-
-### @lim:LIM-MEM-01
-The lexer line parsing buffer is capped at 64 KB per line to prevent memory exhaustion on maliciously oversized lines.
-
-### Non-Goals
-The ecosystem does not govern marketing copy or promotional web layouts. Its scope is restricted to software architecture, interface contracts, living documentation, and engineering verification.
-
----
-
 <!-- @gov:README-LAYOUT -->
-## 5. Repository Topology (Software Configuration Items)
+### Workspace Layout
 
 ```text
 .
@@ -193,12 +148,26 @@ The ecosystem does not govern marketing copy or promotional web layouts. Its sco
 
 ---
 
+<!-- @lim:README-LIMITS -->
+## Known Limitations
+
+### @lim:LIM-SCAN-01
+Directory traversal strictly respects `.gitignore` rules. Files located in ignored paths (such as `target/` or `node_modules/`) are excluded from scanning.
+
+### @lim:LIM-MEM-01
+The lexer line parsing buffer is capped at 64 KB per line to prevent memory exhaustion on maliciously oversized lines.
+
+### Non-Goals
+The ecosystem does not govern marketing copy or promotional web layouts. Its scope is restricted to software architecture, interface contracts, living documentation, and engineering verification.
+
+---
+
 <!-- @gov:README-QUICKSTART -->
-## 6. Universal CLI Tooling (`asep`)
+## Quick Start
 
 `asep` is a standalone CLI tool written in Rust that provides deterministic, local validation without external runtime dependencies (with `spec-engine` provided as a backward-compatible alias).
 
-### 6.1 Installation & Build
+### Installation & Build
 ```bash
 # From repository root
 cd spec-engine
@@ -211,7 +180,7 @@ cargo install --path . --force
 cargo test
 ```
 
-### 6.2 Command Reference
+### Command Reference
 
 ### Traceability Verification & Contract Audit
 ```bash
@@ -312,7 +281,58 @@ asep skill config --preference terminal
 
 ---
 
-## 7. Traceability Metadata Taxonomy
+<!-- @gov:README-CONTRIB -->
+## Quality Gates
+
+Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request:
+
+```bash
+cd spec-engine
+cargo test
+cargo clippy -- -D warnings
+cargo fmt --check
+```
+
+Detailed contribution workflows, branch conventions, and commit standards are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+<!-- @gov:README-BENCH -->
+## Benchmarks
+
+<!-- @gov:BENCH-BASELINE -->
+All performance claims are bounded by reproducible micro-benchmarks evaluated against a calibrated hardware baseline:
+- **Baseline Hardware:** 8 cores @ 3.2 GHz, 32 GB RAM, NVMe PCIe 4.0 Storage
+- **Operating Environment:** Linux x86_64 kernel 6.6+ (MSRV 1.80.0)
+
+| Operation | Traceability Tag | Workload Benchmark | Latency (p50) | Latency (p99) | Memory / Throughput |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AST Tag Lexing**<br>Regex-based tag extractor | `<!-- @gov:BENCH-LEXER -->`<br>`@gov:BENCH-LEXER` | 10,000 source code lines | 4.8 ms | 5.1 ms | Zero heap leak |
+| **Traceability Graph Resolution**<br>Bipartite 1:1 closure validator | `<!-- @gov:BENCH-GRAPH -->`<br>`@gov:BENCH-GRAPH` | 500 bipartite 1:1 relations | 1.9 ms | 2.1 ms | O(V + E) linear space |
+| **Docstring Contract Parsing**<br>Docstring contract auditor | `<!-- @gov:BENCH-DOC-CONTRACT -->`<br>`@gov:BENCH-DOC-CONTRACT` | 100 module files | 0.9 ms | 1.0 ms | Bounded stack buffers |
+
+Reproduce benchmarks locally:
+```bash
+cd spec-engine
+cargo bench
+```
+
+---
+
+<!-- @gov:README-LEGAL -->
+## Governance
+
+| Governance Document | Traceability Tag | Responsibility & Policy Enforcement |
+| :--- | :--- | :--- |
+| [MANUAL.md](MANUAL.md) | `<!-- @gov:MANUAL-HEADER -->`<br>`@gov:MANUAL-HEADER` | Comprehensive Diátaxis developer and operator manual (Parts I–V) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | `<!-- @gov:ARCH-OVERVIEW -->`<br>`@gov:ARCH-OVERVIEW` | Architectural topology map, crate boundaries, and 5 Non-Negotiable Invariants |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | `<!-- @gov:CONTRIB-VERIFY -->`<br>`@gov:CONTRIB-VERIFY` | Contributor SDLC, Dual-Branch git topology (`main`/`dev`), and 5-Gate CI |
+| [SECURITY.md](SECURITY.md) | `<!-- @gov:SEC-SLA -->`<br>`@gov:SEC-SLA` | Coordinated Vulnerability Disclosure (CVD), CVSS triage, and SLA response matrix |
+| [CHANGELOG.md](CHANGELOG.md) | `<!-- @gov:GOV-RELEASE -->`<br>`@gov:GOV-RELEASE` | Keep a Changelog v1.1.0 semantic versioning and release provenance |
+| [LICENSE](LICENSE) | `<!-- @gov:GOV-LICENSE -->`<br>`@gov:GOV-LICENSE` | Permissive open-source MIT license and legal IP boundaries |
+| [trace_manifest.json](trace_manifest.json) | `<!-- @gov:GOV-MANIFEST -->`<br>`@gov:GOV-MANIFEST` | Dynamic trace manifest and Option C automated repository health gate |
+
+### Traceability Metadata Taxonomy
 
 Engineering artifacts are interconnected using canonical tag metadata syntax:
 
@@ -334,34 +354,3 @@ Engineering artifacts are interconnected using canonical tag metadata syntax:
 | `@criticality:...` | Specifications / ADRs | Execution criticality marker (`high` or `low`); never enters the closure graph | `\@criticality:high` |
 
 > **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1**.
-
----
-
-<!-- @gov:README-CONTRIB -->
-## 8. Quality Gates & Local Verification
-
-Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request:
-
-```bash
-cd spec-engine
-cargo test
-cargo clippy -- -D warnings
-cargo fmt --check
-```
-
-Detailed contribution workflows, branch conventions, and commit standards are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-<!-- @gov:README-LEGAL -->
-## 9. Governance, Provenance & Security
-
-| Governance Document | Traceability Tag | Responsibility & Policy Enforcement |
-| :--- | :--- | :--- |
-| [MANUAL.md](MANUAL.md) | `<!-- @gov:MANUAL-HEADER -->`<br>`@gov:MANUAL-HEADER` | Comprehensive Diátaxis developer and operator manual (Parts I–V) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | `<!-- @gov:ARCH-OVERVIEW -->`<br>`@gov:ARCH-OVERVIEW` | Architectural topology map, crate boundaries, and 5 Non-Negotiable Invariants |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | `<!-- @gov:CONTRIB-VERIFY -->`<br>`@gov:CONTRIB-VERIFY` | Contributor SDLC, Dual-Branch git topology (`main`/`dev`), and 5-Gate CI |
-| [SECURITY.md](SECURITY.md) | `<!-- @gov:SEC-SLA -->`<br>`@gov:SEC-SLA` | Coordinated Vulnerability Disclosure (CVD), CVSS triage, and SLA response matrix |
-| [CHANGELOG.md](CHANGELOG.md) | `<!-- @gov:GOV-RELEASE -->`<br>`@gov:GOV-RELEASE` | Keep a Changelog v1.1.0 semantic versioning and release provenance |
-| [LICENSE](LICENSE) | `<!-- @gov:GOV-LICENSE -->`<br>`@gov:GOV-LICENSE` | Permissive open-source MIT license and legal IP boundaries |
-| [trace_manifest.json](trace_manifest.json) | `<!-- @gov:GOV-MANIFEST -->`<br>`@gov:GOV-MANIFEST` | Dynamic trace manifest and Option C automated repository health gate |

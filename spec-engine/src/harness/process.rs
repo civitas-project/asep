@@ -207,7 +207,7 @@ pub fn run_cmd_memory(
     let mut child = spawn_shell(cmd)?;
     let pid = child.id();
     let start = Instant::now();
-    let mut peak: usize = 0;
+    let mut peak: usize = sample_rss_bytes(pid);
 
     loop {
         match child.try_wait() {

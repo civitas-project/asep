@@ -1,73 +1,40 @@
 # {{PROJECT_NAME}}
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]({{CI_PIPELINE_URL}})
-[![License](https://img.shields.io/badge/license-{{LICENSE_TYPE}}-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v{{PROJECT_VERSION}}-orange.svg)](CHANGELOG.md)
-[![MSRV](https://img.shields.io/badge/MSRV-{{MSRV_VERSION}}-informational.svg)](Cargo.toml)
-[![Quality Gate](https://img.shields.io/badge/spec--check-passed-emerald.svg)]({{CI_PIPELINE_URL}})
-[![Option C](https://img.shields.io/badge/Option%20C-100%25%20Verified-blue.svg)](trace_manifest.json)
-
 > **{{SINGLE_SENTENCE_TECHNICAL_DEFINITION}}**
 
 ---
 
 <!-- @gov:README-SUMMARY -->
-## Executive Overview
+## Overview
 
 {{EXECUTIVE_TECHNICAL_PARAGRAPH}}
 
 ---
 
+<!-- @gov:README-PREREQ -->
+## Target Platforms
+
+- **Supported Operating Systems:** Linux (x86_64, aarch64), macOS (Apple Silicon, Intel), Windows (x86_64)
+
+---
+
+## Prerequisites
+
+- **Language Runtime / Compiler:** `{{MSRV_OR_RUNTIME_REQUIREMENT}}`
+- **External System Libraries:** `{{SYSTEM_DEPENDENCIES}}`
+
+---
+
 <!-- @gov:README-HIGHLIGHTS -->
-## Architectural Highlights
+## Architecture Highlights
 
 - **Deterministic Memory Guarantees:** {{MEMORY_MODEL_GUARANTEES}}
 - **Concurrency & State Synchronization:** {{CONCURRENCY_MODEL}}
 - **Domain Invariance & Design by Contract:** {{CONTRACT_INVARIANTS}}
 - **Zero-Drift Architecture:** Physical directories map 1:1 to logical bounded contexts without unmapped directories.
 
----
-
-<!-- @gov:README-PREREQ -->
-## Target Platform & Prerequisites
-
-- **Language Runtime / Compiler:** `{{MSRV_OR_RUNTIME_REQUIREMENT}}`
-- **Supported Operating Systems:** Linux (x86_64, aarch64), macOS (Apple Silicon, Intel), Windows (x86_64)
-- **External System Libraries:** `{{SYSTEM_DEPENDENCIES}}`
-
----
-
-<!-- @gov:README-BENCH -->
-## Quantitative Verification & Benchmarks
-
-<!-- @gov:BENCH-BASELINE -->
-All performance claims are bounded by reproducible micro-benchmarks evaluated against a calibrated hardware baseline:
-- **Baseline Hardware:** {{CPU_CORES}} cores @ {{CPU_GHZ}} GHz, {{RAM_GB}} GB RAM, {{STORAGE_TYPE}} NVMe
-- **Operating Environment:** {{OS_KERNEL_DISTRO}} (MSRV {{MSRV_VERSION}})
-
-| Operation | Traceability Tag | Workload Benchmark | Latency (p50) | Latency (p99) | Memory / Throughput |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **{{OPERATION_1}}**<br>{{OPERATION_1_DESC}} | `<!-- @gov:BENCH-{{TAG_1}} -->`<br>`@gov:BENCH-{{TAG_1}}` | {{WORKLOAD_1}} | {{P50_1}} | {{P99_1}} | {{ALLOC_OR_THROUGHPUT_1}} |
-| **{{OPERATION_2}}**<br>{{OPERATION_2_DESC}} | `<!-- @gov:BENCH-{{TAG_2}} -->`<br>`@gov:BENCH-{{TAG_2}}` | {{WORKLOAD_2}} | {{P50_2}} | {{P99_2}} | {{ALLOC_OR_THROUGHPUT_2}} |
-
-Reproduce benchmarks locally:
-```bash
-{{BENCHMARK_COMMAND}}
-```
-
----
-
-<!-- @lim:README-LIMITS -->
-## Known Limitations & System Limits
-
-- `@lim:LIM-RES-01` Maximum concurrent worker threads bounded to `{{MAX_THREADS}}`.
-- `@lim:LIM-BUF-01` Input frame buffer ceiling: `{{MAX_FRAME_BYTES}}`.
-- Non-goal: `{{EXPLICIT_NEGATIVE_SCOPE_ITEM}}`.
-
----
-
 <!-- @gov:README-LAYOUT -->
-## Workspace Layout (Software Configuration Items)
+### Workspace Layout
 
 ```text
 .
@@ -89,8 +56,17 @@ Reproduce benchmarks locally:
 
 ---
 
+<!-- @lim:README-LIMITS -->
+## Known Limitations
+
+- `@lim:LIM-RES-01` Maximum concurrent worker threads bounded to `{{MAX_THREADS}}`.
+- `@lim:LIM-BUF-01` Input frame buffer ceiling: `{{MAX_FRAME_BYTES}}`.
+- Non-goal: `{{EXPLICIT_NEGATIVE_SCOPE_ITEM}}`.
+
+---
+
 <!-- @gov:README-QUICKSTART -->
-## Quick Start: 5-Minute Proof
+## Quick Start
 
 ```bash
 # 1. Clone repository
@@ -112,7 +88,7 @@ Expected verifiable output:
 ---
 
 <!-- @gov:README-CONTRIB -->
-## Quality Gates & Local Verification
+## Quality Gates
 
 All contributions must pass automated gates with **Exit Code 0** before submitting a pull request:
 
@@ -127,8 +103,28 @@ Review our branch naming, commit standards, and configuration baselines in [CONT
 
 ---
 
+<!-- @gov:README-BENCH -->
+## Benchmarks
+
+<!-- @gov:BENCH-BASELINE -->
+All performance claims are bounded by reproducible micro-benchmarks evaluated against a calibrated hardware baseline:
+- **Baseline Hardware:** {{CPU_CORES}} cores @ {{CPU_GHZ}} GHz, {{RAM_GB}} GB RAM, {{STORAGE_TYPE}} NVMe
+- **Operating Environment:** {{OS_KERNEL_DISTRO}} (MSRV {{MSRV_VERSION}})
+
+| Operation | Traceability Tag | Workload Benchmark | Latency (p50) | Latency (p99) | Memory / Throughput |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **{{OPERATION_1}}**<br>{{OPERATION_1_DESC}} | `<!-- @gov:BENCH-{{TAG_1}} -->`<br>`@gov:BENCH-{{TAG_1}}` | {{WORKLOAD_1}} | {{P50_1}} | {{P99_1}} | {{ALLOC_OR_THROUGHPUT_1}} |
+| **{{OPERATION_2}}**<br>{{OPERATION_2_DESC}} | `<!-- @gov:BENCH-{{TAG_2}} -->`<br>`@gov:BENCH-{{TAG_2}}` | {{WORKLOAD_2}} | {{P50_2}} | {{P99_2}} | {{ALLOC_OR_THROUGHPUT_2}} |
+
+Reproduce benchmarks locally:
+```bash
+{{BENCHMARK_COMMAND}}
+```
+
+---
+
 <!-- @gov:README-LEGAL -->
-## Governance, Provenance & Security
+## Governance
 
 | Governance Document | Traceability Tag | Responsibility & Policy Enforcement |
 | :--- | :--- | :--- |

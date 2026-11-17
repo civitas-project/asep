@@ -150,12 +150,13 @@ fn test_repository_governance_zero_antislop_and_readme_template() {
     );
     let readme_content = fs::read_to_string(&readme_template_path).unwrap();
     let required_sections = [
-        "Architectural Highlights",
-        "Target Platform & Prerequisites",
-        "Quantitative Verification",
+        "Architecture Highlights",
+        "Target Platforms",
+        "Prerequisites",
+        "Benchmarks",
         "Known Limitations",
         "Workspace Layout",
-        "Governance, Provenance & Security",
+        "Governance",
     ];
     for section in &required_sections {
         assert!(

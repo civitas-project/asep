@@ -56,6 +56,11 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
                                   │
                                   ▼
          ┌─────────────────────────────────────────────────┐
+         │ 0. WORKING BRANCH (git)                         │
+         └────────┬────────────────────────────────────────┘
+                  │
+                  ▼
+         ┌─────────────────────────────────────────────────┐
          │ 1. CLASSIFY INTENT                              │
          └────────┬───────────────────────────────┬────────┘
                   │                               │
@@ -105,7 +110,12 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
                  ├── Gate 1: 1:1 Symmetrical Traceability (`asep_check trace`)
                  ├── Gate 2: Zero-Warning Linter (`clippy -D warnings`)
                  ├── Gate 3: Native Test Suite, Doctests & Seeded Fuzz Smoke
-                 └── Gate 4: Continuous Performance & Noise-Floor Budget Gate
+                 ├── Gate 4: Continuous Performance & Noise-Floor Budget Gate
+                 │
+     ┌───────────┘
+     └── Step 6: Pull Request
+                 • Push the branch and open a PR to `dev`. Only a `release/<version>` branch opens a PR to `main` (Sequencing Rule 7).
+                 • Do not merge until Gates 0-4 pass with Exit Code 0
 ```
 
 ---
@@ -126,6 +136,24 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
    - Never declare a task finished based on mental execution. Always run the verification command in the terminal and inspect the actual output.
 6. **Sovereign & Self-Contained Ecosystem:**
    - All engineering capabilities—interactive brainstorming, requirements elicitation, task slicing, TDD, systematic debugging, comment hygiene, human copywriting, and accessible design tokens—are natively integrated into the 6 internal `asep:*` skills. External plugins are never required or invoked within ASEP-governed repositories.
+7. **Git Topology & Branching:**
+   - Every change lives on a branch cut from `dev`. Never commit directly to `dev` or `main`.
+   - Branch prefix follows the commit type:
+     - `feat/<topic>`: new behavior (`feat:` commits)
+     - `fix/<topic>`: bug fixes (`fix:` commits)
+     - `perf/<topic>`: performance work (`perf:` commits)
+     - `refactor/<topic>`: restructuring without behavior change (`refactor:` commits)
+     - `docs/<topic>`: documentation only (`docs:` commits)
+     - `test/<topic>`: tests only (`test:` commits)
+     - `chore/<topic>`: maintenance and tooling (`chore:` commits)
+     - `release/<version>`: release cut from `dev` (`chore(release):` commits)
+   - Merge to `dev` only through a Pull Request. Only `release/<version>` may open a PR to `main`.
+   - Release procedure:
+     1. Cut `release/<version>` from `dev` (example: `release/1.1.0`).
+     2. Allowed on the release branch: version bump, changelog, and small fixes. No new features.
+     3. Open a PR from `release/<version>` to `main`. This is the only PR that targets `main`.
+     4. After the merge, create an annotated tag `v<version>` on `main` (example: `v1.1.0`).
+     5. Run `git rev-list --count dev..main`. If the count is 0, stop. If it is greater than 0, back-merge: cut `chore/back-merge-<version>` from `dev`, merge `main` into it, and open a PR to `dev`.
 
 ---
 
