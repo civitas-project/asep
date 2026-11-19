@@ -31,7 +31,7 @@ No dummy (ring-buffer) bug was found: stress FIFO/no-loss/no-dup held at 100,000
 
 - The run directory was partially wiped by a server restart. Artifacts P1–P5 and P6 optimization report were reconstructed from controller/judge records and are explicitly marked `RECONSTRUCTED`. They are not byte-identical originals.
 - The judge agent in this harness has no shell permission, so its mandatory re-run obligation was delegated to `verify-artifacts.sh`; the verifier output is authoritative. Judge verdicts are claims, not independent executions.
-- The `vendor-loom.sh` proof crate compiles offline but runs 0 loom schedules; the actual loom exploration happened in the dummy project at P5/P7.
+- `vendor-loom.sh` has TWO distinct loom runs: a tiny proof inside the script (sanity check that the vendored crate can compile and run `loom::model` offline), and the real ring-buffer exploration in the dummy project at P5/P7 (`loom_sp_sc_fifo_no_loss_no_dup`, 1 test passed). An earlier note saying the proof ran 0 schedules came from a broken intermediate version; after the feature wiring was fixed, a fresh re-run of the final script showed `running 1 test ... 1 passed` before `VENDOR_OK`. The real exploration was always in the dummy and did run.
 - The test-output log contains unused-import/dead-code warnings in the dummy fixtures. They are warnings only; all gates exit 0.
 - Two post-TDD test changes and one hash refresh were authorized by recorded controller rulings; without them the run could not have reached GREEN. The test lock was therefore explicitly overridden, with reasons persisted in `controller-ruling.json`.
 
