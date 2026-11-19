@@ -13,6 +13,7 @@ pub mod coverage;
 pub mod watch;
 pub mod mcp;
 pub mod pack;
+pub mod policy;
 pub mod runner;
 pub mod self_update;
 pub mod scanner;
