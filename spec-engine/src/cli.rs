@@ -44,6 +44,12 @@ pub enum Commands {
 
         #[arg(
             long,
+            help = "Path to agent message directory to validate (envelopes + bodies)"
+        )]
+        messages: Option<PathBuf>,
+
+        #[arg(
+            long,
             help = "Rigor tier override: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
         )]
         rigor: Option<String>,
