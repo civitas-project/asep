@@ -248,4 +248,12 @@ Cycle: lead plans, executor implements, judge verifies, repeat until every slice
 - `judge`: description "Read-only reviewer verifying executor output against task, diff, and test evidence.", mode "subagent"
 - `explorer`: description "Fast explorer subagent for codebase exploration.", mode "subagent"
 
+---
+
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-01`..`COV-06 (all coverage rules) and Tier T0..T4 (all tiers); unproven results surface as exit 3.
+
 Existing agents and top-level keys in `opencode.json` are preserved; missing defaults are inserted only when absent.

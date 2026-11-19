@@ -191,6 +191,14 @@ Parallel speedup target governed by Amdahl's Law with serial fraction $s \le 0.0
 
 ---
 
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-01, COV-04, COV-05 (Error coverage) and Tier T2..T4 (semantic evidence required); unproven results surface as exit 3.
+
+---
+
 ## Red Flags: STOP and Restart
 - Production code was written in Phase 2 before observing a failing test.
 - A bug was patched without a regression test proving the root cause.

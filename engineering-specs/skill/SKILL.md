@@ -115,6 +115,14 @@ When benchmarking or preparing empirical performance telemetry:
 
 ---
 
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-03, COV-04 and Tier T2..T4; unproven results surface as exit 3.
+
+---
+
 ## Red Flags: STOP and Restart
 - A requirement statement lacks a clear system subject, active verb, or failure mode.
 - The text contains blacklisted words (*delve*, *tapestry*, *seamless*, *blazingly*, *revolutionary*) or em-dashes.

@@ -110,6 +110,14 @@ All governance documentation and user-facing copy must maintain an authentic, au
 
 ---
 
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-02, COV-05 and Tier T0..T2; unproven results surface as exit 3.
+
+---
+
 ## Red Flags: STOP and Restart
 - `README.md`, `MANUAL.md`, or `ARCHITECTURE.md` contains em-dashes (`—`) or marketing fluff (*seamless*, *blazingly*).
 - `MANUAL.md` dumps internal memory structs before teaching the reader how to open and query the system.
