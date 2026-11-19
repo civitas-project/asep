@@ -49,9 +49,9 @@ fn loom_sp_sc_fifo_no_loss_no_dup() {
             let ring = Arc::clone(&ring);
             let log = Arc::clone(&log);
             move || {
-                while log.lock().len() < VALUES.len() {
+                while log.lock().unwrap().len() < VALUES.len() {
                     if let Some(v) = ring.pop() {
-                        log.lock().push(v);
+                        log.lock().unwrap().push(v);
                     } else {
                         loom::thread::yield_now();
                     }
@@ -64,6 +64,6 @@ fn loom_sp_sc_fifo_no_loss_no_dup() {
 
         // Every explored schedule must reproduce the push sequence:
         // no loss, no duplication, no reordering.
-        assert_eq!(*log.lock(), VALUES);
+        assert_eq!(*log.lock().unwrap(), VALUES);
     });
 }

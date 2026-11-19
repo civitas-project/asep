@@ -41,19 +41,34 @@ fn seed_from_manifest() -> u64 {
         }
     }
     // P0 manifest.json carries the run seed written at bootstrap.
-    if let Ok(text) = fs::read_to_string(MANIFEST) {
-        if let Some(pos) = text.find("\"seed\"") {
-            let digits: String = text[pos + "\"seed\"".len()..]
-                .chars()
-                .skip_while(|c| *c != '-' && !c.is_ascii_digit())
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
-            if let Ok(seed) = digits.parse::<u64>() {
-                return seed;
+    // Cargo runs tests from `dummy/`, so walk ancestor directories for
+    // `manifest.json` (the run dir is the parent of `dummy/`).
+    if let Ok(mut dir) = env::current_dir() {
+        loop {
+            let candidate = dir.join(MANIFEST);
+            if candidate.is_file() {
+                if let Ok(text) = fs::read_to_string(&candidate) {
+                    if let Some(seed) = seed_from_text(&text) {
+                        return seed;
+                    }
+                }
+            }
+            if !dir.pop() {
+                break;
             }
         }
     }
     DEFAULT_SEED
+}
+
+fn seed_from_text(text: &str) -> Option<u64> {
+    let pos = text.find("\"seed\"")?;
+    let digits: String = text[pos + "\"seed\"".len()..]
+        .chars()
+        .skip_while(|c| *c != '-' && !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse::<u64>().ok()
 }
 
 fn yield_hook(seed: u64, counter: u64) {
