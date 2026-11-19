@@ -2,4 +2,6 @@
 # Ignore template files and adaptive skeletons containing illustrative token placeholders
 **/templates/**
 **/skeletons/**
+# Exclude test fixtures whose tags are string-literal test data (not real declarations)
+spec-engine/tests/
 

@@ -33,7 +33,7 @@ A docstring summary must state the **operational effect and systemic purpose**, 
 ### 2. Conditional Section Rules (Zero Ghost Sections)
 Include a docstring section **only when the condition holds**:
 - **Summary Line:** Mandatory on all exported items (`#![deny(missing_docs)]`).
-- **`// @impl:FR-*`:** Placed on the module or primary public domain boundary implementing a PRD requirement. Never scatter across private helpers.
+- **`// @impl\:FR-*`:** Placed on the module or primary public domain boundary implementing a PRD requirement. Never scatter across private helpers.
 - **`# Invariants`:** Included **only if** there are non-obvious domain or ordering preconditions (such as `UserKey Ascending x SeqNum Descending` or descending lock-acquisition order) not already enforced by the static type system.
 - **`# Errors`:** Included **only if** the function returns a `Result` or error union. Never write `# Errors: None` on infallible functions.
 - **`# Panics`:** Included **only if** the function can panic or abort. Never write `# Panics: None`.

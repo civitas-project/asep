@@ -21,14 +21,14 @@ All contributions follow a deterministic execution pipeline to guarantee quality
 ASEP enforces a **Dual-Branch Integration Model** (`main` + `dev`) using pure Conventional Commits:
 
 ### Permanent Base Branches
-- **`main` (Axiomatic Trunk):** Production-ready code. Protected; merges only from `release/<version>` via Release PRs. Enforces **zero `@req:*:DRAFT` tags** (`asep check --deny-drafts`) and 100% passing 5-Gate CI.
+- **`main` (Axiomatic Trunk):** Production-ready code. Protected; merges only from `release/<version>` via Release PRs. Enforces **zero `@req\:*:DRAFT` tags** (`asep check --deny-drafts`) and 100% passing 5-Gate CI.
 - **`dev` (Integration Trunk):** Active development trunk. All working branches originate from `dev` and merge back into `dev`.
 
 ### Dual-Speed Working Branches (Branch off `dev`)
 Branch names follow Conventional Commits and map to the active SDLC mode:
 - **Velocity Mode (RAD / Fast Track):**
   - **Branch:** `feat/<topic>` (example: `feat/vector-search`)
-  - **PRD Tag:** `@req:FR-[MOD]-[ID]:DRAFT`
+  - **PRD Tag:** `@req\:FR-[MOD]-[ID]:DRAFT`
   - **Commits:** `feat(draft): scaffold initial vector search`
   - **Verification:** `asep check --mode velocity` (draft tags & docstring warnings are non-blocking).
 - **Axiomatic Mode (Hardening / Rigorous Track):**
@@ -39,7 +39,7 @@ Branch names follow Conventional Commits and map to the active SDLC mode:
   - **Tests:** `test/<topic>` (example: `test/harness-rss-bounds`)
   - **Maintenance:** `chore/<topic>` (example: `chore/update-dependencies`)
   - **Release:** `release/<version>` (example: `release/1.1.0`), cut from `dev`, PR to `main`, then tag `v<version>` on `main`. Back-merge `main` into `dev` only when `git rev-list --count dev..main` is greater than 0.
-  - **In-Place Hardening:** On the existing `feat/<topic>` branch before merging into `dev`, graduate `@req:*:DRAFT` to `@req:*:MUST`, write failing TDD assertions (`// @test:FR-*`), and verify via `asep check --mode axiomatic`.
+  - **In-Place Hardening:** On the existing `feat/<topic>` branch before merging into `dev`, graduate `@req\:*:DRAFT` to `@req\:*:MUST`, write failing TDD assertions (`// @test\:FR-*`), and verify via `asep check --mode axiomatic`.
 
 ---
 
@@ -76,7 +76,7 @@ Continuous integration pipelines will automatically reject PRs that fail formatt
 Commit messages follow Conventional Commits format and reference traceability tags where applicable:
 
 ```text
-feat([scope]): [imperative action description] [@req:FR-[MODULE]-[ID]]
+feat([scope]): [imperative action description] [@req\:FR-[MODULE]-[ID]]
 
 - Explanation of operational behavior change
 - Invariant or performance implications

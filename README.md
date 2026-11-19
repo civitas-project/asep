@@ -39,7 +39,7 @@ plantuml and graphviz (for local .puml compilation to SVG vector assets)
 Strict separation between Phase 1 (Exploratory Spike), where linter and tag requirements are disabled to allow rapid hypothesis testing without bureaucracy, and Phase 2 (Production Rigor), which mandates strict Test-Driven Development (TDD), Systematic Debugging, and 5-Gate CI automated verification.
 
 ### Closed-Loop 1:1 Traceability Graph
-Every functional requirement (`@req:*:MUST`) is deterministically bound 1:1 to production code interfaces (`// @impl`) and automated test assertions (`// @test`), validated by `asep check`.
+Every functional requirement (`@req\:*:MUST`) is deterministically bound 1:1 to production code interfaces (`// @impl`) and automated test assertions (`// @test`), validated by `asep check`.
 
 ### Idiomatic Design by Contract (SWEBOK 4.4)
 Native contract documentation conventions per language ecosystem (Rust `///`, TypeScript TSDoc `@remarks`, Python Google Style `Invariants:`, Go godoc declarative statements, C++ Doxygen `@invariant`) governed by Strict Conditionality (zero phantom sections, zero signature parroting).
@@ -342,15 +342,15 @@ Engineering artifacts are interconnected using canonical tag metadata syntax:
 
 | Tag Format | File Location | Engineering Purpose | Concrete Example |
 | :--- | :--- | :--- | :--- |
-| `@req:...:MUST` | `PRD.md` | Mandatory requirement (must be closed by `@impl` and `@test`) | `\@req:FR-AUTH-01:MUST` |
-| `@req:...:SHOULD` | `PRD.md` | Optional requirement (warns in default check, fails in `--strict`) | `\@req:FR-AUTH-02:SHOULD` |
-| `@req:...:DRAFT` | `PRD.md` (Velocity Mode) | Exploratory requirement (non-blocking in Velocity Mode, denied with `--deny-drafts`) | `\@req:FR-RAD-01:DRAFT` |
-| `@design:...` | `TDD.md` / `ADR.md` | Technical design and architectural interface mapping | `\@design:FR-AUTH-01` |
-| `// @impl:...` | Source code files (`.rs`, `.ts`, `.go`, `.py`, `.cpp`) | Production domain implementation boundary | `// \@impl:FR-AUTH-01` |
-| `// @test:...` | Test files (`tests/*`) | Automated test assertion verifying requirement closure | `// \@test:FR-AUTH-01` |
-| `@adr:...` | Architecture Decision Records | Canonical index reference for architectural decisions | `\@adr:0001` |
-| `@gov:...` | Governance files | Repository governance policies and security SLAs | `\@gov:SEC-SLA` |
-| `@lim:...` | Specifications | Quantitative system limits and resource ceilings | `\@lim:LIM-MEM-01` |
-| `@criticality:...` | Specifications / ADRs | Execution criticality marker (`high` or `low`); never enters the closure graph | `\@criticality:high` |
+| `@req\:...:MUST` | `PRD.md` | Mandatory requirement (must be closed by `@impl` and `@test`) | `\@req:FR-AUTH-01:MUST` |
+| `@req\:...:SHOULD` | `PRD.md` | Optional requirement (warns in default check, fails in `--strict`) | `\@req:FR-AUTH-02:SHOULD` |
+| `@req\:...:DRAFT` | `PRD.md` (Velocity Mode) | Exploratory requirement (non-blocking in Velocity Mode, denied with `--deny-drafts`) | `\@req:FR-RAD-01:DRAFT` |
+| `@design\:...` | `TDD.md` / `ADR.md` | Technical design and architectural interface mapping | `\@design:FR-AUTH-01` |
+| `// @impl\:...` | Source code files (`.rs`, `.ts`, `.go`, `.py`, `.cpp`) | Production domain implementation boundary | `// \@impl:FR-AUTH-01` |
+| `// @test\:...` | Test files (`tests/*`) | Automated test assertion verifying requirement closure | `// \@test:FR-AUTH-01` |
+| `@adr\:...` | Architecture Decision Records | Canonical index reference for architectural decisions | `\@adr:0001` |
+| `@gov\:...` | Governance files | Repository governance policies and security SLAs | `\@gov:SEC-SLA` |
+| `@lim\:...` | Specifications | Quantitative system limits and resource ceilings | `\@lim:LIM-MEM-01` |
+| `@criticality\:...` | Specifications / ADRs | Execution criticality marker (`high` or `low`); never enters the closure graph | `\@criticality:high` |
 
 > **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1** (see `spec-engine/policy/asep-policy.toml` for canonical exit codes and coverage rules `COV-01`..`COV-06`).

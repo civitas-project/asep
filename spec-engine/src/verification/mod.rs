@@ -93,7 +93,7 @@ fn read_behavioral_passed(path: &Path) -> bool {
 }
 
 // @impl:FR-VERIFY-01
-/// Evaluates the verification status for a `GraphReport`.
+/// Computes the verification status for a `GraphReport`.
 ///
 /// - `structural` = `graph.is_closed` (no error-severity coverage violation).
 /// - `behavioral` = `behavioral.json::passed` (missing file => false + skipped).

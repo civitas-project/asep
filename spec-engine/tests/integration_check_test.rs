@@ -201,7 +201,7 @@ fn test_missing_semantic_evidence_is_unproven() {
     // CLI end-to-end: `asep check` exits 3.
     fs::write(
         root.join("spec.md"),
-        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:T2 -->\n",
+        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string() + "T2 -->\n",
     )
     .expect("write spec");
     fs::write(

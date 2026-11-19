@@ -28,7 +28,7 @@ Instead of isolating specifications in external issue trackers or wiki pages tha
 - **Living Specifications:** Requirements exist directly inside version-controlled Markdown artifacts (`docs/PRD.md`) tagged with ISO 29148 metadata (`<!-- @req:FR-ID:PRIORITY Title -->`).
 - **Closed-Loop Traceability:** Every mandatory requirement marked `MUST` must possess a 1:1 corresponding design mapping (`@design`), production interface (`// @impl`), and passing automated test (`// @test`).
 - **Dual-Track SDLC:** ASEP balances rapid exploratory prototyping with extreme programming rigor through two discrete tracks:
-  - **Track 1 (Velocity Mode):** Rapid discovery allowing in-progress exploratory requirements (`@req:*:DRAFT`) and relaxed docstring audits.
+  - **Track 1 (Velocity Mode):** Rapid discovery allowing in-progress exploratory requirements (`@req\:*:DRAFT`) and relaxed docstring audits.
   - **Track 2 (Axiomatic Mode):** Zero-tolerance release gate requiring 100% graph closure, strict Meyer Design by Contract (DbC), and `--deny-drafts` enforcement.
 
 ### 2. Five-Minute Runnable Quickstart
@@ -267,15 +267,15 @@ The `spec-engine` core consists of five decoupled subsystems:
 
 | Tag Format | File Location | Engineering Purpose |
 | :--- | :--- | :--- |
-| `<!-- \@req:...:MUST -->` | `PRD.md` | Mandatory requirement; must be closed by `@impl` and `@test` |
-| `<!-- \@req:...:SHOULD -->` | `PRD.md` | Optional requirement; warns in standard check, fails in `--strict` |
-| `<!-- \@req:...:DRAFT -->` | `PRD.md` | Exploratory prototype; non-blocking in Velocity Mode, denied by `--deny-drafts` |
-| `<!-- \@design:... -->` | `TDD.md` / `ADR.md` | Technical design and architectural interface mapping |
-| `// \@impl:...` | Source code files | Production domain implementation boundary |
-| `// \@test:...` | Test files (`tests/*`) | Automated test assertion verifying requirement closure |
-| `\@adr:...` | ADR markdown files | Architectural decision record reference index |
-| `<!-- \@gov:... -->` | Governance files | Repository governance policy markers and security SLAs |
-| `\@lim:...` | Specifications | Hard operational bounds and system capacity ceilings |
+| `<!-- \@req\:...:MUST -->` | `PRD.md` | Mandatory requirement; must be closed by `@impl` and `@test` |
+| `<!-- \@req\:...:SHOULD -->` | `PRD.md` | Optional requirement; warns in standard check, fails in `--strict` |
+| `<!-- \@req\:...:DRAFT -->` | `PRD.md` | Exploratory prototype; non-blocking in Velocity Mode, denied by `--deny-drafts` |
+| `<!-- \@design\:... -->` | `TDD.md` / `ADR.md` | Technical design and architectural interface mapping |
+| `// \@impl\:...` | Source code files | Production domain implementation boundary |
+| `// \@test\:...` | Test files (`tests/*`) | Automated test assertion verifying requirement closure |
+| `\@adr\:...` | ADR markdown files | Architectural decision record reference index |
+| `<!-- \@gov\:... -->` | Governance files | Repository governance policy markers and security SLAs |
+| `\@lim\:...` | Specifications | Hard operational bounds and system capacity ceilings |
 
 ### Appendix B: CLI Flag Reference
 
