@@ -19,6 +19,7 @@
 
 use std::env;
 use std::fs;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -69,8 +70,8 @@ fn stress_fifo_no_loss_no_dup() {
     let ring = SpscRing::new(CAPACITY);
 
     let produced = AtomicU64::new(0);
-    let consumed = AtomicU64::new(0);
-    let done = AtomicBool::new(false);
+    let consumed = Arc::new(AtomicU64::new(0));
+    let done = Arc::new(AtomicBool::new(false));
 
     // Watchdog: a hang/livelock aborts the run instead of waiting forever.
     let watchdog = thread::spawn(move || {
@@ -79,6 +80,7 @@ fn stress_fifo_no_loss_no_dup() {
         std::process::exit(124);
     });
 
+    let producer_done = done.clone();
     let producer = thread::spawn(move || {
         let mut next: u64 = 0;
         while next < ITERATIONS {
@@ -97,10 +99,12 @@ fn stress_fifo_no_loss_no_dup() {
                 }
             }
         }
-        done.store(true, Ordering::Release);
+        producer_done.store(true, Ordering::Release);
         println!("producer done");
     });
 
+    let consumer_done = done.clone();
+    let consumer_consumed = consumed.clone();
     let consumer = thread::spawn(move || {
         let mut values = Vec::with_capacity(ITERATIONS as usize);
         let mut empty_retries = 0u64;
@@ -109,12 +113,12 @@ fn stress_fifo_no_loss_no_dup() {
                 Some(value) => {
                     println!("pop {value} ok");
                     values.push(value);
-                    consumed.fetch_add(1, Ordering::Relaxed);
+                    consumer_consumed.fetch_add(1, Ordering::Relaxed);
                     empty_retries = 0;
                     yield_hook(seed, value);
                 }
                 None => {
-                    if done.load(Ordering::Acquire) {
+                    if consumer_done.load(Ordering::Acquire) {
                         empty_retries += 1;
                         if empty_retries > 16 {
                             break; // producer finished and ring is drained
