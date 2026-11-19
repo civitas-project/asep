@@ -55,8 +55,6 @@
 @rel:satisfies:FR-SKILL-DRIFT-01->FR-SKILL-01
 @rel:satisfies:FR-SKILL-CRUD-01->FR-SKILL-02
 @rel:satisfies:FR-SKILL-PORT-01->FR-SKILL-02
-@rel:satisfies:FR-VERIFY-01->FR-VERIFY-01
-@rel:satisfies:FR-VERIFY-01->FR-VERIFY-01
 @rel:satisfies:FR-VERIFY-01-B->FR-VERIFY-01
 @rel:satisfies:FR-VERIFY-01-C->FR-VERIFY-01
 @rel:satisfies:FR-CLI-INIT-01->FR-INIT-01
