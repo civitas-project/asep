@@ -179,6 +179,35 @@ fn test_repository_governance_zero_antislop_and_readme_template() {
     );
 }
 
+// @test:FR-SPEC-DOCS-02
+#[test]
+fn test_protocol_docs_reference_canonical_policy() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let docs = ["README.md", "ARCHITECTURE.md", "CONTRIBUTING.md"];
+    for doc in docs {
+        let content = fs::read_to_string(root.join(doc))
+            .unwrap_or_else(|e| panic!("{doc} must be readable: {e}"));
+        assert!(
+            content.contains("asep-policy.toml"),
+            "{} must reference canonical policy file spec-engine/policy/asep-policy.toml",
+            doc
+        );
+        assert!(
+            !contains_cov_table(&content),
+            "{} must not restate the COV table; reference spec-engine/policy/asep-policy.toml and canonical rule IDs instead",
+            doc
+        );
+    }
+}
+
+/// True when the document restates the coverage table as a markdown table
+/// row duplicating canonical policy (a second copy of spec-engine/policy/asep-policy.toml).
+fn contains_cov_table(content: &str) -> bool {
+    content
+        .lines()
+        .any(|line| line.trim_start().starts_with('|') && line.contains("COV-01"))
+}
+
 fn walkdir(dir: std::path::PathBuf) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {

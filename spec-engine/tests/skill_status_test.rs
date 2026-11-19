@@ -1,5 +1,5 @@
 use asep::pack::embedded::get_embedded_skills;
-use asep::skill::inspector::inspect_skills;
+use asep::skill::inspector::{detect_skill_drift, inspect_skills, SkillDrift};
 use asep::skill::model::SkillStatus;
 use std::fs;
 use tempfile::tempdir;
@@ -70,4 +70,39 @@ fn test_inspect_skills_identifies_builtin_modified_custom_and_missing() {
         .find(|e| e.id == missing_embedded.id)
         .expect("Missing skill should be reported");
     assert_eq!(missing_entry.status, SkillStatus::Missing);
+}
+
+// @test:FR-SKILL-DRIFT-01
+#[test]
+fn test_skill_copy_drift_detected() {
+    let tmp = tempdir().unwrap();
+    let skills_dir = tmp.path().join("skills");
+    fs::create_dir_all(&skills_dir).unwrap();
+
+    let embedded = get_embedded_skills();
+    assert!(!embedded.is_empty());
+
+    // Copy one embedded skill with a drifted line appended.
+    let target = &embedded[0];
+    let target_dir = skills_dir.join(target.directory);
+    fs::create_dir_all(&target_dir).unwrap();
+    fs::write(
+        target_dir.join("SKILL.md"),
+        format!("{}\n\n<!-- drift probe -->", target.content),
+    )
+    .unwrap();
+
+    let drifts = detect_skill_drift(&skills_dir);
+
+    // Exactly one drift: the modified installed copy.
+    assert_eq!(
+        drifts.len(),
+        1,
+        "expected exactly one drift, got {:?}",
+        drifts
+    );
+    let drift = &drifts[0];
+    assert_eq!(drift.skill_id, target.id);
+    assert_eq!(drift.path, target_dir.join("SKILL.md"));
+    assert_eq!(drift.kind, "modified");
 }

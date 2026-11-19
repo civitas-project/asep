@@ -59,6 +59,12 @@ pub enum Commands {
 
         #[arg(long, help = "Path to LCOV or coverage file to correlate with requirements")]
         coverage: Option<PathBuf>,
+
+        #[arg(
+            long,
+            help = "Print only the detailed skill drift report for installed skill copies"
+        )]
+        skills: bool,
     },
 
     /// Manage Architecture Decision Records (ADRs)

@@ -284,7 +284,7 @@ asep skill config --preference terminal
 <!-- @gov:README-CONTRIB -->
 ## Quality Gates
 
-Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request:
+Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request. Exit codes and coverage rules `COV-01`..`COV-06` are defined canonically in `spec-engine/policy/asep-policy.toml`.
 
 ```bash
 cd spec-engine
@@ -353,4 +353,4 @@ Engineering artifacts are interconnected using canonical tag metadata syntax:
 | `@lim:...` | Specifications | Quantitative system limits and resource ceilings | `\@lim:LIM-MEM-01` |
 | `@criticality:...` | Specifications / ADRs | Execution criticality marker (`high` or `low`); never enters the closure graph | `\@criticality:high` |
 
-> **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1**.
+> **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1** (see `spec-engine/policy/asep-policy.toml` for canonical exit codes and coverage rules `COV-01`..`COV-06`).

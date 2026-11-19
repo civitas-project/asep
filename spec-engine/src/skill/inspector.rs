@@ -4,9 +4,75 @@ use crate::pack::embedded::get_embedded_skills;
 use crate::skill::model::{SkillEntry, SkillStatus};
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // @impl:FR-SKILL-INSPECT-01
+// @impl:FR-SKILL-DRIFT-01
+
+/// Drift between an installed skill copy and its embedded canonical original.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillDrift {
+    pub skill_id: String,
+    pub path: PathBuf,
+    pub kind: String,
+}
+
+/// Compares every installed copy in `skills_dir` with its embedded canonical
+/// original and returns drifts for copies whose content differs.
+/// Only installed copies are compared; missing skills are not drift.
+pub fn detect_skill_drift(skills_dir: &Path) -> Vec<SkillDrift> {
+    let mut drifts = Vec::new();
+    let embedded = get_embedded_skills();
+
+    if !skills_dir.exists() || !skills_dir.is_dir() {
+        return drifts;
+    }
+
+    let Ok(dir_entries) = fs::read_dir(skills_dir) else {
+        return drifts;
+    };
+
+    for entry in dir_entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let skill_file = path.join("SKILL.md");
+        if !skill_file.is_file() {
+            continue;
+        }
+        let dir_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let Ok(content) = fs::read_to_string(&skill_file) else {
+            continue;
+        };
+        let (parsed_name, _, _, _) = extract_skill_full_metadata(&content);
+        let skill_id = if !parsed_name.is_empty() {
+            parsed_name
+        } else {
+            dir_name.clone()
+        };
+
+        let embedded_match = embedded
+            .iter()
+            .find(|e| e.id == skill_id || e.directory == dir_name);
+
+        if let Some(orig) = embedded_match {
+            if content.trim() != orig.content.trim() {
+                drifts.push(SkillDrift {
+                    skill_id: orig.id.to_string(),
+                    path: skill_file,
+                    kind: "modified".to_string(),
+                });
+            }
+        }
+    }
+
+    drifts
+}
 
 /// Extracts YAML frontmatter `name` and `description` fields from a `SKILL.md` string.
 pub fn extract_skill_metadata(content: &str) -> (String, String) {

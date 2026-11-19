@@ -9,6 +9,7 @@ use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, TierId};
+use crate::skill::inspector::detect_skill_drift;
 use crate::config::EngineConfig;
 use crate::scanner::scan_project_tags;
 use crate::scanner::ScannedTag;
@@ -17,7 +18,7 @@ use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -90,8 +91,14 @@ pub fn run() -> ExitCode {
             watch,
             coverage,
             rigor,
+            skills,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
+
+            // --skills: print only the detailed skill drift report and exit.
+            if skills {
+                return run_skill_drift_report(&target_path);
+            }
 
             let tags = match scan_project_tags(&target_path) {
                 Ok(t) => t,
@@ -153,11 +160,26 @@ pub fn run() -> ExitCode {
                 }
             };
 
+            // Structural verification: installed skill copies must match embedded canonicals.
+            let skill_drift_dirs = [
+                target_path.join(".opencode").join("skills"),
+                target_path.join(".agents").join("plugins").join("asep").join("skills"),
+            ];
+            let skill_drifts: Vec<_> = skill_drift_dirs
+                .iter()
+    .flat_map(|d| detect_skill_drift(d))
+    .collect();
+            let has_skill_drift = !skill_drifts.is_empty();
+
             let has_must_failure = !report.is_closed;
             let has_doc_contract_failure = tier != TierId::T0 && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
-            let mut passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
+            let mut passed = !has_must_failure
+                && !has_doc_contract_failure
+                && !has_strict_failure
+                && !has_deny_drafts_failure
+                && !has_skill_drift;
 
             if args.json {
                 let json_output = CheckJsonReport {
@@ -307,6 +329,22 @@ pub fn run() -> ExitCode {
                             if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                         );
                     }
+                }
+
+                if !skill_drifts.is_empty() {
+                    println!("\n{}", "❌ Skill Drift Detected:".red().bold());
+                    println!("   Installed skill copies differ from embedded canonicals:");
+                    for d in &skill_drifts {
+                        println!(
+                            "   - {} [{}] {}",
+                            d.skill_id.bold(),
+                            d.kind.red(),
+                            d.path.display()
+                        );
+                    }
+                    println!(
+                        "   Restore canonical copies with 'asep skill restore --all' or re-run the pack installer.",
+                    );
                 }
 
                 if let Some(ref cov_path) = coverage {
@@ -1517,6 +1555,32 @@ pub fn run() -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+/// Prints only the detailed skill drift report for installed skill copies
+/// under `.opencode/skills/` and `.agents/plugins/asep/skills/`.
+/// Returns exit 1 if any drift is found, otherwise exit 0.
+fn run_skill_drift_report(target: &Path) -> ExitCode {
+    let drift_dirs = [
+        target.join(".opencode").join("skills"),
+        target.join(".agents").join("plugins").join("asep").join("skills"),
+    ];
+    let mut drifts: Vec<crate::skill::inspector::SkillDrift> = drift_dirs
+        .iter()
+        .flat_map(|d| detect_skill_drift(d))
+        .collect();
+    drifts.sort_by(|a, b| a.skill_id.cmp(&b.skill_id));
+
+    if drifts.is_empty() {
+        println!("{} No skill drift detected", "✔".green());
+        return ExitCode::SUCCESS;
+    }
+
+    println!("{} Skill drift detected ({}):", "⚠".yellow(), drifts.len());
+    for d in &drifts {
+        println!("   - {} [{}] {}", d.skill_id.bold(), d.kind, d.path.display());
+    }
+    ExitCode::from(1)
 }
 
 /// Parse a duration string like `10s`, `500ms`, `2m`, `1h` (bare numbers are

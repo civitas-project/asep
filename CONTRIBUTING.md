@@ -46,7 +46,7 @@ Branch names follow Conventional Commits and map to the active SDLC mode:
 <!-- @gov:CONTRIB-VERIFY -->
 ## 3. Five-Gate Local Verification Pipeline
 
-Contributors must execute the 5-gate local verification pipeline with **Exit Code 0** before submitting a Pull Request:
+Contributors must execute the 5-gate local verification pipeline with **Exit Code 0** before submitting a Pull Request. Exit codes (0 pass, 1 fail, 2 config I/O, 3 unproven) and coverage rules `COV-01`..`COV-06` are defined canonically in `spec-engine/policy/asep-policy.toml`.
 
 ```bash
 cd spec-engine
