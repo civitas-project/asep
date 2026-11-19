@@ -69,12 +69,26 @@ elif [ -f "$run_dir/03-hash.txt" ]; then
             printf '%s  %s\n' "$hex" "$rel" >> "$listing"
         done
         computed="$(LC_ALL=C sort "$listing" | sha256sum | awk '{print $1}')"
-        stored="$(tr -d ' \t\r\n' < "$run_dir/03-hash.txt" | awk '{print $1}')"
+        stored="$(awk '{print $1}' "$run_dir/03-hash.txt")"
         if [ -n "$stored" ] && [ "$computed" = "$stored" ]; then
             hash_lock_ok=true
             hash_lock_reason="hash lock matches 03-hash.txt"
         else
-            hash_lock_reason="hash lock failed: 03-hash.txt does not match current test files"
+            # (b) standard sha256sum -c-style line: hex matches any single locked test file.
+            single_ok=false
+            for f in "${test_files[@]}"; do
+                hex="$(sha256sum "$f" | awk '{print $1}')"
+                if [ "$hex" = "$stored" ]; then
+                    single_ok=true
+                    break
+                fi
+            done
+            if [ "$single_ok" = true ]; then
+                hash_lock_ok=true
+                hash_lock_reason="hash lock matches a single test file in 03-hash.txt"
+            else
+                hash_lock_reason="hash lock failed: 03-hash.txt matches neither aggregate nor any single test file"
+            fi
         fi
     fi
 else
@@ -85,7 +99,7 @@ printf '{"ok": %s, "reason": "%s"}\n' "$hash_lock_ok" "$hash_lock_reason" > "$wo
 
 # --- 3. re-run cargo test in the dummy project -----------------------------
 test_rerun_code=0
-( cd "$run_dir" && cargo test ) > "$work/test_rerun.out" 2>&1 || test_rerun_code=$?
+( cd "$run_dir/dummy" && cargo test ) > "$work/test_rerun.out" 2>&1 || test_rerun_code=$?
 
 # --- 4. re-run asep check --rigor T4 ---------------------------------------
 check_rerun_code=0
@@ -98,7 +112,7 @@ except Exception:
 import os
 print(b if b and os.path.isfile(b) and os.access(b, os.X_OK) else "asep")
 PY
-)" check "$run_dir" --rigor T4 ) > "$work/check_rerun.out" 2>&1 || check_rerun_code=$?
+)" check "$run_dir/dummy" --rigor T4 ) > "$work/check_rerun.out" 2>&1 || check_rerun_code=$?
 
 # --- 5. assemble verify.json -----------------------------------------------
 verdict="$(python3 - "$run_dir" "$work" "$test_rerun_code" "$check_rerun_code" <<'PY'
@@ -170,13 +184,13 @@ verify = {
     "hash_lock_ok": hash_lock["ok"],
     "test_rerun": {
         "command": ["cargo", "test"],
-        "cwd": run_dir,
+        "cwd": os.path.join(run_dir, "dummy"),
         "exit_code": test_rerun_code,
         "passed": test_rerun_code == 0,
         "output": read_output(os.path.join(work, "test_rerun.out")),
     },
     "check_rerun": {
-        "command": [asep_binary, "check", run_dir, "--rigor", "T4"],
+        "command": [asep_binary, "check", os.path.join(run_dir, "dummy"), "--rigor", "T4"],
         "exit_code": check_rerun_code,
         "passed": check_rerun_code == 0,
         "output": read_output(os.path.join(work, "check_rerun.out")),

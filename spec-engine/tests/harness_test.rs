@@ -225,6 +225,172 @@ fn test_verifier_catches_missing_artifact() {
     );
 }
 
+fn write_dummy_crate(run_dir: &Path) -> PathBuf {
+    let dummy = run_dir.join("dummy");
+    std::fs::create_dir_all(dummy.join("src")).expect("dummy/src created");
+    std::fs::create_dir_all(dummy.join("tests")).expect("dummy/tests created");
+    write_artifact(
+        &dummy,
+        "Cargo.toml",
+        "[package]\nname = \"spsc_ring\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
+    write_artifact(
+        &dummy.join("src"),
+        "lib.rs",
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    );
+    write_artifact(
+        &dummy.join("tests"),
+        "ring_buffer_test.rs",
+        "#[test]\nfn placeholder() {\n    assert!(true);\n}\n",
+    );
+    // behavioral.json makes `asep check --rigor T4` exit 0 on this empty crate
+    // (T4 requires behavioral evidence; without it the check re-run fails).
+    std::fs::create_dir_all(dummy.join(".spec-engine")).expect(".spec-engine created");
+    write_artifact(
+        &dummy.join(".spec-engine"),
+        "behavioral.json",
+        r#"{"passed": true}"#,
+    );
+    dummy
+}
+
+fn manifest_with_binary(run_id: &str, asep_binary: &str) -> String {
+    serde_json::json!({
+        "schema_version": 1,
+        "run_id": run_id,
+        "seed": 1,
+        "rustc_version": "rustc 1.80.0 (stub)",
+        "asep_binary": asep_binary,
+        "created_at": "2026-11-19T00:00:00Z",
+    })
+    .to_string()
+}
+
+// Writes 03-hash.txt as a single-file sha256sum line matching the dummy test file,
+// so the verifier's hash lock accepts it (form (b)).
+fn write_single_file_hash(run_dir: &Path, dummy: &Path) {
+    let test_path = dummy.join("tests").join("ring_buffer_test.rs");
+    let output = Command::new("sha256sum")
+        .arg(test_path.as_os_str())
+        .output()
+        .expect("sha256sum available");
+    let digest = String::from_utf8(output.stdout).expect("sha256sum output is utf-8");
+    let hex = digest
+        .split_whitespace()
+        .next()
+        .expect("sha256sum line starts with the hex digest");
+    let test_rel_path = dummy.join("tests").join("ring_buffer_test.rs");
+    let rel = test_rel_path
+        .strip_prefix(run_dir)
+        .expect("dummy is under run_dir")
+        .to_str()
+        .expect("path is utf-8");
+    write_artifact(
+        run_dir,
+        "03-hash.txt",
+        &format!("{hex}  {rel}\n"),
+    );
+}
+
+#[test]
+fn test_verifier_runs_cargo_in_dummy_dir() {
+    let root = workspace_root();
+    let tmp = TempDir::new().expect("temp dir");
+    let run_dir = fake_run_dir(&tmp, "dummy-dir-run", None);
+
+    let dummy = write_dummy_crate(&run_dir);
+    write_single_file_hash(&run_dir, &dummy);
+    write_artifact(&run_dir, "manifest.json", &manifest_with_binary(
+        "dummy-dir-run",
+        root.join("target/debug/asep").to_str().expect("utf-8 path"),
+    ));
+
+    let status = run_verifier(&root, &run_dir);
+    assert_eq!(
+        status.status.code(),
+        Some(0),
+        "verifier must exit 0 when cargo test passes in dummy/"
+    );
+    let verify = read_verify_json(&run_dir);
+    let command = verify
+        .get("test_rerun")
+        .and_then(Value::as_object)
+        .and_then(|o| o.get("command"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert_eq!(
+        command,
+        serde_json::json!(["cargo", "test"]),
+        "test rerun command must be cargo test"
+    );
+    assert_eq!(
+        verify
+            .get("test_rerun")
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("cwd"))
+            .and_then(Value::as_str),
+        Some(dummy.to_str().expect("dummy path is utf-8")),
+        "cargo test must run in dummy/"
+    );
+    assert_eq!(
+        verify
+            .get("test_rerun")
+            .and_then(Value::as_object)
+            .and_then(|o| o.get("passed"))
+            .and_then(Value::as_bool),
+        Some(true),
+        "cargo test re-run must pass in dummy/"
+    );
+}
+
+#[test]
+fn test_verifier_accepts_single_file_hash_line() {
+    let root = workspace_root();
+    let tmp = TempDir::new().expect("temp dir");
+    let run_dir = fake_run_dir(&tmp, "single-hash-run", None);
+
+    let dummy = write_dummy_crate(&run_dir);
+    let test_path = dummy.join("tests").join("ring_buffer_test.rs");
+    let output = Command::new("sha256sum")
+        .arg(test_path.as_os_str())
+        .output()
+        .expect("sha256sum available");
+    let digest = String::from_utf8(output.stdout).expect("sha256sum output is utf-8");
+    let hex = digest
+        .split_whitespace()
+        .next()
+        .expect("sha256sum line starts with the hex digest");
+    // P3's 03-hash.txt is a single-file sha256sum line, not the aggregate lock.
+    write_artifact(
+        &run_dir,
+        "03-hash.txt",
+        &format!("{hex}  dummy/tests/ring_buffer_test.rs\n"),
+    );
+    write_artifact(&run_dir, "manifest.json", &manifest_with_binary(
+        "single-hash-run",
+        root.join("target/debug/asep").to_str().expect("utf-8 path"),
+    ));
+
+    let status = run_verifier(&root, &run_dir);
+    assert_eq!(
+        status.status.code(),
+        Some(0),
+        "verifier must exit 0 when a single-file sha256 line matches a locked test file"
+    );
+    let verify = read_verify_json(&run_dir);
+    assert_eq!(
+        verify.get("hash_lock_ok").and_then(Value::as_bool),
+        Some(true),
+        "hash_lock_ok must be true for a matching single-file hash line"
+    );
+    assert_eq!(
+        verify.get("pass").and_then(Value::as_bool),
+        Some(true),
+        "pass must be true when the single-file hash line matches"
+    );
+}
+
 const STRESS_FIXTURE: &str = "harness/e2e/fixtures/stress_test.rs";
 
 fn stress_fixture_source() -> String {
