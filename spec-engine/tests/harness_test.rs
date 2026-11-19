@@ -224,3 +224,39 @@ fn test_verifier_catches_missing_artifact() {
         "reasons must list the missing artifact"
     );
 }
+
+const STRESS_FIXTURE: &str = "harness/e2e/fixtures/stress_test.rs";
+
+fn stress_fixture_source() -> String {
+    let root = workspace_root();
+    let path = root.join(STRESS_FIXTURE);
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("stress fixture {STRESS_FIXTURE} must exist: {e}"))
+}
+
+#[test]
+fn test_stress_fixture_has_timeout_and_iterations() {
+    let text = stress_fixture_source();
+    assert!(
+        text.contains("100_000"),
+        "fixture must fix 100_000 operations per configuration"
+    );
+    assert!(
+        text.contains("TIMEOUT_SECS") && text.contains("30"),
+        "fixture must fix a 30-second timeout constant"
+    );
+    assert!(
+        text.contains("manifest.json"),
+        "fixture must read its seed from manifest.json"
+    );
+    assert!(
+        text.contains("yield_now()"),
+        "fixture must hook thread::yield_now() at seed-given points"
+    );
+}
+
+#[test]
+fn test_stress_fixture_has_no_unsafe() {
+    let text = stress_fixture_source();
+    assert!(!text.contains("unsafe"), "fixture must contain no `unsafe`");
+}
