@@ -274,6 +274,43 @@ fn test_check_messages_accepts_valid_dir() {
     cmd.assert().success().code(0);
 }
 
+// @test:FR-CLI-CHECK-MESSAGES-03
+#[test]
+fn test_check_messages_missing_dir_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-03");
+
+    let missing = root.join("does_not_exist");
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(&missing);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+}
+
+// @test:FR-CLI-CHECK-MESSAGES-04
+#[test]
+fn test_check_messages_wrong_messages_folder_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-04");
+
+    let messages_dir = root.join("messages");
+    fs::create_dir_all(&messages_dir).expect("create messages dir");
+
+    // Passing the messages/ folder itself (not its parent run dir) must fail closed.
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(&messages_dir);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+}
+
 // @test:FR-VERIFY-01
 #[test]
 fn test_broken_coverage_is_fail() {

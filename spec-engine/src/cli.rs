@@ -44,7 +44,7 @@ pub enum Commands {
 
         #[arg(
             long,
-            help = "Path to agent message directory to validate (envelopes + bodies)"
+            help = "Run directory containing a messages/ subdirectory with agent envelopes to validate"
         )]
         messages: Option<PathBuf>,
 

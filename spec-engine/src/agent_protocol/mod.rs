@@ -89,7 +89,6 @@ pub fn validate_dir(dir: &Path) -> Result<(), Vec<String>> {
 impl MessageStore {
     pub fn new(run_dir: &Path) -> Self {
         let messages_dir = run_dir.join(MESSAGES_DIR);
-        let _ = fs::create_dir_all(&messages_dir);
         Self {
             run_dir: run_dir.to_path_buf(),
             messages_dir,
@@ -102,7 +101,11 @@ impl MessageStore {
         let mut ids: HashSet<String> = HashSet::new();
         let mut envelopes: Vec<Envelope> = Vec::new();
         let Ok(entries) = fs::read_dir(messages_dir) else {
-            return Ok(());
+            errors.push(format!(
+                "messages directory missing or unreadable: {}",
+                messages_dir.display()
+            ));
+            return Err(errors);
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -173,6 +176,7 @@ impl MessageStore {
         };
         let body_path = self.messages_dir.join(format!("{id}.body.json"));
         let env_path = self.messages_dir.join(format!("{id}.json"));
+        fs::create_dir_all(&self.messages_dir).map_err(|e| e.to_string())?;
         write_json_atomic(&body_path, &body)?;
         write_json_atomic(&env_path, &envelope)?;
         Ok(envelope)
