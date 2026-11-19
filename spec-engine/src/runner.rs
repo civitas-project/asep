@@ -9,7 +9,9 @@ use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, TierId};
+use crate::config::EngineConfig;
 use crate::scanner::scan_project_tags;
+use crate::scanner::ScannedTag;
 use crate::verification::{evaluate, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
@@ -22,7 +24,7 @@ use std::time::Duration;
 #[derive(Serialize)]
 struct CheckJsonReport {
     passed: bool,
-    mode: String,
+    rigor: String,
     total_requirements: usize,
     must_satisfied: usize,
     must_broken: usize,
@@ -32,6 +34,44 @@ struct CheckJsonReport {
     doc_contract_violations: usize,
     traceability: crate::graph::model::TraceabilityReport,
     violations: Vec<crate::auditor::DocContractViolation>,
+}
+
+/// Resolves the rigor tier for a check run.
+///
+/// Precedence: `--rigor` CLI flag wins; otherwise `@rigor:T<n>` tag wins;
+/// otherwise `config.rigor` (parsed via `TierId::from_str`); otherwise `T1`
+/// for code scans or `T0` when the scan finds only documentation files.
+pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &EngineConfig) -> TierId {
+    // CLI override has highest precedence.
+    if let Some(r) = cli_rigor {
+        if let Ok(t) = r.parse::<TierId>() {
+            return t;
+        }
+    }
+    let has_code_file = tags.iter().any(|t| matches!(
+        t.file_path.extension().and_then(|s| s.to_str()),
+        Some("rs" | "go" | "ts" | "js" | "py" | "cpp" | "c" | "h" | "hpp" | "java" | "cs")
+    ));
+
+    let default_tier = if has_code_file { TierId::T1 } else { TierId::T0 };
+
+    // @rigor:T<n> tag wins.
+    for tag in tags {
+        if let crate::scanner::lexer::TagKind::Rigor { tier } = &tag.kind {
+            if let Ok(t) = tier.parse::<TierId>() {
+                return t;
+            }
+        }
+    }
+
+    // Config value.
+    if let Some(r) = &config.rigor {
+        if let Ok(t) = r.parse::<TierId>() {
+            return t;
+        }
+    }
+
+    default_tier
 }
 
 // @impl:FR-CLI-SCAN-01
@@ -45,32 +85,13 @@ pub fn run() -> ExitCode {
             dir,
             path,
             strict,
-            mode,
+            behavioral_report,
             deny_drafts,
             watch,
             coverage,
+            rigor,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
-            let is_velocity = mode.eq_ignore_ascii_case("velocity");
-
-            if watch {
-                if let Err(e) = crate::watch::start_watch_mode(&target_path, &mode, coverage.as_deref()) {
-                    eprintln!("{} Watch mode failed: {e}", "✖".red());
-                    return ExitCode::from(1);
-                }
-                return ExitCode::SUCCESS;
-            }
-
-            if args.verbose {
-                println!(
-                    "{} scanning {} (mode: {}, strict: {}, deny-drafts: {})",
-                    "ASEP".bold().cyan(),
-                    target_path.display(),
-                    mode,
-                    strict,
-                    deny_drafts
-                );
-            }
 
             let tags = match scan_project_tags(&target_path) {
                 Ok(t) => t,
@@ -79,14 +100,35 @@ pub fn run() -> ExitCode {
                     return e.exit_code();
                 }
             };
+            let config = crate::config::load_config(&target_path);
+            let tier = resolve_rigor(rigor.as_deref(), &tags, &config);
+
+            if watch {
+                if let Err(e) = crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref()) {
+                    eprintln!("{} Watch mode failed: {e}", "✖".red());
+                    return ExitCode::from(1);
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            if args.verbose {
+                println!(
+                    "{} scanning {} (strict: {}, deny-drafts: {})",
+                    "ASEP".bold().cyan(),
+                    target_path.display(),
+                    strict,
+                    deny_drafts
+                );
+            }
 
             let policy = load_policy();
             let graph = build_relation_graph(&tags, &policy);
             let report = build_trace_graph(&tags);
 
             let evidence_dir = target_path.join("evidence");
-            let behavioral_report = target_path.join(".spec-engine").join("behavioral.json");
-            let verification_report = evaluate(&graph, &evidence_dir, TierId::T2, &behavioral_report);
+            let behavioral_path = behavioral_report
+                .unwrap_or_else(|| target_path.join(".spec-engine").join("behavioral.json"));
+            let verification_report = evaluate(&graph, &evidence_dir, tier, &behavioral_path);
 
             // Write `.spec-engine/verification.json` for tooling and later `--rigor` wiring.
             let spec_engine_dir = target_path.join(".spec-engine");
@@ -112,7 +154,7 @@ pub fn run() -> ExitCode {
             };
 
             let has_must_failure = !report.is_closed;
-            let has_doc_contract_failure = !is_velocity && !violations.is_empty();
+            let has_doc_contract_failure = tier != TierId::T0 && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
             let mut passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
@@ -120,7 +162,7 @@ pub fn run() -> ExitCode {
             if args.json {
                 let json_output = CheckJsonReport {
                     passed,
-                    mode: mode.clone(),
+                    rigor: tier.as_str().to_string(),
                     total_requirements: report.total_requirements,
                     must_satisfied: report.must_satisfied,
                     must_broken: report.must_broken.len(),
@@ -207,7 +249,7 @@ pub fn run() -> ExitCode {
                 }
 
                 if report.draft_total > 0 {
-                    println!("\n{}", "📝 Active DRAFT Requirements (Velocity Mode):".cyan().bold());
+                    println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
                     for draft in &report.draft_pending {
                         let mut missing = Vec::new();
                         if draft.missing_design {
@@ -251,8 +293,8 @@ pub fn run() -> ExitCode {
                 }
 
                 if !violations.is_empty() {
-                    let header = if is_velocity {
-                        "⚠️ Docstring Contract Warnings (Non-blocking in Velocity Mode):".yellow().bold()
+                    let header = if tier == TierId::T0 {
+                        "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold()
                     } else {
                         "❌ Docstring Contract Violations:".red().bold()
                     };
@@ -262,7 +304,7 @@ pub fn run() -> ExitCode {
                             "   - {}:{}: {}",
                             v.file_path.display(),
                             v.line_number,
-                            if is_velocity { v.message.yellow() } else { v.message.red() }
+                            if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                         );
                     }
                 }
@@ -286,7 +328,7 @@ pub fn run() -> ExitCode {
                                     item.total_lines
                                 );
                             }
-                            if !cov_rep.all_passed && !is_velocity {
+                            if !cov_rep.all_passed && tier != TierId::T0 {
                                 passed = false;
                             }
                         }
@@ -301,8 +343,8 @@ pub fn run() -> ExitCode {
                     "------------------------------------------------------------".dimmed()
                 );
                 println!(
-                    "Summary (mode: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
-                    if is_velocity { "velocity".cyan().bold() } else { "axiomatic".green().bold() },
+                    "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
+                    tier.as_str().cyan().bold(),
                     report.must_satisfied.to_string().green().bold(),
                     report.must_broken.len().to_string().red().bold(),
                     report.should_pending.len().to_string().yellow().bold(),
@@ -365,7 +407,7 @@ pub fn run() -> ExitCode {
             path,
             gate,
             skip,
-            mode,
+            rigor,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
             let parsed_skip = skip
@@ -379,7 +421,7 @@ pub fn run() -> ExitCode {
             let opts = crate::ci::CiOptions {
                 gate,
                 skip: parsed_skip,
-                mode,
+                rigor: rigor.unwrap_or_else(|| "T1".to_string()),
             };
 
             let report = crate::ci::run_ci_pipeline(&target_path, &opts);
@@ -425,7 +467,9 @@ pub fn run() -> ExitCode {
                 }
             }
 
-            if report.all_passed() {
+            if report.unproven {
+                ExitCode::from(3)
+            } else if report.all_passed() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::from(1)

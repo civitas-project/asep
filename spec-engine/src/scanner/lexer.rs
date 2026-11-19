@@ -21,6 +21,7 @@ pub enum TagKind {
     Adr { id: String },
     Limit { id: String },
     Criticality { level: String },
+    Rigor { tier: String },
     Rel {
         kind: EdgeKind,
         from: String,
@@ -37,7 +38,7 @@ pub struct TagOccurrence {
 }
 
 static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"@(req|design|impl|test|token|gov|adr|lim|criticality):([A-Za-z0-9_./-]+)(?::([A-Za-z0-9_./-]+))?")
+    Regex::new(r"@(req|design|impl|test|token|gov|adr|lim|criticality|rigor):([A-Za-z0-9_./-]+)(?::([A-Za-z0-9_./-]+))?")
         .expect("valid tag regex")
 });
 
@@ -100,6 +101,7 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
             "adr" => TagKind::Adr { id: part1.to_string() },
             "lim" => TagKind::Limit { id: part1.to_string() },
             "criticality" => TagKind::Criticality { level: part1.to_string() },
+            "rigor" => TagKind::Rigor { tier: part1.to_string() },
             _ => continue,
         };
 

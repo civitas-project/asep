@@ -1,5 +1,6 @@
 //! Watch mode daemon: live SDLC validation and traceability re-evaluation.
 
+use crate::policy::TierId;
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::mpsc::channel;
@@ -8,7 +9,7 @@ use std::time::{Duration, Instant};
 /// Starts watching the target project directory and re-validates on changes.
 pub fn start_watch_mode(
     dir: &Path,
-    mode: &str,
+    tier: TierId,
     coverage_path: Option<&Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (tx, rx) = channel();
@@ -27,13 +28,13 @@ pub fn start_watch_mode(
     watcher.watch(dir, RecursiveMode::Recursive)?;
 
     println!(
-        "\n👀 [ASEP Watch Mode] Monitoring '{}' (SDLC mode: {}). Press Ctrl+C to exit.",
+        "\n👀 [ASEP Watch Mode] Monitoring '{}' (rigor tier: {}). Press Ctrl+C to exit.",
         dir.display(),
-        mode
+        tier.as_str()
     );
 
     // Initial run
-    run_cycle(dir, mode, coverage_path);
+    run_cycle(dir, tier, coverage_path);
 
     let mut last_run = Instant::now();
     while rx.recv().is_ok() {
@@ -48,13 +49,13 @@ pub fn start_watch_mode(
 
         print!("\x1B[2J\x1B[1;1H"); // Clear screen
         println!("🔄 Changes detected. Re-evaluating SDLC traceability...");
-        run_cycle(dir, mode, coverage_path);
+        run_cycle(dir, tier, coverage_path);
     }
 
     Ok(())
 }
 
-fn run_cycle(dir: &Path, _mode: &str, coverage_path: Option<&Path>) {
+fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
     let start = Instant::now();
     match crate::scanner::scan_project_tags(dir) {
         Ok(tags) => {

@@ -98,15 +98,15 @@ fn test_check_velocity_mode_and_deny_drafts() {
     let mut cmd_velocity = Command::cargo_bin("asep").expect("binary exists");
     cmd_velocity
         .arg("check")
-        .arg("--mode")
-        .arg("velocity")
+        .arg("--rigor")
+        .arg("T0")
         .arg(root);
     cmd_velocity
         .assert()
         .success()
         .code(0)
         .stdout(predicate::str::contains("DRAFT"))
-        .stdout(predicate::str::contains("velocity"));
+        .stdout(predicate::str::contains("T0"));
 
     // 2. --deny-drafts fails on production trunk
     let mut cmd_deny = Command::cargo_bin("asep").expect("binary exists");
@@ -201,7 +201,7 @@ fn test_missing_semantic_evidence_is_unproven() {
     // CLI end-to-end: `asep check` exits 3.
     fs::write(
         root.join("spec.md"),
-        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n",
+        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:T2 -->\n",
     )
     .expect("write spec");
     fs::write(

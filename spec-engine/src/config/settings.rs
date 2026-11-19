@@ -50,6 +50,9 @@ impl Default for EditorSettings {
 pub struct EngineConfig {
     #[serde(default)]
     pub editor: EditorSettings,
+
+    #[serde(default)]
+    pub rigor: Option<String>,
 }
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).

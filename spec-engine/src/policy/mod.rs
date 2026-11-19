@@ -26,6 +26,33 @@ pub enum TierId {
     T4,
 }
 
+impl TierId {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TierId::T0 => "T0",
+            TierId::T1 => "T1",
+            TierId::T2 => "T2",
+            TierId::T3 => "T3",
+            TierId::T4 => "T4",
+        }
+    }
+}
+
+impl std::str::FromStr for TierId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "T0" => Ok(TierId::T0),
+            "T1" => Ok(TierId::T1),
+            "T2" => Ok(TierId::T2),
+            "T3" => Ok(TierId::T3),
+            "T4" => Ok(TierId::T4),
+            other => Err(format!("invalid rigor tier '{other}'; expected T0..T4")),
+        }
+    }
+}
+
 /// Rule severity.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum Severity {
