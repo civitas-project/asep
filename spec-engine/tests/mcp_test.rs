@@ -1,5 +1,7 @@
 use asep::mcp::server::process_jsonrpc_request;
-use std::path::PathBuf;
+use asep::mcp::tools::execute_tool;
+use serde_json::json;
+use std::path::{Path, PathBuf};
 
 // @test:FR-MCP-PROTO-01
 #[test]
@@ -125,4 +127,100 @@ fn test_mcp_tools_call_srcdump() {
         assert!(entry["path"].is_string());
         assert!(entry["lang"].is_string());
     }
+}
+
+// @test:FR-MCP-PROTO-08
+#[test]
+fn test_agent_tools_do_not_return_payload() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let body = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir.to_str().unwrap(),
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": body,
+        }),
+        Path::new(""),
+    )
+    .expect("asep_agent_send must succeed");
+
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert!(val["id"].is_string(), "send response must include id");
+    assert!(val["path"].is_string(), "send response must include path");
+    let path = val["path"].as_str().unwrap();
+    assert!(path.starts_with("messages/") && path.ends_with(".json"));
+    assert!(
+        !val.as_object().unwrap().contains_key("body"),
+        "send must not return body payload"
+    );
+}
+
+// @test:FR-MCP-PROTO-09
+#[test]
+fn test_agent_recv_filters_by_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let run_dir_s = run_dir.to_str().unwrap().to_string();
+    let dispatch = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+    let ruling = json!({
+        "finding": "ok",
+        "decision": "approve",
+        "cost_if_wrong": 0
+    });
+
+    execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": dispatch,
+        }),
+        Path::new(""),
+    )
+    .expect("send to executor must succeed");
+    execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "judge",
+            "kind": "RULING",
+            "body": ruling,
+        }),
+        Path::new(""),
+    )
+    .expect("send to judge must succeed");
+
+    let res = execute_tool(
+        "asep_agent_recv",
+        &json!({"run_dir": run_dir_s, "agent": "executor"}),
+        Path::new(""),
+    )
+    .expect("recv must succeed");
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let list: Vec<serde_json::Value> = serde_json::from_str(text).expect("recv list is JSON");
+    assert_eq!(list.len(), 1, "executor inbox must exclude messages to other agents");
+    assert!(list[0]["id"].is_string());
+    assert!(list[0]["path"].is_string());
+    assert!(
+        !list[0].as_object().unwrap().contains_key("body"),
+        "recv must not return body payload"
+    );
 }
