@@ -26,6 +26,12 @@ Each phase is dispatched in that order with a prompt containing the brief path a
 
 A `FAIL` verdict from the judge, or a failed re-run of `cargo test` / `asep check` by the harness, stops the run. No further phase runs until the finding is resolved: maximum two repair rounds per finding, after which the finding is parked with a written decision. A parked finding does not fail the run, but the final report must state it explicitly.
 
+## Phase prompts and judge contract
+
+One prompt per phase lives in `harness/e2e/prompts/`: `p1-requirements.md`, `p2-design.md`, `p3-tdd.md`, `p4-implement.md`, `p5-bug-hunt.md`, `p6-optimization.md`, `p7-final.md`. Each prompt names the artifact to write and the verification command. `p3-tdd.md` locks the tests via `03-hash.txt`.
+
+The judge contract is `harness/e2e/prompts/judge.md`. The judge writes one verdict JSON per evaluated phase with exactly the keys `verdict`, `blocking`, `non_blocking`, `missing_evidence`, `next_action`. The judge must explicitly state it re-ran `cargo test` and `asep check` (observed exit codes and output excerpts); executor logs alone are not evidence. The harness re-run is authoritative: judge PASS plus a failed harness re-run of `cargo test` / `asep check` equals overall FAIL.
+
 ## P0 entry point
 
 `harness/e2e/scripts/new-run.sh <run-id>` [`RUN_ROOT=<dir>`] — prints the run directory path and writes `manifest.json` (see script header for field contract).
