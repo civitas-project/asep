@@ -22,6 +22,80 @@ fn verdict_body() -> serde_json::Value {
     })
 }
 
+fn task_report_body(concerns: serde_json::Value) -> serde_json::Value {
+    json!({
+        "status": "done",
+        "commits": ["abc123"],
+        "tests": {"exit_code": 0, "ref": "tests/x.test@sha256:deadbeef"},
+        "concerns": concerns
+    })
+}
+
+#[test]
+fn test_task_report_requires_concerns() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+    let mut no_concerns = task_report_body(json!([]));
+    no_concerns.as_object_mut().unwrap().remove("concerns");
+    assert!(store
+        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None)
+        .is_err());
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskReport,
+            task_report_body(json!([])),
+            None
+        )
+        .is_ok());
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskReport,
+            task_report_body(json!(["draft spec"])),
+            None
+        )
+        .is_ok());
+}
+
+#[test]
+fn test_lead_can_reject_own_sent_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+    let envelope = store
+        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None)
+        .unwrap();
+    // Lead may reject a message it sent.
+    store.ack(Role::Lead, &envelope.id, "rejected").unwrap();
+    let env: serde_json::Value = serde_json::from_str(&fs::read_to_string(
+        dir.path().join("messages").join(format!("{}.json", envelope.id)),
+    )
+    .unwrap())
+    .unwrap();
+    assert_eq!(env["status"], "rejected");
+    // Non-recipient cannot ack lead's message.
+    assert!(store.ack(Role::Judge, &envelope.id, "accepted").is_err());
+    // Lead may not ack its own message with a non-rejected status.
+    let other = store
+        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None)
+        .unwrap();
+    assert!(store.ack(Role::Lead, &other.id, "accepted").is_err());
+    assert!(store.ack(Role::Lead, &other.id, "done").is_err());
+    // Lead cannot reject a message it did not send (and is not recipient of).
+    let not_own = store
+        .send(
+            Role::Executor,
+            Role::Judge,
+            Kind::TaskReport,
+            task_report_body(json!([])),
+            None,
+        )
+        .unwrap();
+    assert!(store.ack(Role::Lead, &not_own.id, "rejected").is_err());
+}
+
 #[test]
 fn test_send_writes_envelope_without_body_in_summary() {
     let dir = tempfile::tempdir().unwrap();

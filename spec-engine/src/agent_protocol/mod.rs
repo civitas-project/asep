@@ -228,7 +228,10 @@ impl MessageStore {
         }
         let env_path = self.messages_dir.join(format!("{id}.json"));
         let mut envelope = read_envelope_file(&env_path)?;
-        if envelope.to != agent {
+        let is_recipient = envelope.to == agent;
+        let is_lead_rejecting_own =
+            agent == Role::Lead && envelope.from == Role::Lead && status == "rejected";
+        if !is_recipient && !is_lead_rejecting_own {
             return Err(format!("only recipient {} may ack {}", envelope.to.as_str(), id));
         }
         envelope.status = status.to_string();
@@ -305,7 +308,10 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
         ),
         Kind::Ruling => require_keys(obj, &["finding", "decision", "cost_if_wrong"]),
         Kind::TaskReport => {
-            require_keys(obj, &["status", "commits", "tests"])?;
+            require_keys(obj, &["status", "commits", "tests", "concerns"])?;
+            obj.get("concerns")
+                .and_then(Value::as_array)
+                .ok_or_else(|| "concerns must be an array".to_string())?;
             let tests = obj
                 .get("tests")
                 .and_then(Value::as_object)
