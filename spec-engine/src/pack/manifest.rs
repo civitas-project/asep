@@ -195,6 +195,22 @@ fn explorer_tool_allows() -> Vec<serde_json::Value> {
     ]
 }
 
+/// Read-only agents (judge, explorer) must stay read-only regardless of the
+/// capability profile. The profile is a ceiling, not a floor, for them, so
+/// these deny rules are appended AFTER the capability allows (last match
+/// wins), overriding any capability-derived allow for write/shell/web/mcp.
+fn read_only_action_denies() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "edit", "resource": "*", "effect": "deny"}),
+        json!({"action": "write", "resource": "*", "effect": "deny"}),
+        json!({"action": "shell", "resource": "*", "effect": "deny"}),
+        json!({"action": "subagent", "resource": "*", "effect": "deny"}),
+        json!({"action": "webfetch", "resource": "*", "effect": "deny"}),
+        json!({"action": "websearch", "resource": "*", "effect": "deny"}),
+        json!({"action": "mcp", "resource": "*", "effect": "deny"}),
+    ]
+}
+
 /// Installs default Lead-Judge-Executor agent presets into `opencode.json`
 /// without clobbering pre-existing top-level keys or pre-existing agents.
 /// Permission rules are derived from `profile`: each capability ceiling
@@ -308,7 +324,10 @@ Rules:
 {"verdict":"PASS|FAIL","blocking":[{"file":"...","line":0,"issue":"...","evidence":"..."}],"non_blocking":[],"missing_evidence":[],"next_action":"..."}
 
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
-            "permissions": agent_permissions(profile, &read_only_env_denies())
+            "permissions": agent_permissions(
+                profile,
+                &[read_only_env_denies(), read_only_action_denies()].concat()
+            )
         },
         "explorer": {
             "description": "Fast explorer subagent for codebase exploration.",
@@ -328,7 +347,12 @@ Working limits:
 Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             "permissions": agent_permissions(
                 profile,
-                &[read_only_env_denies(), explorer_tool_allows()].concat()
+                &[
+                    read_only_env_denies(),
+                    explorer_tool_allows(),
+                    read_only_action_denies(),
+                ]
+                .concat()
             )
         }
     });
