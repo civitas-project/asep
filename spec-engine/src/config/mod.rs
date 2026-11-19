@@ -3,5 +3,6 @@
 pub mod settings;
 
 pub use settings::{
-    get_config_path, load_config, save_config, EditorPreference, EditorSettings, EngineConfig,
+    get_config_path, load_config, save_config, CapabilityProfile, EditorPreference, EditorSettings,
+    EngineConfig,
 };

@@ -35,9 +35,9 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
 
 | Intent / Trigger Situation | Primary Skill | Supporting Skills | First Mandatory Action |
 | :--- | :--- | :--- | :--- |
-| **Rapid prototyping, PoC, or mass feature exploration** | `asep:system-architecture` | `asep:engineering-specs` | Enter **Velocity Mode (Track 1 / RAD)** on branch `feat/<topic>`. Scaffold PRD with `@req:*:DRAFT` and code with `// @impl:*`. Run `asep check --mode velocity`. |
-| **Graduating a draft feature to production ready** | `asep:system-architecture` | `asep:code-contracts`, `asep:engineering-specs` | Enter **Graduation Gate**: upgrade `@req:*:DRAFT` to `@req:*:MUST`, write failing automated unit tests (`@test`), audit DbC contracts, and verify via `asep check --mode axiomatic`. |
-| **Defined feature, behavior change, or vertical slice implementation** | `asep:system-architecture` | `asep:engineering-specs`, `asep:code-contracts` | Enter **Axiomatic Mode (Track 2 / Production TDD)**. Update `@req:*:MUST` and `@design` slice, write failing `@test` (`RED`), then minimal `@impl` (`GREEN`). |
+| **Rapid prototyping, PoC, or mass feature exploration** | `asep:system-architecture` | `asep:engineering-specs` | Enter **Velocity Mode (Track 1 / RAD)** on branch `feat/<topic>`. Scaffold PRD with `@req\:*:DRAFT` and code with `// \@impl:*`. Run `asep check --mode velocity`. |
+| **Graduating a draft feature to production ready** | `asep:system-architecture` | `asep:code-contracts`, `asep:engineering-specs` | Enter **Graduation Gate**: upgrade `@req\:*:DRAFT` to `@req\:*:MUST`, write failing automated unit tests (`@test`), audit DbC contracts, and verify via `asep check --mode axiomatic`. |
+| **Defined feature, behavior change, or vertical slice implementation** | `asep:system-architecture` | `asep:engineering-specs`, `asep:code-contracts` | Enter **Axiomatic Mode (Track 2 / Production TDD)**. Update `@req\:*:MUST` and `@design` slice, write failing `@test` (`RED`), then minimal `@impl` (`GREEN`). |
 | **Core invariant, lock-free concurrency, or state machine (`@criticality:high`)** | `asep:system-architecture` | `asep:engineering-specs` | Author formal model in `docs/invariants/*.als` (Alloy) or `*.tla` (TLA+) and verify zero counterexamples (`UNSAT`). |
 | **Bug, test failure, crash, corruption, or unexpected behavior** | `asep:system-architecture` | `asep:code-contracts` | Enter **Systematic Debugging** on branch `fix/<topic>`. Isolate root cause, write a failing regression test reproducing the bug (`RED`), then fix (`GREEN`). |
 | **Authoring or auditing PRDs, TDDs, ADRs, or UML/Mermaid diagrams** | `asep:engineering-specs` | `asep:system-architecture`, `asep:design-tokens` | Load document skeleton, enforce ISO 29148 active-voice grammar, and compile diagrams exclusively to vector `.svg`. |
@@ -93,14 +93,14 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
           ▼
      PHASE 2A: PRODUCTION TDD (`asep:system-architecture`)
      ├── Step 1: Vertical Slice Spec (`asep:engineering-specs`)
-     │           • Add/update `@req:FR-*:MUST` in `docs/PRD.md`
-     │           • Add/update `@design:FR-*` in `docs/TDD.md` & `docs/adr/`
+     │           • Add/update `@req\:FR-*:MUST` in `docs/PRD.md`
+     │           • Add/update `@design\:FR-*` in `docs/TDD.md` & `docs/adr/`
      │           • If `@criticality:high`, verify Alloy (`.als`) / TLA+ proof
      ├── Step 2: TDD RED
-     │           • Write failing test with `// @test:FR-*`
+     │           • Write failing test with `// @test\:FR-*`
      │           • Run test runner to confirm expected failure
      ├── Step 3: TDD GREEN
-     │           • Implement minimal production logic with `// @impl:FR-*`
+     │           • Implement minimal production logic with `// @impl\:FR-*`
      │           • Enforce `#![deny(unsafe_code)]` outside hardware quarantine
      ├── Step 4: TDD REFACTOR & CONTRACTS
      │           • Clean up duplication
@@ -129,7 +129,7 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
 2. **Test-First (TDD) is Non-Negotiable in Phase 2:**
    - Every production feature or bug fix requires observing a failing automated test (`RED`) before writing or modifying the implementation (`GREEN`).
 3. **1:1 Symmetrical Traceability Closure:**
-   - Every `@req:FR-*:MUST` in `docs/PRD.md` must link to `@design:FR-*` in `docs/TDD.md`, `// @impl:FR-*` in production code, and `// @test:FR-*` in automated tests, verified by `asep_check trace` (`trace_manifest.json`).
+   - Every `@req\:FR-*:MUST` in `docs/PRD.md` must link to `@design\:FR-*` in `docs/TDD.md`, `// @impl\:FR-*` in production code, and `// @test\:FR-*` in automated tests, verified by `asep_check trace` (`trace_manifest.json`).
 4. **Zero-Slop Craftsmanship Across Code and Prose:**
    - **Prose (`asep:engineering-specs` & `asep:repository-governance`):** Zero em-dashes, zero poetic AI metaphors (*tapestry, beacon, delve*), zero unquantified buzzwords (*seamless, blazingly fast*), zero single-line colon bullets (`- **Title**: text`); use `<br>` for multi-line list separation.
    - **Code (`asep:code-contracts`):** Zero signature-parroting comments, zero phantom docstring sections (`# Panics: None`).
@@ -247,5 +247,13 @@ Cycle: lead plans, executor implements, judge verifies, repeat until every slice
 - `executor`: description "Fast coding executor in a bounded executor-judge pipeline.", mode "subagent"
 - `judge`: description "Read-only reviewer verifying executor output against task, diff, and test evidence.", mode "subagent"
 - `explorer`: description "Fast explorer subagent for codebase exploration.", mode "subagent"
+
+---
+
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-01`..`COV-06 (all coverage rules) and Tier T0..T4 (all tiers); unproven results surface as exit 3.
 
 Existing agents and top-level keys in `opencode.json` are preserved; missing defaults are inserted only when absent.

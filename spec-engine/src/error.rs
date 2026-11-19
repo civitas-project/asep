@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 use thiserror::Error;
 
-// @design:FR-CLI-GRAPH-01
+// @design:FR-CLI-GRAPH-01-B
 #[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum AsepError {
@@ -25,10 +25,13 @@ pub enum AsepError {
 
     #[error("Diagram compilation failure: {0}")]
     Diagram(String),
+
+    #[error("Verification unproven: {0} capability or evidence missing")]
+    Unproven(usize),
 }
 
 impl AsepError {
-    // @impl:FR-CLI-GRAPH-02
+    // @impl:FR-CLI-GRAPH-02-A
     #[allow(dead_code)]
     /// Maps domain error to standardized process exit codes.
     pub fn exit_code(&self) -> ExitCode {
@@ -39,6 +42,7 @@ impl AsepError {
             | Self::Regex(_)
             | Self::InvalidState(_)
             | Self::Diagram(_) => ExitCode::from(2),
+            Self::Unproven(_) => ExitCode::from(3),
         }
     }
 }

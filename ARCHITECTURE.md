@@ -77,7 +77,7 @@ The following architectural constraints are strictly enforced:
 2. **Zero Inward CLI Coupling:** Protocol documentation must remain valid independently of whether `asep` is executed via Rust cargo, native binary release, or Dart runner distribution.
 3. **Traceability Closure:** Production logic cannot be merged with broken `@req:*:MUST` gates. Every required domain interface must have an `@impl` and `@test` counterpart.
 4. **Dual-Mode SDLC Invariant:** Features in Velocity Mode (RAD) operate on `@req:*:DRAFT` tags on development branches. Merging `dev` into `main` requires complete in-place hardening with zero `@req:*:DRAFT` tags (enforced by `asep check --deny-drafts`).
-5. **Clean Exit Codes:** CLI tools return Exit Code 0 on clean pass, Exit Code 1 on validation failure, and Exit Code 2 on configuration or I/O failure.
+5. **Clean Exit Codes:** Exit codes (0 pass, 1 fail, 2 config I/O, 3 unproven) and coverage rules `COV-01`..`COV-06` are defined canonically in `spec-engine/policy/asep-policy.toml`; artifacts reference rules by ID and never restate them.
 
 ### Concurrency & Parallelism Guidelines (ARCH-11)
 

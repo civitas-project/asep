@@ -5,9 +5,9 @@ use crate::mcp::tools::{execute_tool, get_tools_list};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
-// @impl:FR-MCP-PROTO-01
-// @impl:FR-MCP-PROTO-02
-// @impl:FR-MCP-PROTO-03
+// @impl:FR-MCP-PROTO-01-B @impl:FR-MCP-01
+// @impl:FR-MCP-PROTO-02-C
+// @impl:FR-MCP-PROTO-03-B
 // @impl:FR-MCP-PROTO-04
 
 /// Processes a single JSON-RPC string message and returns the response string if one is required.

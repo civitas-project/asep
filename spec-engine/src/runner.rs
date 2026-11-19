@@ -2,24 +2,30 @@ use crate::adr::create_new_adr;
 use crate::auditor::audit_project_docstrings;
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
 use crate::diagram::render_plantuml_diagrams;
-use crate::graph::builder::build_trace_graph;
+use crate::graph::builder::{build_relation_graph, build_trace_graph};
 use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
+use crate::policy::{load_policy, TierId};
+use crate::skill::inspector::detect_skill_drift;
+use crate::config::EngineConfig;
 use crate::scanner::scan_project_tags;
+use crate::scanner::ScannedTag;
+use crate::verification::{evaluate, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
 #[derive(Serialize)]
 struct CheckJsonReport {
     passed: bool,
-    mode: String,
+    rigor: String,
     total_requirements: usize,
     must_satisfied: usize,
     must_broken: usize,
@@ -31,8 +37,46 @@ struct CheckJsonReport {
     violations: Vec<crate::auditor::DocContractViolation>,
 }
 
-// @impl:FR-CLI-SCAN-01
-// @impl:FR-CLI-CHECK-01
+/// Resolves the rigor tier for a check run.
+///
+/// Precedence: `--rigor` CLI flag wins; otherwise `@rigor:T<n>` tag wins;
+/// otherwise `config.rigor` (parsed via `TierId::from_str`); otherwise `T1`
+/// for code scans or `T0` when the scan finds only documentation files.
+pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &EngineConfig) -> TierId {
+    // CLI override has highest precedence.
+    if let Some(r) = cli_rigor {
+        if let Ok(t) = r.parse::<TierId>() {
+            return t;
+        }
+    }
+    let has_code_file = tags.iter().any(|t| matches!(
+        t.file_path.extension().and_then(|s| s.to_str()),
+        Some("rs" | "go" | "ts" | "js" | "py" | "cpp" | "c" | "h" | "hpp" | "java" | "cs")
+    ));
+
+    let default_tier = if has_code_file { TierId::T1 } else { TierId::T0 };
+
+    // @rigor:T<n> tag wins.
+    for tag in tags {
+        if let crate::scanner::lexer::TagKind::Rigor { tier } = &tag.kind {
+            if let Ok(t) = tier.parse::<TierId>() {
+                return t;
+            }
+        }
+    }
+
+    // Config value.
+    if let Some(r) = &config.rigor {
+        if let Ok(t) = r.parse::<TierId>() {
+            return t;
+        }
+    }
+
+    default_tier
+}
+
+// @impl:FR-CLI-SCAN-01-B
+// @impl:FR-CLI-CHECK-01 @impl:FR-CLI-02
 // @impl:FR-CLI-CHECK-02
 pub fn run() -> ExitCode {
     let args = Cli::parse();
@@ -42,31 +86,18 @@ pub fn run() -> ExitCode {
             dir,
             path,
             strict,
-            mode,
+            behavioral_report,
             deny_drafts,
             watch,
             coverage,
+            rigor,
+            skills,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
-            let is_velocity = mode.eq_ignore_ascii_case("velocity");
 
-            if watch {
-                if let Err(e) = crate::watch::start_watch_mode(&target_path, &mode, coverage.as_deref()) {
-                    eprintln!("{} Watch mode failed: {e}", "✖".red());
-                    return ExitCode::from(1);
-                }
-                return ExitCode::SUCCESS;
-            }
-
-            if args.verbose {
-                println!(
-                    "{} scanning {} (mode: {}, strict: {}, deny-drafts: {})",
-                    "ASEP".bold().cyan(),
-                    target_path.display(),
-                    mode,
-                    strict,
-                    deny_drafts
-                );
+            // --skills: print only the detailed skill drift report and exit.
+            if skills {
+                return run_skill_drift_report(&target_path);
             }
 
             let tags = match scan_project_tags(&target_path) {
@@ -76,8 +107,50 @@ pub fn run() -> ExitCode {
                     return e.exit_code();
                 }
             };
+            let config = crate::config::load_config(&target_path);
+            let tier = resolve_rigor(rigor.as_deref(), &tags, &config);
 
+            if watch {
+                if let Err(e) = crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref()) {
+                    eprintln!("{} Watch mode failed: {e}", "✖".red());
+                    return ExitCode::from(1);
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            if args.verbose {
+                println!(
+                    "{} scanning {} (strict: {}, deny-drafts: {})",
+                    "ASEP".bold().cyan(),
+                    target_path.display(),
+                    strict,
+                    deny_drafts
+                );
+            }
+
+            let policy = load_policy();
+            let graph = build_relation_graph(&tags, &policy);
             let report = build_trace_graph(&tags);
+
+            let evidence_dir = target_path.join("evidence");
+            let behavioral_path = behavioral_report
+                .unwrap_or_else(|| target_path.join(".spec-engine").join("behavioral.json"));
+            let verification_report = evaluate(&graph, &evidence_dir, tier, &behavioral_path);
+
+            // Write `.spec-engine/verification.json` for tooling and later `--rigor` wiring.
+            let spec_engine_dir = target_path.join(".spec-engine");
+            let verification_out = spec_engine_dir.join("verification.json");
+            let json = match serde_json::to_string_pretty(&verification_report) {
+                Ok(j) => j,
+                Err(e) => {
+                    eprintln!("{} Failed to serialize verification report: {e}", "✖".red());
+                    return ExitCode::from(2);
+                }
+            };
+            if let Err(e) = fs::create_dir_all(&spec_engine_dir).and_then(|_| fs::write(&verification_out, &json)) {
+                eprintln!("{} Failed to write verification report: {e}", "✖".red());
+                return ExitCode::from(2);
+            }
 
             let violations = match audit_project_docstrings(&target_path) {
                 Ok(v) => v,
@@ -87,16 +160,31 @@ pub fn run() -> ExitCode {
                 }
             };
 
+            // Structural verification: installed skill copies must match embedded canonicals.
+            let skill_drift_dirs = [
+                target_path.join(".opencode").join("skills"),
+                target_path.join(".agents").join("plugins").join("asep").join("skills"),
+            ];
+            let skill_drifts: Vec<_> = skill_drift_dirs
+                .iter()
+    .flat_map(|d| detect_skill_drift(d))
+    .collect();
+            let has_skill_drift = !skill_drifts.is_empty();
+
             let has_must_failure = !report.is_closed;
-            let has_doc_contract_failure = !is_velocity && !violations.is_empty();
+            let has_doc_contract_failure = tier != TierId::T0 && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
-            let mut passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
+            let mut passed = !has_must_failure
+                && !has_doc_contract_failure
+                && !has_strict_failure
+                && !has_deny_drafts_failure
+                && !has_skill_drift;
 
             if args.json {
                 let json_output = CheckJsonReport {
                     passed,
-                    mode: mode.clone(),
+                    rigor: tier.as_str().to_string(),
                     total_requirements: report.total_requirements,
                     must_satisfied: report.must_satisfied,
                     must_broken: report.must_broken.len(),
@@ -183,7 +271,7 @@ pub fn run() -> ExitCode {
                 }
 
                 if report.draft_total > 0 {
-                    println!("\n{}", "📝 Active DRAFT Requirements (Velocity Mode):".cyan().bold());
+                    println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
                     for draft in &report.draft_pending {
                         let mut missing = Vec::new();
                         if draft.missing_design {
@@ -227,8 +315,8 @@ pub fn run() -> ExitCode {
                 }
 
                 if !violations.is_empty() {
-                    let header = if is_velocity {
-                        "⚠️ Docstring Contract Warnings (Non-blocking in Velocity Mode):".yellow().bold()
+                    let header = if tier == TierId::T0 {
+                        "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold()
                     } else {
                         "❌ Docstring Contract Violations:".red().bold()
                     };
@@ -238,9 +326,25 @@ pub fn run() -> ExitCode {
                             "   - {}:{}: {}",
                             v.file_path.display(),
                             v.line_number,
-                            if is_velocity { v.message.yellow() } else { v.message.red() }
+                            if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                         );
                     }
+                }
+
+                if !skill_drifts.is_empty() {
+                    println!("\n{}", "❌ Skill Drift Detected:".red().bold());
+                    println!("   Installed skill copies differ from embedded canonicals:");
+                    for d in &skill_drifts {
+                        println!(
+                            "   - {} [{}] {}",
+                            d.skill_id.bold(),
+                            d.kind.red(),
+                            d.path.display()
+                        );
+                    }
+                    println!(
+                        "   Restore canonical copies with 'asep skill restore --all' or re-run the pack installer.",
+                    );
                 }
 
                 if let Some(ref cov_path) = coverage {
@@ -262,7 +366,7 @@ pub fn run() -> ExitCode {
                                     item.total_lines
                                 );
                             }
-                            if !cov_rep.all_passed && !is_velocity {
+                            if !cov_rep.all_passed && tier != TierId::T0 {
                                 passed = false;
                             }
                         }
@@ -277,8 +381,8 @@ pub fn run() -> ExitCode {
                     "------------------------------------------------------------".dimmed()
                 );
                 println!(
-                    "Summary (mode: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
-                    if is_velocity { "velocity".cyan().bold() } else { "axiomatic".green().bold() },
+                    "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
+                    tier.as_str().cyan().bold(),
                     report.must_satisfied.to_string().green().bold(),
                     report.must_broken.len().to_string().red().bold(),
                     report.should_pending.len().to_string().yellow().bold(),
@@ -291,12 +395,32 @@ pub fn run() -> ExitCode {
                 } else {
                     println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold());
                 }
+
+                println!(
+                    "Verification: {} | structural={} behavioral={} semantic={} skipped={:?}",
+                    match verification_report.status {
+                        VerificationStatus::Pass => "PASS".green(),
+                        VerificationStatus::Fail => "FAIL".red(),
+                        VerificationStatus::Unproven => "UNPROVEN".yellow(),
+                    },
+                    verification_report.structural,
+                    verification_report.behavioral,
+                    verification_report.semantic,
+                    verification_report.skipped
+                );
             }
 
-            if passed {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
+            let exit_codes = policy.exit_codes();
+            match verification_report.status {
+                VerificationStatus::Unproven => ExitCode::from(exit_codes.unproven),
+                VerificationStatus::Fail => ExitCode::from(exit_codes.fail),
+                VerificationStatus::Pass => {
+                    if passed {
+                        ExitCode::from(exit_codes.pass)
+                    } else {
+                        ExitCode::from(exit_codes.fail)
+                    }
+                }
             }
         }
 
@@ -321,7 +445,7 @@ pub fn run() -> ExitCode {
             path,
             gate,
             skip,
-            mode,
+            rigor,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
             let parsed_skip = skip
@@ -335,7 +459,7 @@ pub fn run() -> ExitCode {
             let opts = crate::ci::CiOptions {
                 gate,
                 skip: parsed_skip,
-                mode,
+                rigor: rigor.unwrap_or_else(|| "T1".to_string()),
             };
 
             let report = crate::ci::run_ci_pipeline(&target_path, &opts);
@@ -381,7 +505,9 @@ pub fn run() -> ExitCode {
                 }
             }
 
-            if report.all_passed() {
+            if report.unproven {
+                ExitCode::from(3)
+            } else if report.all_passed() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::from(1)
@@ -1429,6 +1555,32 @@ pub fn run() -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+/// Prints only the detailed skill drift report for installed skill copies
+/// under `.opencode/skills/` and `.agents/plugins/asep/skills/`.
+/// Returns exit 1 if any drift is found, otherwise exit 0.
+fn run_skill_drift_report(target: &Path) -> ExitCode {
+    let drift_dirs = [
+        target.join(".opencode").join("skills"),
+        target.join(".agents").join("plugins").join("asep").join("skills"),
+    ];
+    let mut drifts: Vec<crate::skill::inspector::SkillDrift> = drift_dirs
+        .iter()
+        .flat_map(|d| detect_skill_drift(d))
+        .collect();
+    drifts.sort_by(|a, b| a.skill_id.cmp(&b.skill_id));
+
+    if drifts.is_empty() {
+        println!("{} No skill drift detected", "✔".green());
+        return ExitCode::SUCCESS;
+    }
+
+    println!("{} Skill drift detected ({}):", "⚠".yellow(), drifts.len());
+    for d in &drifts {
+        println!("   - {} [{}] {}", d.skill_id.bold(), d.kind, d.path.display());
+    }
+    ExitCode::from(1)
 }
 
 /// Parse a duration string like `10s`, `500ms`, `2m`, `1h` (bare numbers are

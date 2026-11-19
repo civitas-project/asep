@@ -11,8 +11,8 @@ use srcdump::walker::walk_files;
 use srcidx::parser::ParserRegistry;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-MCP-PROTO-02
-// @impl:FR-MCP-PROTO-03
+// @impl:FR-MCP-PROTO-02-B @impl:FR-MCP-02
+// @impl:FR-MCP-PROTO-03-A
 
 pub fn get_tools_list() -> serde_json::Value {
     serde_json::json!({
@@ -31,9 +31,9 @@ pub fn get_tools_list() -> serde_json::Value {
                             "type": "boolean",
                             "description": "Treat pending SHOULD requirements as errors"
                         },
-                        "mode": {
+                        "rigor": {
                             "type": "string",
-                            "description": "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+                            "description": "Rigor tier: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
                         },
                         "deny_drafts": {
                             "type": "boolean",
@@ -56,9 +56,9 @@ pub fn get_tools_list() -> serde_json::Value {
                             "type": "boolean",
                             "description": "Treat pending SHOULD requirements as errors"
                         },
-                        "mode": {
+                        "rigor": {
                             "type": "string",
-                            "description": "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+                            "description": "Rigor tier: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
                         },
                         "deny_drafts": {
                             "type": "boolean",
@@ -236,17 +236,17 @@ pub fn execute_tool(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let mode = arguments
-                .get("mode")
+            let rigor = arguments
+                .get("rigor")
                 .and_then(|v| v.as_str())
-                .unwrap_or("axiomatic");
+                .unwrap_or("T1");
 
             let deny_drafts = arguments
                 .get("deny_drafts")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let is_velocity = mode.eq_ignore_ascii_case("velocity");
+            let is_relaxed = rigor == "T0";
 
             let tags = scan_project_tags(&target)
                 .map_err(|e| format!("Failed to scan project tags: {e}"))?;
@@ -256,16 +256,16 @@ pub fn execute_tool(
                 .map_err(|e| format!("Failed to audit docstrings: {e}"))?;
 
             let has_must_failure = !report.is_closed;
-            let has_doc_contract_failure = !is_velocity && !violations.is_empty();
+            let has_doc_contract_failure = !is_relaxed && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
             let passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
 
             let mut summary = String::new();
             summary.push_str(&format!(
-                "Traceability Gate: {} (mode: {})\n",
+                "Traceability Gate: {} (rigor: {})\n",
                 if passed { "PASSED" } else { "FAILED" },
-                if is_velocity { "velocity" } else { "axiomatic" }
+                if is_relaxed { "T0" } else { "T1+" }
             ));
             summary.push_str(&format!(
                 "Requirements: {} total | {} closed | {} broken MUST | {} pending SHOULD | {} DRAFT\n",

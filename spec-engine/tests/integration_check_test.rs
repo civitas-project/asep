@@ -30,26 +30,9 @@ fn test_check_succeeds_on_closed_requirement() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
 
-    // Create spec with MUST requirement
-    fs::write(
-        root.join("spec.md"),
-        "<!-- @req:FR-AUTH-01:MUST User authentication via JWT -->\n",
-    )
-    .expect("write spec");
-
-    // Create implementation
-    fs::write(
-        root.join("auth.rs"),
-        "// @impl:FR-AUTH-01\npub fn authenticate() {}\n",
-    )
-    .expect("write impl");
-
-    // Create test
-    fs::write(
-        root.join("auth_test.rs"),
-        "// @test:FR-AUTH-01\n#[test]\nfn test_auth() {}\n",
-    )
-    .expect("write test");
+    // Hardcoded tier T2 requires: closed relation graph + behavioral pass +
+    // ACCEPTED semantic evidence for every Req node.
+    write_t2_closed_project(root, "FR-AUTH-01");
 
     let mut cmd = Command::cargo_bin("spec-engine").expect("binary exists");
     cmd.arg("check").arg(root);
@@ -62,21 +45,7 @@ fn test_check_json_output_mode() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
 
-    fs::write(
-        root.join("spec.md"),
-        "<!-- @req:FR-AUTH-01:MUST User authentication via JWT -->\n",
-    )
-    .expect("write spec");
-    fs::write(
-        root.join("auth.rs"),
-        "// @impl:FR-AUTH-01\npub fn authenticate() {}\n",
-    )
-    .expect("write impl");
-    fs::write(
-        root.join("auth_test.rs"),
-        "// @test:FR-AUTH-01\n#[test]\nfn test_auth() {}\n",
-    )
-    .expect("write test");
+    write_t2_closed_project(root, "FR-AUTH-01");
 
     let mut cmd = Command::cargo_bin("spec-engine").expect("binary exists");
     cmd.arg("--json").arg("check").arg(root);
@@ -115,33 +84,31 @@ fn test_check_velocity_mode_and_deny_drafts() {
     let dir = tempdir().expect("tempdir");
     let root = dir.path();
 
-    // 1. Create a DRAFT requirement with only implementation (no tests or design)
+    // DRAFT requirement with only implementation; relation edge closes COV-04
+    // for the Impl node, behavioral + semantic evidence satisfy T2.
+    write_t2_closed_project(root, "FR-RAD-01");
+    // Override priority to DRAFT so the requirement stays a draft.
     fs::write(
         root.join("spec.md"),
         "<!-- @req:FR-RAD-01:DRAFT Rapid prototype checkout -->\n",
     )
     .expect("write spec");
-    fs::write(
-        root.join("checkout.rs"),
-        "// @impl:FR-RAD-01\npub fn checkout() {}\n",
-    )
-    .expect("write impl");
 
-    // 2. Running check in default or velocity mode passes (draft does not fail build)
+    // 1. Velocity mode passes (draft does not fail build)
     let mut cmd_velocity = Command::cargo_bin("asep").expect("binary exists");
     cmd_velocity
         .arg("check")
-        .arg("--mode")
-        .arg("velocity")
+        .arg("--rigor")
+        .arg("T0")
         .arg(root);
     cmd_velocity
         .assert()
         .success()
         .code(0)
-        .stdout(predicate::str::contains("FR-RAD-01"))
-        .stdout(predicate::str::contains("velocity"));
+        .stdout(predicate::str::contains("DRAFT"))
+        .stdout(predicate::str::contains("T0"));
 
-    // 3. Running check with --deny-drafts fails on production trunk
+    // 2. --deny-drafts fails on production trunk
     let mut cmd_deny = Command::cargo_bin("asep").expect("binary exists");
     cmd_deny.arg("check").arg("--deny-drafts").arg(root);
     cmd_deny
@@ -149,4 +116,125 @@ fn test_check_velocity_mode_and_deny_drafts() {
         .failure()
         .code(1)
         .stdout(predicate::str::contains("--deny-drafts"));
+}
+
+/// Writes a minimal T2-closed project for `req_id`:
+/// @req (MUST), @impl, @test, relation edges (satisfies + verifies with note),
+/// `.spec-engine/behavioral.json {passed: true}`, and ACCEPTED semantic evidence.
+fn write_t2_closed_project(root: &std::path::Path, req_id: &str) {
+    fs::write(
+        root.join("spec.md"),
+        format!("<!-- @req:{req_id}:MUST Requirement {req_id} -->\n"),
+    )
+    .expect("write spec");
+
+    fs::write(
+        root.join("auth.rs"),
+        format!(
+            "// @impl:{req_id}\n// @rel:satisfies:{req_id}->{req_id} \"implementation satisfies requirement\"\npub fn authenticate() {{}}\n"
+        ),
+    )
+    .expect("write impl");
+
+    fs::write(
+        root.join("auth_test.rs"),
+        format!(
+            "// @test:{req_id}\n// @rel:verifies:{req_id}->{req_id} \"test covers requirement\"\n#[test]\nfn test_auth() {{}}\n"
+        ),
+    )
+    .expect("write test");
+
+    let spec_engine_dir = root.join(".spec-engine");
+    fs::create_dir_all(&spec_engine_dir).expect("create .spec-engine");
+    fs::write(spec_engine_dir.join("behavioral.json"), r#"{"passed": true}"#).expect("write behavioral");
+
+    let evidence_dir = root.join("evidence").join("semantic");
+    fs::create_dir_all(&evidence_dir).expect("create evidence dir");
+    fs::write(
+        evidence_dir.join(format!("{req_id}.md")),
+        format!("reviewer: qa\nverdict: ACCEPTED\nrationale: accepted\n"),
+    )
+    .expect("write evidence");
+}
+
+// @test:FR-VERIFY-01
+#[test]
+fn test_missing_semantic_evidence_is_unproven() {
+    use asep::graph::model::GraphReport;
+    use asep::graph::model::{NodeKind, TraceNode};
+    use asep::policy::TierId;
+    use asep::verification::evaluate;
+    use std::path::PathBuf;
+
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed relation graph with a single Req node.
+    let graph = GraphReport {
+        nodes: vec![TraceNode {
+            kind: NodeKind::Req,
+            id: "FR-UNPROVEN-01".to_string(),
+            file_path: PathBuf::from("spec.md"),
+            line_number: 1,
+        }],
+        edges: vec![],
+        violations: vec![],
+        is_closed: true,
+    };
+
+    let behavioral = root.join(".spec-engine").join("behavioral.json");
+    fs::create_dir_all(behavioral.parent().unwrap()).expect("create dir");
+    fs::write(&behavioral, r#"{"passed": true}"#).expect("write behavioral");
+
+    // Direct unit-level assertion: no semantic evidence => Unproven.
+    let report = evaluate(
+        &graph,
+        root.join("evidence").as_path(),
+        TierId::T2,
+        &behavioral,
+    );
+    assert_eq!(report.status, asep::verification::VerificationStatus::Unproven);
+    assert!(report.structural);
+    assert!(report.behavioral);
+    assert!(!report.semantic);
+
+    // CLI end-to-end: `asep check` exits 3.
+    fs::write(
+        root.join("spec.md"),
+        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string() + "T2 -->\n",
+    )
+    .expect("write spec");
+    fs::write(
+        root.join("auth.rs"),
+        "// @impl:FR-UNPROVEN-01\n// @rel:satisfies:FR-UNPROVEN-01->FR-UNPROVEN-01 \"x\"\npub fn x() {}\n",
+    )
+    .expect("write impl");
+    fs::write(
+        root.join("auth_test.rs"),
+        "// @test:FR-UNPROVEN-01\n// @rel:verifies:FR-UNPROVEN-01->FR-UNPROVEN-01 \"x\"\n#[test]\nfn t() {}\n",
+    )
+    .expect("write test");
+    // behavioral.json already written; no evidence/semantic/FR-UNPROVEN-01.md.
+
+    let mut cmd = Command::cargo_bin("spec-engine").expect("binary exists");
+    cmd.arg("check").arg(root);
+    cmd.assert().failure().code(3);
+}
+
+// @test:FR-VERIFY-01
+#[test]
+fn test_broken_coverage_is_fail() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // MUST requirement with no relation edges => structural failure => exit 1.
+    fs::write(
+        root.join("spec.md"),
+        "<!-- @req:FR-BROKEN-01:MUST Broken coverage requirement -->\n",
+    )
+    .expect("write spec");
+
+    let mut cmd = Command::cargo_bin("spec-engine").expect("binary exists");
+    cmd.arg("check").arg(root);
+    cmd.assert().failure().code(1);
 }

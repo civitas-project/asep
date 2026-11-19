@@ -4,7 +4,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// @design:FR-CLI-SCAN-01
+// @design:FR-CLI-SCAN-01-B
 #[derive(Debug, Parser)]
 #[command(
     name = "asep",
@@ -44,10 +44,12 @@ pub enum Commands {
 
         #[arg(
             long,
-            default_value = "axiomatic",
-            help = "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+            help = "Rigor tier override: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
         )]
-        mode: String,
+        rigor: Option<String>,
+
+        #[arg(long, help = "Path to write `.spec-engine/behavioral.json` (Gate 3 behavioral report)")]
+        behavioral_report: Option<PathBuf>,
 
         #[arg(long, help = "Deny all @req:*:DRAFT tags (enforced on main production branch)")]
         deny_drafts: bool,
@@ -57,6 +59,12 @@ pub enum Commands {
 
         #[arg(long, help = "Path to LCOV or coverage file to correlate with requirements")]
         coverage: Option<PathBuf>,
+
+        #[arg(
+            long,
+            help = "Print only the detailed skill drift report for installed skill copies"
+        )]
+        skills: bool,
     },
 
     /// Manage Architecture Decision Records (ADRs)
@@ -81,10 +89,10 @@ pub enum Commands {
 
         #[arg(
             long,
-            default_value = "axiomatic",
-            help = "SDLC mode: 'velocity' or 'axiomatic'"
+            default_value = "T1",
+            help = "Rigor tier: 'T0'..'T4' (default: T1)"
         )]
-        mode: String,
+        rigor: Option<String>,
     },
 
     /// Compile PlantUML diagrams into SVG assets

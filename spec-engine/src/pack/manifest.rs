@@ -1,9 +1,11 @@
 //! Manifest generation and configuration merging for Antigravity and OpenCode.
 
+use crate::config::settings::CapabilityProfile;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 
-// @impl:FR-PACK-MANIFEST-01
+// @impl:FR-PACK-MANIFEST-01 @impl:FR-PACK-01
 // @impl:FR-PACK-MANIFEST-02
 
 /// Generates the canonical `plugin.json` manifest for Antigravity plugins.
@@ -120,9 +122,104 @@ pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std
     Ok(())
 }
 
+/// Builds the permission rules for a single agent from the capability
+/// profile, starting from a deny-by-default ceiling and allowing only the
+/// declared capabilities. `extra` holds agent-specific rules that are always
+/// kept (e.g. `*.env` denies for read-only agents, explorer tool allows).
+fn agent_permissions(profile: &CapabilityProfile, extra: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let mut rules: Vec<serde_json::Value> =
+        vec![json!({"action": "*", "resource": "*", "effect": "deny"})];
+
+    let mut push = |action: &str, effect: &str| {
+        rules.push(json!({"action": action, "resource": "*", "effect": effect}))
+    };
+
+    if profile.file_read {
+        push("read", "allow");
+        push("glob", "allow");
+        push("grep", "allow");
+    } else {
+        push("read", "deny");
+        push("glob", "deny");
+        push("grep", "deny");
+    }
+    if profile.file_write {
+        push("edit", "allow");
+        push("write", "allow");
+    } else {
+        push("edit", "deny");
+        push("write", "deny");
+    }
+    if profile.terminal {
+        push("shell", "allow");
+    } else {
+        push("shell", "deny");
+    }
+    if profile.mcp {
+        push("mcp", "allow");
+    } else {
+        push("mcp", "deny");
+    }
+    if profile.subagents {
+        push("subagent", "allow");
+    } else {
+        push("subagent", "deny");
+    }
+    if profile.web {
+        push("webfetch", "allow");
+        push("websearch", "allow");
+    } else {
+        push("webfetch", "deny");
+        push("websearch", "deny");
+    }
+
+    rules.extend(extra.iter().cloned());
+    rules
+}
+
+/// Read-only agents keep their `*.env` denies regardless of the profile.
+fn read_only_env_denies() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "read", "resource": "*.env", "effect": "deny"}),
+        json!({"action": "read", "resource": "*.env.*", "effect": "deny"}),
+    ]
+}
+
+/// Explorer keeps its read-only tool allows (`execute`, `asep_srcdump`,
+/// `asep_srcidx`) regardless of the profile.
+fn explorer_tool_allows() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "execute", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_srcdump", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_srcidx", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Read-only agents (judge, explorer) must stay read-only regardless of the
+/// capability profile. The profile is a ceiling, not a floor, for them, so
+/// these deny rules are appended AFTER the capability allows (last match
+/// wins), overriding any capability-derived allow for write/shell/web/mcp.
+fn read_only_action_denies() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "edit", "resource": "*", "effect": "deny"}),
+        json!({"action": "write", "resource": "*", "effect": "deny"}),
+        json!({"action": "shell", "resource": "*", "effect": "deny"}),
+        json!({"action": "subagent", "resource": "*", "effect": "deny"}),
+        json!({"action": "webfetch", "resource": "*", "effect": "deny"}),
+        json!({"action": "websearch", "resource": "*", "effect": "deny"}),
+        json!({"action": "mcp", "resource": "*", "effect": "deny"}),
+    ]
+}
+
 /// Installs default Lead-Judge-Executor agent presets into `opencode.json`
 /// without clobbering pre-existing top-level keys or pre-existing agents.
-pub fn scaffold_opencode_agents(config_path: &Path) -> Result<(), std::io::Error> {
+/// Permission rules are derived from `profile`: each capability ceiling
+/// allows or denies its corresponding actions, starting from a deny-all
+/// rule, while preserving agent-specific `*.env` denies and tool allows.
+pub fn scaffold_opencode_agents(
+    config_path: &Path,
+    profile: &CapabilityProfile,
+) -> Result<(), std::io::Error> {
     // Read existing content (if any) without losing it.
     let existing_raw = if config_path.exists() {
         fs::read_to_string(config_path)?
@@ -187,7 +284,7 @@ Rules:
 - Never claim completion without fresh verification output.
 - Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
 - Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user."#,
-            "permissions": [{"action": "subagent", "resource": "*", "effect": "deny"}, {"action": "subagent", "resource": "executor", "effect": "allow"}, {"action": "subagent", "resource": "judge", "effect": "allow"}, {"action": "subagent", "resource": "explorer", "effect": "allow"}]
+            "permissions": agent_permissions(profile, &[])
         },
         "executor": {
             "description": "Fast coding executor in a bounded executor-judge pipeline.",
@@ -206,7 +303,7 @@ Working limits:
 8. End the report with exactly one status line: `DONE` when the task scope is complete and verification ran and passed, `UNCERTAIN: <reason>`, or `BLOCKED: <reason>`. Never omit the status line.
 
 Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
-            "permissions": [{"action": "subagent", "resource": "*", "effect": "deny"}, {"action": "question", "resource": "*", "effect": "deny"}, {"action": "webfetch", "resource": "*", "effect": "deny"}, {"action": "websearch", "resource": "*", "effect": "deny"}]
+            "permissions": agent_permissions(profile, &[])
         },
         "judge": {
             "description": "Read-only reviewer verifying executor output against task, diff, and test evidence.",
@@ -227,7 +324,10 @@ Rules:
 {"verdict":"PASS|FAIL","blocking":[{"file":"...","line":0,"issue":"...","evidence":"..."}],"non_blocking":[],"missing_evidence":[],"next_action":"..."}
 
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
-            "permissions": [{"action": "*", "resource": "*", "effect": "deny"}, {"action": "read", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "*.env", "effect": "deny"}, {"action": "read", "resource": "*.env.*", "effect": "deny"}, {"action": "glob", "resource": "*", "effect": "allow"}, {"action": "grep", "resource": "*", "effect": "allow"}]
+            "permissions": agent_permissions(
+                profile,
+                &[read_only_env_denies(), read_only_action_denies()].concat()
+            )
         },
         "explorer": {
             "description": "Fast explorer subagent for codebase exploration.",
@@ -245,7 +345,15 @@ Working limits:
 7. Report findings with file paths and line references, list what you did not cover, and state any limit you hit.
 
 Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
-            "permissions": [{"action": "*", "resource": "*", "effect": "deny"}, {"action": "read", "resource": "*", "effect": "allow"}, {"action": "read", "resource": "*.env", "effect": "deny"}, {"action": "read", "resource": "*.env.*", "effect": "deny"}, {"action": "glob", "resource": "*", "effect": "allow"}, {"action": "grep", "resource": "*", "effect": "allow"}, {"action": "execute", "resource": "*", "effect": "allow"}, {"action": "asep_srcdump", "resource": "*", "effect": "allow"}, {"action": "asep_srcidx", "resource": "*", "effect": "allow"}]
+            "permissions": agent_permissions(
+                profile,
+                &[
+                    read_only_env_denies(),
+                    explorer_tool_allows(),
+                    read_only_action_denies(),
+                ]
+                .concat()
+            )
         }
     });
 

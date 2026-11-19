@@ -1,3 +1,4 @@
+use asep::ci::{run_ci_pipeline, CiOptions};
 use asep::formal::validate_formal_specs;
 use std::fs;
 use tempfile::tempdir;
@@ -40,11 +41,64 @@ fn test_ci_pipeline_runner_gate_selection() {
     let opts = CiOptions {
         gate: Some(0), // Gate 0 only
         skip: Vec::new(),
-        mode: "velocity".to_string(),
+        rigor: "T1".to_string(),
     };
 
     let report = run_ci_pipeline(root, &opts);
     assert_eq!(report.gates.len(), 1);
     assert_eq!(report.gates[0].gate_number, 0);
     assert!(report.all_passed());
+}
+
+// @test:FR-CI-GATE-01
+#[test]
+fn test_ci_gate_1_name_is_structural_traceability() {
+    let tmp = tempdir().unwrap();
+    let opts = CiOptions {
+        gate: Some(1),
+        skip: Vec::new(),
+        rigor: "T1".to_string(),
+    };
+
+    let report = run_ci_pipeline(tmp.path(), &opts);
+    assert_eq!(report.gates.len(), 1);
+    assert_eq!(
+        report.gates[0].name,
+        "Gate 1: Structural Traceability, Contracts & Skill Drift"
+    );
+}
+
+// @test:FR-CI-GATE-02
+#[test]
+fn test_ci_gate_1_cov02_strict_promotion() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("spec.md"),
+        "# Spec\n\n@req:FR-CO-02:SHOULD\n",
+    )
+    .unwrap();
+
+    let opts = || CiOptions {
+        gate: Some(1),
+        skip: Vec::new(),
+        rigor: "T1".to_string(),
+    };
+
+    // COV-02 is a warning: passes Gate 1 without --strict.
+    std::env::remove_var("GITHUB_BASE_REF");
+    let lenient = run_ci_pipeline(root, &opts());
+    assert!(
+        lenient.gates[0].passed,
+        "COV-02-only violation should pass Gate 1 without --strict"
+    );
+
+    // CI enables --strict for PRs to dev/main: COV-02 fails Gate 1.
+    std::env::set_var("GITHUB_BASE_REF", "dev");
+    let strict = run_ci_pipeline(root, &opts());
+    std::env::remove_var("GITHUB_BASE_REF");
+    assert!(
+        !strict.gates[0].passed,
+        "COV-02-only violation should fail Gate 1 with --strict"
+    );
 }

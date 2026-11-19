@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-// @impl:FR-SKILL-INSPECT-01
+// @impl:FR-SKILL-INSPECT-01-B
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillStatus {
