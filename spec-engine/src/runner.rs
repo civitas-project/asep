@@ -2,16 +2,19 @@ use crate::adr::create_new_adr;
 use crate::auditor::audit_project_docstrings;
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
 use crate::diagram::render_plantuml_diagrams;
-use crate::graph::builder::build_trace_graph;
+use crate::graph::builder::{build_relation_graph, build_trace_graph};
 use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
+use crate::policy::{load_policy, TierId};
 use crate::scanner::scan_project_tags;
+use crate::verification::{evaluate, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
+use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -77,7 +80,28 @@ pub fn run() -> ExitCode {
                 }
             };
 
+            let policy = load_policy();
+            let graph = build_relation_graph(&tags, &policy);
             let report = build_trace_graph(&tags);
+
+            let evidence_dir = target_path.join("evidence");
+            let behavioral_report = target_path.join(".spec-engine").join("behavioral.json");
+            let verification_report = evaluate(&graph, &evidence_dir, TierId::T2, &behavioral_report);
+
+            // Write `.spec-engine/verification.json` for tooling and later `--rigor` wiring.
+            let spec_engine_dir = target_path.join(".spec-engine");
+            let verification_out = spec_engine_dir.join("verification.json");
+            let json = match serde_json::to_string_pretty(&verification_report) {
+                Ok(j) => j,
+                Err(e) => {
+                    eprintln!("{} Failed to serialize verification report: {e}", "✖".red());
+                    return ExitCode::from(2);
+                }
+            };
+            if let Err(e) = fs::create_dir_all(&spec_engine_dir).and_then(|_| fs::write(&verification_out, &json)) {
+                eprintln!("{} Failed to write verification report: {e}", "✖".red());
+                return ExitCode::from(2);
+            }
 
             let violations = match audit_project_docstrings(&target_path) {
                 Ok(v) => v,
@@ -291,12 +315,32 @@ pub fn run() -> ExitCode {
                 } else {
                     println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold());
                 }
+
+                println!(
+                    "Verification: {} | structural={} behavioral={} semantic={} skipped={:?}",
+                    match verification_report.status {
+                        VerificationStatus::Pass => "PASS".green(),
+                        VerificationStatus::Fail => "FAIL".red(),
+                        VerificationStatus::Unproven => "UNPROVEN".yellow(),
+                    },
+                    verification_report.structural,
+                    verification_report.behavioral,
+                    verification_report.semantic,
+                    verification_report.skipped
+                );
             }
 
-            if passed {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
+            let exit_codes = policy.exit_codes();
+            match verification_report.status {
+                VerificationStatus::Unproven => ExitCode::from(exit_codes.unproven),
+                VerificationStatus::Fail => ExitCode::from(exit_codes.fail),
+                VerificationStatus::Pass => {
+                    if passed {
+                        ExitCode::from(exit_codes.pass)
+                    } else {
+                        ExitCode::from(exit_codes.fail)
+                    }
+                }
             }
         }
 

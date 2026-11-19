@@ -25,6 +25,9 @@ pub enum AsepError {
 
     #[error("Diagram compilation failure: {0}")]
     Diagram(String),
+
+    #[error("Verification unproven: {0} capability or evidence missing")]
+    Unproven(usize),
 }
 
 impl AsepError {
@@ -39,6 +42,7 @@ impl AsepError {
             | Self::Regex(_)
             | Self::InvalidState(_)
             | Self::Diagram(_) => ExitCode::from(2),
+            Self::Unproven(_) => ExitCode::from(3),
         }
     }
 }

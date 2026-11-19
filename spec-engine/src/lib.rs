@@ -15,6 +15,7 @@ pub mod mcp;
 pub mod pack;
 pub mod policy;
 pub mod runner;
+pub mod verification;
 pub mod self_update;
 pub mod scanner;
 pub mod skill;
