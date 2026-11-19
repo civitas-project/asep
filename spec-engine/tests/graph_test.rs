@@ -1,4 +1,4 @@
-use asep::graph::{build_relation_graph, build_trace_graph, CoverageViolation, GraphReport, Priority, TagKind};
+use asep::graph::{build_relation_graph, build_trace_graph, CoverageViolation, GraphReport, NodeKind, Priority, TagKind};
 use asep::policy::{EdgeKind, load_policy, Policy};
 use asep::scanner::ScannedTag;
 use std::path::PathBuf;
@@ -226,4 +226,73 @@ fn test_cov05_requires_verifies_note() {
     assert_eq!(cov05[0].subject, "T-1");
     assert_eq!(cov05[0].found, 0);
     assert_eq!(cov05[0].required, 1);
+}
+
+// @test:FR-CLI-GRAPH-05
+#[test]
+fn test_relation_graph_allows_same_id_across_node_kinds() {
+    let policy = policy();
+    let tags = vec![
+        scanned_tag(TagKind::Req { id: "X".to_string(), priority: Priority::Must }, 1),
+        scanned_tag(TagKind::Impl { id: "X".to_string() }, 10),
+        scanned_tag(TagKind::Test { id: "Xt".to_string() }, 20),
+        scanned_tag(
+            TagKind::Rel {
+                kind: EdgeKind::Satisfies,
+                from: "X".to_string(),
+                to: vec!["X".to_string()],
+                note: None,
+            },
+            30,
+        ),
+        scanned_tag(
+            TagKind::Rel {
+                kind: EdgeKind::Verifies,
+                from: "Xt".to_string(),
+                to: vec!["X".to_string()],
+                note: Some("covers X".to_string()),
+            },
+            40,
+        ),
+    ];
+
+    let report = build_relation_graph(&tags, &policy);
+    // Req X and Impl X must be distinct nodes (IDs unique per NodeKind).
+    let x_nodes: Vec<_> = report.nodes.iter().filter(|n| n.id == "X").collect();
+    assert_eq!(x_nodes.len(), 2, "expected Req X and Impl X as distinct nodes: {report:?}");
+    assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Req)));
+    assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Impl)));
+    // Cross-kind ID reuse must not produce COV-06.
+    assert!(
+        !report
+            .violations
+            .iter()
+            .any(|v| v.rule_id == "COV-06"),
+        "unexpected COV-06 for cross-kind ID reuse: {report:?}"
+    );
+    // COV-04 satisfied: Impl X has satisfies to Req X.
+    assert!(
+        !report
+            .violations
+            .iter()
+            .any(|v| v.rule_id == "COV-04"),
+        "unexpected COV-04: {report:?}"
+    );
+    // COV-01 satisfied: Req X has both satisfies and verifies incoming.
+    assert!(
+        !report
+            .violations
+            .iter()
+            .any(|v| v.rule_id == "COV-01"),
+        "unexpected COV-01: {report:?}"
+    );
+    // COV-05 satisfied: Test Xt has verifies with non-empty note.
+    assert!(
+        !report
+            .violations
+            .iter()
+            .any(|v| v.rule_id == "COV-05"),
+        "unexpected COV-05: {report:?}"
+    );
+    assert!(report.is_closed);
 }

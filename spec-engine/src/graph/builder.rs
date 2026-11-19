@@ -134,9 +134,12 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
 /// `is_closed` is true when no error-severity violation exists.
 pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport {
     // 1. Collect nodes: unique per (kind, id), first occurrence wins.
+    //    IDs are unique per NodeKind, so Req "X" and Impl "X" coexist as
+    //    distinct nodes. `id_kinds` is a multimap ID -> set of NodeKind used
+    //    for both dangling existence checks and per-kind target resolution.
     let mut nodes: Vec<TraceNode> = Vec::new();
     let mut decl_counts: HashMap<(NodeKind, String), usize> = HashMap::new();
-    let mut declared_ids: HashMap<String, NodeKind> = HashMap::new();
+    let mut id_kinds: HashMap<String, HashSet<NodeKind>> = HashMap::new();
 
     for tag in tags {
         let (kind, id) = match &tag.kind {
@@ -148,16 +151,16 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
             _ => continue,
         };
         *decl_counts.entry((kind, id.clone())).or_default() += 1;
-        if declared_ids.contains_key(&id) {
+        if id_kinds.get(&id).is_some_and(|ks| ks.contains(&kind)) {
             continue;
         }
+        id_kinds.entry(id.clone()).or_default().insert(kind);
         let node = TraceNode {
             kind,
             id: id.clone(),
             file_path: tag.file_path.clone(),
             line_number: tag.line_number,
         };
-        declared_ids.insert(id.clone(), kind);
         nodes.push(node);
     }
     nodes.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.id.cmp(&b.id)));
@@ -184,7 +187,7 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
     let mut violations: Vec<CoverageViolation> = Vec::new();
 
     for edge in &edges {
-        if !declared_ids.contains_key(&edge.from) {
+        if !id_kinds.contains_key(&edge.from) {
             violations.push(CoverageViolation {
                 rule_id: "COV-06".to_string(),
                 subject: edge.from.clone(),
@@ -193,7 +196,7 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
             });
         }
         for target in &edge.to {
-            if !declared_ids.contains_key(target) {
+            if !id_kinds.contains_key(target) {
                 violations.push(CoverageViolation {
                     rule_id: "COV-06".to_string(),
                     subject: target.clone(),
@@ -235,12 +238,20 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
         }
         match edge.kind {
             EdgeKind::Satisfies => {
-                if edge.to.iter().any(|t| declared_ids.get(t) == Some(&NodeKind::Req)) {
+                if edge
+                    .to
+                    .iter()
+                    .any(|t| id_kinds.get(t).is_some_and(|ks| ks.contains(&NodeKind::Req)))
+                {
                     satisfies_to_req.insert(edge.from.clone());
                 }
             }
             EdgeKind::Informs => {
-                if edge.to.iter().any(|t| declared_ids.get(t) == Some(&NodeKind::Adr)) {
+                if edge
+                    .to
+                    .iter()
+                    .any(|t| id_kinds.get(t).is_some_and(|ks| ks.contains(&NodeKind::Adr)))
+                {
                     informs_to_adr.insert(edge.from.clone());
                 }
             }
