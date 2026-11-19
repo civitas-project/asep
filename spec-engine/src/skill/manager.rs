@@ -4,7 +4,7 @@ use crate::skill::inspector::extract_skill_full_metadata;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-SKILL-CRUD-01
+// @impl:FR-SKILL-CRUD-01 @impl:FR-SKILL-02
 // @impl:FR-SKILL-PORT-01
 
 /// Adds a new skill directory with frontmatter and body.

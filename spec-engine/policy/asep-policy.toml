@@ -1,0 +1,62 @@
+# Canonical ASEP policy. Single source of truth for edge kinds, coverage
+# rules COV-01..COV-06, rigor tiers T0..T4, and exit codes.
+# Read by spec-engine/src/policy/mod.rs via include_str! + toml::from_str.
+# No secrets or API keys.
+
+edge_kinds = ["Satisfies", "Verifies", "Informs", "Constrains"]
+
+[exit_codes]
+pass = 0
+fail = 1
+config_io = 2
+unproven = 3
+
+[[coverage_rules]]
+id = "COV-01"
+min = 1
+severity = "Error"
+
+[[coverage_rules]]
+id = "COV-02"
+min = 1
+severity = "Warning"
+
+[[coverage_rules]]
+id = "COV-03"
+min = 0
+severity = "Warning"
+
+[[coverage_rules]]
+id = "COV-04"
+min = 1
+severity = "Error"
+
+[[coverage_rules]]
+id = "COV-05"
+min = 1
+severity = "Error"
+
+[[coverage_rules]]
+id = "COV-06"
+min = 0
+severity = "Error"
+
+[[tiers]]
+id = "T0"
+semantic_evidence_required = false
+
+[[tiers]]
+id = "T1"
+semantic_evidence_required = false
+
+[[tiers]]
+id = "T2"
+semantic_evidence_required = true
+
+[[tiers]]
+id = "T3"
+semantic_evidence_required = true
+
+[[tiers]]
+id = "T4"
+semantic_evidence_required = true

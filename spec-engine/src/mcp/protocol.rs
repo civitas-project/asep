@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
-// @impl:FR-MCP-PROTO-01
-// @impl:FR-MCP-PROTO-02
+// @impl:FR-MCP-PROTO-01-A
+// @impl:FR-MCP-PROTO-02-A
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {

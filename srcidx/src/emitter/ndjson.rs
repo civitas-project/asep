@@ -167,7 +167,7 @@ mod tests {
             line: 10,
             end_line: 15,
             doc: Some("Test function".to_string()),
-            tags: vec!["@impl:FR-TEST-01".to_string()],
+            tags: vec!["\\@impl:FR-TEST-01".to_string()],
             visibility: Visibility::Pub,
             attrs: vec![],
         });
@@ -189,7 +189,7 @@ mod tests {
         // Verify symbol
         let symbol: Symbol = serde_json::from_str(lines[1]).unwrap();
         assert_eq!(symbol.name, "test_fn");
-        assert_eq!(symbol.tags, vec!["@impl:FR-TEST-01"]);
+        assert_eq!(symbol.tags, vec!["\\@impl:FR-TEST-01"]);
     }
 
     #[test]

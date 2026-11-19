@@ -13,8 +13,13 @@ pub mod coverage;
 pub mod watch;
 pub mod mcp;
 pub mod pack;
+pub mod policy;
 pub mod runner;
+pub mod verification;
 pub mod self_update;
 pub mod scanner;
 pub mod skill;
 pub mod snapshot;
+
+#[cfg(test)]
+mod traceability_tests;

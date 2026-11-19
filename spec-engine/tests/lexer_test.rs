@@ -1,3 +1,4 @@
+use asep::policy::EdgeKind;
 use asep::scanner::lexer::{parse_tags_from_line, Priority, TagKind};
 
 // @test:FR-CLI-SCAN-02
@@ -132,4 +133,47 @@ fn test_parse_adr_lim_criticality_tags() {
         prose[0].kind,
         TagKind::Criticality { level: "high".to_string() }
     );
+}
+
+// @test:FR-CLI-SCAN-02
+#[test]
+fn test_parse_rel_tags_multi_target() {
+    let tags = parse_tags_from_line("// @rel:satisfies:auth/session->AUTH-01,AUTH-02", 7);
+    assert_eq!(tags.len(), 1);
+    assert_eq!(
+        tags[0].kind,
+        TagKind::Rel {
+            kind: EdgeKind::Satisfies,
+            from: "auth/session".to_string(),
+            to: vec!["AUTH-01".to_string(), "AUTH-02".to_string()],
+            note: None,
+        }
+    );
+}
+
+// @test:FR-CLI-SCAN-02
+#[test]
+fn test_parse_rel_tags_with_note() {
+    let tags =
+        parse_tags_from_line(r#"// @rel:verifies:auth/session->AUTH-01  "token kedaluwarsa ditolak""#, 7);
+    assert_eq!(tags.len(), 1);
+    assert_eq!(
+        tags[0].kind,
+        TagKind::Rel {
+            kind: EdgeKind::Verifies,
+            from: "auth/session".to_string(),
+            to: vec!["AUTH-01".to_string()],
+            note: Some("token kedaluwarsa ditolak".to_string()),
+        }
+    );
+}
+
+// @test:FR-CLI-SCAN-02
+#[test]
+fn test_parse_rel_tags_unknown_kind_rejected() {
+    let tags = parse_tags_from_line("// @rel:unknown:auth/session->AUTH-01", 7);
+    assert!(tags.is_empty());
+    assert!(tags
+        .iter()
+        .all(|t| !matches!(t.kind, TagKind::Rel { .. })));
 }

@@ -35,6 +35,33 @@ fn test_get_embedded_skills_returns_all_canonical_protocols() {
     }
 }
 
+// @test:FR-PACK-EMBED-03
+#[test]
+fn test_skill_text_references_canonical_rule_ids() {
+    let skills = get_embedded_skills();
+    assert_eq!(skills.len(), 6, "Expected 6 canonical embedded skills");
+
+    for skill in skills {
+        let content = skill.content;
+        let references_canonical_rules =
+            content.contains("COV-0") || content.contains("Tier T") || content.contains("exit 3");
+        assert!(
+            references_canonical_rules,
+            "Skill {} must reference canonical rules (COV-0 / Tier T / exit 3)",
+            skill.id
+        );
+
+        let lines: Vec<&str> = content.lines().collect();
+        for pair in lines.windows(2) {
+            assert!(
+                !(pair[0].contains("COV-0") && pair[1].contains("COV-0")),
+                "Skill {} must not restate a full coverage table (no consecutive COV-0 lines)",
+                skill.id
+            );
+        }
+    }
+}
+
 // @test:FR-PACK-EMBED-02
 #[test]
 fn test_get_default_manifests_valid_json() {

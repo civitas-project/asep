@@ -1,6 +1,26 @@
 use assert_cmd::Command;
+use clap::Parser;
 use predicates::prelude::*;
 use tempfile::tempdir;
+
+use asep::cli::{Cli, Commands};
+
+// @test:FR-CLI-RIGOR-01
+#[test]
+fn test_cli_check_accepts_rigor_flag() {
+    let cli = Cli::try_parse_from(["asep", "check", "--rigor", "T2", "."]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Commands::Check { rigor, .. }) if rigor.as_deref() == Some("T2")
+    ));
+}
+
+// @test:FR-CLI-RIGOR-02
+#[test]
+fn test_cli_check_rejects_legacy_mode_flag() {
+    let err = Cli::try_parse_from(["asep", "check", "--mode", "axiomatic", "."]).unwrap_err();
+    assert!(err.to_string().contains("mode"));
+}
 
 // @test:FR-CLI-PACK-01
 #[test]

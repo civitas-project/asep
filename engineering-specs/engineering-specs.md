@@ -31,15 +31,15 @@ Before authoring or modifying formal requirements in `docs/PRD.md`:
 1. **Interactive Operational Interview:** When requirements or architecture are ambiguous, interview the user directly to clarify operational goals, throughput/latency budgets, and runtime constraints.
 2. **Multi-Option Trade-Off Exploration:** Formulate 2 to 3 distinct implementation alternatives (e.g., Option 1: Minimal/Direct, Option 2: Modular/Extensible, Option 3: Lock-Free High-Throughput).
 3. **Comparative Evaluation Matrix:** Present trade-offs across Complexity, Latency, Memory Footprint, and Maintenance Overheads.
-4. **Explicit Alignment:** Obtain user consensus on the chosen approach before freezing identifiers into `@req:FR-*`.
+4. **Explicit Alignment:** Obtain user consensus on the chosen approach before freezing identifiers into `@req\:FR-*`.
 
 ### 1. Canonical SRS Requirement Anatomy (ISO/IEC/IEEE 29148:2018)
 Every requirement block in `docs/PRD.md` must include:
 1. **Traceability Header & Lifecycle Status:**
-   - **`@req:FR-[MOD]-[ID]:DRAFT` (Velocity Mode / RAD):** Rapid exploration, PoC, and mass feature development. Non-blocking in `asep check --mode velocity`.
-   - **`@req:FR-[MOD]-[ID]:MUST` (Axiomatic Mode / Production):** Hardened requirement enforcing 1:1 symmetrical closure across `@design`, `// @impl`, and `// @test`.
-   - **`@req:FR-[MOD]-[ID]:SHOULD` (Backlog):** Non-blocking secondary requirement.
-   - Example: `<!-- [@req:FR-[MOD]-[ID]:DRAFT] [@criticality:high|low] -->`
+   - **`@req\:FR-[MOD]-[ID]:DRAFT` (Velocity Mode / RAD):** Rapid exploration, PoC, and mass feature development. Non-blocking in `asep check --mode velocity`.
+   - **`@req\:FR-[MOD]-[ID]:MUST` (Axiomatic Mode / Production):** Hardened requirement enforcing 1:1 symmetrical closure across `@design`, `// @impl`, and `// @test`.
+   - **`@req\:FR-[MOD]-[ID]:SHOULD` (Backlog):** Non-blocking secondary requirement.
+   - Example: `<!-- [@req\:FR-[MOD]-[ID]:DRAFT] [@criticality:high|low] -->`
 2. **Active-Voice Statement:**
    $$\langle\text{System Subject}\rangle + \langle\text{must} \mid \text{shall}\rangle + \langle\text{Active Verb}\rangle + \langle\text{Object}\rangle + [\text{Quantitative Constraint}]$$
    - **Pass:** `The NamespaceEngine must isolate multi-tenant storage operations using 4-byte big-endian tenant key prefixes and enforce bounded range scan termination within the tenant keyspace.`
@@ -49,7 +49,7 @@ Every requirement block in `docs/PRD.md` must include:
 5. **Edge Cases and Failure Modes:** Explicit error variants returned for every boundary violation (e.g., `EngineError::KeyTooLarge`).
 
 ### 2. Architecture-as-Code Binding
-Specifications must not rely on prose alone; bind `@design:FR-*` tags into computable artifacts:
+Specifications must not rely on prose alone; bind `@design\:FR-*` tags into computable artifacts:
 - **Relational / Catalog Schema:** `docs/schema.dbml`
 - **Network / Wire Protocol Contract:** `docs/api.yaml` (using `x-asep-design: "FR-*"`)
 - **Macro C4 Topology:** `docs/workspace.dsl`
