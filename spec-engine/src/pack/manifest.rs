@@ -5,7 +5,7 @@ use serde_json::json;
 use std::fs;
 use std::path::Path;
 
-// @impl:FR-PACK-MANIFEST-01
+// @impl:FR-PACK-MANIFEST-01 @impl:FR-PACK-01
 // @impl:FR-PACK-MANIFEST-02
 
 /// Generates the canonical `plugin.json` manifest for Antigravity plugins.

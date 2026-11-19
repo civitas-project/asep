@@ -4,7 +4,7 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// @design:FR-CLI-SCAN-01
+// @design:FR-CLI-SCAN-01-B
 #[derive(Debug, Parser)]
 #[command(
     name = "asep",

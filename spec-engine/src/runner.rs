@@ -75,8 +75,8 @@ pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &Engi
     default_tier
 }
 
-// @impl:FR-CLI-SCAN-01
-// @impl:FR-CLI-CHECK-01
+// @impl:FR-CLI-SCAN-01-B
+// @impl:FR-CLI-CHECK-01 @impl:FR-CLI-02
 // @impl:FR-CLI-CHECK-02
 pub fn run() -> ExitCode {
     let args = Cli::parse();

@@ -11,8 +11,8 @@ use srcdump::walker::walk_files;
 use srcidx::parser::ParserRegistry;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-MCP-PROTO-02
-// @impl:FR-MCP-PROTO-03
+// @impl:FR-MCP-PROTO-02-B @impl:FR-MCP-02
+// @impl:FR-MCP-PROTO-03-A
 
 pub fn get_tools_list() -> serde_json::Value {
     serde_json::json!({

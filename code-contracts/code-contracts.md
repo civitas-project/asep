@@ -66,7 +66,7 @@ pub fn read_seq(&self) -> u64 {
 
 ### Pattern B: Fallible Domain Operation (`Result`)
 ```rust
-// @impl:FR-TENANT-01
+// \@impl:FR-TENANT-01
 /// Stores a tenant-scoped key-value mutation into the database.
 ///
 /// # Errors
@@ -120,7 +120,7 @@ unsafe { System.dealloc(ptr, layout) }
 | :--- | :--- |
 | *"I added `# Panics: None` so the reader knows it is safe."* | Phantom sections waste context tokens and obscure real panics. If a function cannot panic, omit `# Panics` completely. |
 | *"I wrote `/// new: creates a new instance` to satisfy `missing_docs`."* | Parroting the identifier adds zero information. State what state or resource the constructor initializes (e.g., `/// Allocates a new TinyLfuCache holding up to capacity blocks.`). |
-| *"I put `// @impl:FR-CORE-01` on all 15 helper methods in the file."* | Tag spam breaks 1:1 traceability clarity. Attach `@impl` to the module header or primary public entrypoint. |
+| *"I put `// \@impl:FR-CORE-01` on all 15 helper methods in the file."* | Tag spam breaks 1:1 traceability clarity. Attach `@impl` to the module header or primary public entrypoint. |
 
 ---
 

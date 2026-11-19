@@ -20,3 +20,6 @@ pub mod self_update;
 pub mod scanner;
 pub mod skill;
 pub mod snapshot;
+
+#[cfg(test)]
+mod traceability_tests;

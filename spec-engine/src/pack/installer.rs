@@ -11,7 +11,7 @@ use inquire::{Confirm, MultiSelect, Select};
 use std::fs;
 use std::path::PathBuf;
 
-// @impl:FR-PACK-INSTALL-01
+// @impl:FR-PACK-INSTALL-01 @impl:FR-PACK-02
 // @impl:FR-PACK-INSTALL-02
 
 #[derive(Debug, Clone, Default)]

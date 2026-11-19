@@ -29,7 +29,7 @@ static FN_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+([A-Za-z0-9_]+)\s*\(").expect("valid fn regex")
 });
 
-// @impl:FR-CLI-DOC-01
+// @impl:FR-CLI-DOC-01-A @impl:FR-CLI-04
 // @impl:FR-CLI-DOC-02
 /// Audits inline docstrings against Docstring Contract Anti-Parroting and Strict Conditionality standards.
 ///
@@ -107,7 +107,7 @@ pub fn audit_doc_contracts(path: &Path, content: &str) -> Vec<DocContractViolati
     violations
 }
 
-// @impl:FR-CLI-DOC-01
+// @impl:FR-CLI-DOC-01-B
 /// Audits all source code files in a project tree for docstring contract violations.
 pub fn audit_project_docstrings(
     root: &Path,

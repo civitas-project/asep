@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-SKILL-INSPECT-01
+// @impl:FR-SKILL-INSPECT-01-A @impl:FR-SKILL-01
 // @impl:FR-SKILL-DRIFT-01
 
 /// Drift between an installed skill copy and its embedded canonical original.

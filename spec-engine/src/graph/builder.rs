@@ -121,7 +121,7 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
     }
 }
 
-// @impl:FR-CLI-GRAPH-02
+// @impl:FR-CLI-GRAPH-02-F
 /// Builds the typed relation graph from scanned tags and evaluates the
 /// canonical coverage rules COV-01..COV-06 from `policy`.
 ///

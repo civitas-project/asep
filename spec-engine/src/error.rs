@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 use thiserror::Error;
 
-// @design:FR-CLI-GRAPH-01
+// @design:FR-CLI-GRAPH-01-B
 #[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum AsepError {
@@ -31,7 +31,7 @@ pub enum AsepError {
 }
 
 impl AsepError {
-    // @impl:FR-CLI-GRAPH-02
+    // @impl:FR-CLI-GRAPH-02-A
     #[allow(dead_code)]
     /// Maps domain error to standardized process exit codes.
     pub fn exit_code(&self) -> ExitCode {

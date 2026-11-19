@@ -1,5 +1,5 @@
 use asep::pack::embedded::get_embedded_skills;
-use asep::skill::inspector::{detect_skill_drift, inspect_skills, SkillDrift};
+use asep::skill::inspector::{detect_skill_drift, inspect_skills};
 use asep::skill::model::SkillStatus;
 use std::fs;
 use tempfile::tempdir;

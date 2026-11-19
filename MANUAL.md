@@ -25,7 +25,7 @@
 The Axiomatic Systems Engineering Protocol (ASEP) treats software requirements, architectural designs, production implementations, and verification suites as a single, mathematically closed bipartite graph. 
 
 Instead of isolating specifications in external issue trackers or wiki pages that drift away from code:
-- **Living Specifications:** Requirements exist directly inside version-controlled Markdown artifacts (`docs/PRD.md`) tagged with ISO 29148 metadata (`<!-- @req:FR-ID:PRIORITY Title -->`).
+- **Living Specifications:** Requirements exist directly inside version-controlled Markdown artifacts (`docs/PRD.md`) tagged with ISO 29148 metadata (`<!-- \@req:FR-ID:PRIORITY Title -->`).
 - **Closed-Loop Traceability:** Every mandatory requirement marked `MUST` must possess a 1:1 corresponding design mapping (`@design`), production interface (`// @impl`), and passing automated test (`// @test`).
 - **Dual-Track SDLC:** ASEP balances rapid exploratory prototyping with extreme programming rigor through two discrete tracks:
   - **Track 1 (Velocity Mode):** Rapid discovery allowing in-progress exploratory requirements (`@req\:*:DRAFT`) and relaxed docstring audits.
@@ -139,9 +139,9 @@ During initial architectural discovery, enforce speed over completeness:
 ### Recipe 3: Hardening to Axiomatic Mode (In-Place Graduation)
 Before merging feature branches into integration trunks, harden prototypes:
 1. Promote draft tag to mandatory status: change `:DRAFT` to `:MUST`.
-2. Add the corresponding `@design:FR-ID` in architecture models or ADRs.
-3. Annotate public functions with `// @impl:FR-ID`.
-4. Add automated test coverage with `// @test:FR-ID`.
+2. Add the corresponding `\@design:FR-ID` in architecture models or ADRs.
+3. Annotate public functions with `// \@impl:FR-ID`.
+4. Add automated test coverage with `// \@test:FR-ID`.
 5. Verify zero lingering drafts:
    ```bash
    asep check . --deny-drafts

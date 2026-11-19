@@ -18,7 +18,7 @@ pub struct ScannedTag {
     pub raw_line: String,
 }
 
-// @impl:FR-CLI-SCAN-01
+// @impl:FR-CLI-SCAN-01 @impl:FR-CLI-01
 /// Recursively scans repository for traceability tags respecting gitignore rules.
 ///
 /// # Errors: Returns `AsepError::Io` if traversal errors occur.

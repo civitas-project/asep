@@ -83,7 +83,7 @@ feat([scope]): [imperative action description] [@req\:FR-[MODULE]-[ID]]
 ```
 
 Examples:
-- `feat(pack): auto-detect all modern agentic AI software and default-check installed agents [@req:FR-PACK-TARGETS-01]`
+- `feat(pack): auto-detect all modern agentic AI software and default-check installed agents [\@req:FR-PACK-TARGETS-01]`
 - `fix(lexer): prevent buffer overrun on tags exceeding 64KB [@lim:LIM-MEM-01]`
 
 ---

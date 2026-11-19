@@ -18,7 +18,7 @@ pub enum VerificationStatus {
     Unproven,
 }
 
-// @impl:FR-VERIFY-01
+// @impl:FR-VERIFY-01-B
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VerificationReport {
     pub status: VerificationStatus,
@@ -92,7 +92,7 @@ fn read_behavioral_passed(path: &Path) -> bool {
     value.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
-// @impl:FR-VERIFY-01
+// @impl:FR-VERIFY-01-C
 /// Computes the verification status for a `GraphReport`.
 ///
 /// - `structural` = `graph.is_closed` (no error-severity coverage violation).

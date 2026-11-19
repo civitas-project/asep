@@ -46,7 +46,7 @@ pub enum NodeKind {
     Adr,
 }
 
-// @impl:FR-CLI-GRAPH-02
+// @impl:FR-CLI-GRAPH-02-B
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceNode {
     pub kind: NodeKind,
@@ -55,7 +55,7 @@ pub struct TraceNode {
     pub line_number: usize,
 }
 
-// @impl:FR-CLI-GRAPH-02
+// @impl:FR-CLI-GRAPH-02-C
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceEdge {
     pub kind: EdgeKind,
@@ -64,7 +64,7 @@ pub struct TraceEdge {
     pub note: Option<String>,
 }
 
-// @impl:FR-CLI-GRAPH-02
+// @impl:FR-CLI-GRAPH-02-D
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoverageViolation {
     pub rule_id: String,
@@ -76,7 +76,7 @@ pub struct CoverageViolation {
     pub required: usize,
 }
 
-// @impl:FR-CLI-GRAPH-02
+// @impl:FR-CLI-GRAPH-02-E
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GraphReport {
     pub nodes: Vec<TraceNode>,
