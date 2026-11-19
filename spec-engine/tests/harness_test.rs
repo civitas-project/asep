@@ -260,3 +260,25 @@ fn test_stress_fixture_has_no_unsafe() {
     let text = stress_fixture_source();
     assert!(!text.contains("unsafe"), "fixture must contain no `unsafe`");
 }
+
+#[test]
+fn test_vendor_script_points_to_offline_config() {
+    let root = workspace_root();
+    let script = root.join("harness/e2e/scripts/vendor-loom.sh");
+    assert!(script.is_file(), "vendor-loom.sh must exist");
+
+    let text = std::fs::read_to_string(&script).expect("read vendor-loom.sh");
+
+    assert!(
+        text.contains("=0.7.3"),
+        "script must pin loom = \"=0.7.3\""
+    );
+    assert!(
+        text.contains(".cargo/config.toml"),
+        "script must write .cargo/config.toml"
+    );
+    assert!(
+        text.contains("--offline"),
+        "script must verify with cargo test --offline"
+    );
+}

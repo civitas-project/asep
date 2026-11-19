@@ -38,8 +38,8 @@ fn loom_sp_sc_fifo_no_loss_no_dup() {
             move || {
                 for &v in VALUES {
                     while ring.push(v).is_err() {
-                        // Full ring: spin until a slot frees.
-                        std::thread::yield_now();
+                        // Full ring: spin until a slot frees (loom explores these yield points).
+                        loom::thread::yield_now();
                     }
                 }
             }
@@ -53,7 +53,7 @@ fn loom_sp_sc_fifo_no_loss_no_dup() {
                     if let Some(v) = ring.pop() {
                         log.lock().push(v);
                     } else {
-                        std::thread::yield_now();
+                        loom::thread::yield_now();
                     }
                 }
             }
