@@ -1,5 +1,6 @@
 //! Interactive `inquire` TUI installer and headless packaging engine.
 
+use crate::config::settings::load_config;
 use crate::pack::embedded::{
     get_default_mcp_config_json, get_default_plugin_json, get_embedded_skills,
 };
@@ -254,7 +255,8 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 };
 
                 update_opencode_json(&config_file, "asep")?;
-                scaffold_opencode_agents(&config_file)?;
+                let profile = load_config(&target_dir).capabilities;
+                scaffold_opencode_agents(&config_file, &profile)?;
 
                 println!(
                     "{} Installed OpenCode with {} skills, MCP, and agent presets in {}",

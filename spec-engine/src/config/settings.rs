@@ -46,6 +46,57 @@ impl Default for EditorSettings {
     }
 }
 
+/// Agent capability profile: fail-closed ceiling applied to scaffolded
+/// OpenCode agent permissions. Default is all capabilities enabled with a
+/// 200k context window, preserving existing scaffold behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CapabilityProfile {
+    pub file_read: bool,
+    pub file_write: bool,
+    pub terminal: bool,
+    pub mcp: bool,
+    pub subagents: bool,
+    pub web: bool,
+    pub context_window: usize,
+}
+
+impl Default for CapabilityProfile {
+    fn default() -> Self {
+        Self {
+            file_read: true,
+            file_write: true,
+            terminal: true,
+            mcp: true,
+            subagents: true,
+            web: true,
+            context_window: 200_000,
+        }
+    }
+}
+
+impl CapabilityProfile {
+    /// Returns the names from `required` that are disabled on this profile,
+    /// preserving the order of `required`. Unknown names are ignored.
+    pub fn missing(&self, required: &[&str]) -> Vec<String> {
+        required
+            .iter()
+            .filter_map(|name| {
+                let disabled = match *name {
+                    "file_read" => !self.file_read,
+                    "file_write" => !self.file_write,
+                    "terminal" => !self.terminal,
+                    "mcp" => !self.mcp,
+                    "subagents" => !self.subagents,
+                    "web" => !self.web,
+                    _ => return None,
+                };
+                disabled.then_some(name.to_string())
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineConfig {
     #[serde(default)]
@@ -53,6 +104,9 @@ pub struct EngineConfig {
 
     #[serde(default)]
     pub rigor: Option<String>,
+
+    #[serde(default)]
+    pub capabilities: CapabilityProfile,
 }
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).

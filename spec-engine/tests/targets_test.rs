@@ -1,3 +1,4 @@
+use asep::config::settings::CapabilityProfile;
 use asep::pack::manifest::{
     generate_plugin_json, scaffold_opencode_agents, update_opencode_json,
 };
@@ -207,7 +208,7 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
     }"#;
     fs::write(&config_file, initial_json).unwrap();
 
-    scaffold_opencode_agents(&config_file).unwrap();
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
 
     let updated_content = fs::read_to_string(&config_file).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(&updated_content).unwrap();
@@ -254,7 +255,7 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
-    scaffold_opencode_agents(&config_file).unwrap();
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
@@ -286,4 +287,40 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     assert!(has("asep_srcdump", "allow"), "explorer needs srcdump access");
     assert!(has("asep_srcidx", "allow"), "explorer needs srcidx access");
     assert!(!has("asep_adr_new", "allow"), "explorer must not be allowed to write ADRs");
+}
+
+// @test:FR-PACK-MANIFEST-03
+#[test]
+fn test_scaffold_opencode_agents_denies_disabled_capabilities() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    let mut profile = CapabilityProfile::default();
+    profile.file_write = false;
+
+    scaffold_opencode_agents(&config_file, &profile).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    let has = |agent: &str, action: &str, effect: &str| {
+        parsed["agents"][agent]
+            ["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["action"].as_str() == Some(action) && r["effect"].as_str() == Some(effect))
+    };
+
+    // file_write = false must deny edit for every agent.
+    for name in ["lead", "executor", "judge", "explorer"] {
+        assert!(has(name, "edit", "deny"), "{name}: edit must be denied");
+    }
+
+    // Read capabilities remain allowed for every agent.
+    for name in ["lead", "executor", "judge", "explorer"] {
+        assert!(has(name, "read", "allow"), "{name}: read must be allowed");
+        assert!(has(name, "glob", "allow"), "{name}: glob must be allowed");
+        assert!(has(name, "grep", "allow"), "{name}: grep must be allowed");
+    }
 }
