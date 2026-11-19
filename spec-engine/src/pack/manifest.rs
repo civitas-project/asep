@@ -185,6 +185,41 @@ fn read_only_env_denies() -> Vec<serde_json::Value> {
     ]
 }
 
+/// Role-scoped allows for the ASEP agent message tools (`asep_agent_*`).
+/// `subagent` is never widened here: executor keeps an explicit subagent
+/// deny, and judge/explorer keep theirs via `read_only_action_denies`.
+fn lead_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "asep_agent_send", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_recv", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_read", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_ack", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Executor may only `asep_agent_send` with `kind=TASK_REPORT` and
+/// `asep_agent_recv`; `subagent` stays denied.
+fn executor_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "subagent", "resource": "*", "effect": "deny"}),
+        json!({"action": "asep_agent_send", "resource": "kind=TASK_REPORT", "effect": "allow"}),
+        json!({"action": "asep_agent_recv", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Judge may only `asep_agent_send` with `kind=VERDICT` and `asep_agent_read`.
+fn judge_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "asep_agent_send", "resource": "kind=VERDICT", "effect": "allow"}),
+        json!({"action": "asep_agent_read", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Explorer may only `asep_agent_send` with `kind=MAP_REPORT`.
+fn explorer_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![json!({"action": "asep_agent_send", "resource": "kind=MAP_REPORT", "effect": "allow"})]
+}
+
 /// Explorer keeps its read-only tool allows (`execute`, `asep_srcdump`,
 /// `asep_srcidx`) regardless of the profile.
 fn explorer_tool_allows() -> Vec<serde_json::Value> {
@@ -284,7 +319,7 @@ Rules:
 - Never claim completion without fresh verification output.
 - Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
 - Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user."#,
-            "permissions": agent_permissions(profile, &[])
+            "permissions": agent_permissions(profile, &lead_agent_message_rules())
         },
         "executor": {
             "description": "Fast coding executor in a bounded executor-judge pipeline.",
@@ -303,7 +338,7 @@ Working limits:
 8. End the report with exactly one status line: `DONE` when the task scope is complete and verification ran and passed, `UNCERTAIN: <reason>`, or `BLOCKED: <reason>`. Never omit the status line.
 
 Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
-            "permissions": agent_permissions(profile, &[])
+            "permissions": agent_permissions(profile, &executor_agent_message_rules())
         },
         "judge": {
             "description": "Read-only reviewer verifying executor output against task, diff, and test evidence.",
@@ -326,7 +361,12 @@ Rules:
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
             "permissions": agent_permissions(
                 profile,
-                &[read_only_env_denies(), read_only_action_denies()].concat()
+                &[
+                    read_only_env_denies(),
+                    read_only_action_denies(),
+                    judge_agent_message_rules(),
+                ]
+                .concat()
             )
         },
         "explorer": {
@@ -351,6 +391,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
                     read_only_env_denies(),
                     explorer_tool_allows(),
                     read_only_action_denies(),
+                    explorer_agent_message_rules(),
                 ]
                 .concat()
             )

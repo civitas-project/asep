@@ -325,6 +325,62 @@ fn test_scaffold_opencode_agents_denies_disabled_capabilities() {
     }
 }
 
+// @test:FR-PACK-MANIFEST-05
+#[test]
+fn test_scaffold_opencode_agents_scopes_agent_message_tools_per_role() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    let perms = |agent: &str| {
+        parsed["agents"][agent]["permissions"]
+            .as_array()
+            .expect("agent permissions must be an array")
+    };
+    let has = |rules: &[serde_json::Value], action: &str, resource: &str, effect: &str| -> bool {
+        rules.iter().any(|r| {
+            r["action"].as_str() == Some(action)
+                && r["resource"].as_str() == Some(resource)
+                && r["effect"].as_str() == Some(effect)
+        })
+    };
+
+    // Lead may send/recv/read/ack, no kind restriction.
+    let lead = perms("lead");
+    assert!(has(lead, "asep_agent_send", "*", "allow"), "lead: asep_agent_send allow");
+    assert!(has(lead, "asep_agent_recv", "*", "allow"), "lead: asep_agent_recv allow");
+    assert!(has(lead, "asep_agent_read", "*", "allow"), "lead: asep_agent_read allow");
+    assert!(has(lead, "asep_agent_ack", "*", "allow"), "lead: asep_agent_ack allow");
+
+    // Executor: send only TASK_REPORT and recv; no read/ack; subagent stays denied.
+    let executor = perms("executor");
+    assert!(has(executor, "asep_agent_send", "kind=TASK_REPORT", "allow"));
+    assert!(has(executor, "asep_agent_recv", "*", "allow"));
+    assert!(!has(executor, "asep_agent_read", "*", "allow"));
+    assert!(!has(executor, "asep_agent_ack", "*", "allow"));
+    assert!(has(executor, "subagent", "*", "deny"));
+
+    // Judge: send only VERDICT and read; no recv/ack; subagent stays denied.
+    let judge = perms("judge");
+    assert!(has(judge, "asep_agent_send", "kind=VERDICT", "allow"));
+    assert!(has(judge, "asep_agent_read", "*", "allow"));
+    assert!(!has(judge, "asep_agent_recv", "*", "allow"));
+    assert!(!has(judge, "asep_agent_ack", "*", "allow"));
+    assert!(has(judge, "subagent", "*", "deny"));
+
+    // Explorer: send only MAP_REPORT; no recv/read/ack; subagent stays denied.
+    let explorer = perms("explorer");
+    assert!(has(explorer, "asep_agent_send", "kind=MAP_REPORT", "allow"));
+    assert!(!has(explorer, "asep_agent_recv", "*", "allow"));
+    assert!(!has(explorer, "asep_agent_read", "*", "allow"));
+    assert!(!has(explorer, "asep_agent_ack", "*", "allow"));
+    assert!(has(explorer, "subagent", "*", "deny"));
+}
+
 // @test:FR-PACK-MANIFEST-04
 #[test]
 fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
