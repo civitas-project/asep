@@ -5,10 +5,10 @@
 //! kinds, coverage rules COV-01..COV-06, rigor tiers T0..T4, and exit codes
 //! are defined.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Typed traceability edge kind.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum EdgeKind {
     Satisfies,
     Verifies,
