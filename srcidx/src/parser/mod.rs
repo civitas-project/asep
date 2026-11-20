@@ -1,14 +1,15 @@
 //! Parser trait for extracting symbols from source files.
 
+pub mod dart;
+pub mod go;
+pub mod java;
+pub mod markup;
+pub mod php;
+pub mod python;
 pub mod rust;
 pub mod tree_sitter_base;
 pub mod typescript;
 pub mod typst;
-pub mod python;
-pub mod dart;
-pub mod go;
-pub mod php;
-pub mod java;
 
 use crate::index::{Symbol, Visibility};
 use std::path::Path;
@@ -79,7 +80,7 @@ impl ParserEntry {
 /// Thread-safe parser registry with lazy initialization.
 #[derive(Clone)]
 pub struct ParserRegistry {
-    // ponytail: linear scan over small Vec of parsers (8 entries); upgrade to extension HashMap if parser count exceeds 50.
+    // ponytail: linear scan over small Vec of parsers (11 entries); upgrade to extension HashMap if parser count exceeds 50.
     entries: Arc<RwLock<Vec<ParserEntry>>>,
 }
 
@@ -139,7 +140,10 @@ impl ParserRegistry {
         );
     }
 
-    pub fn register_factory(&mut self, factory: Box<dyn Fn() -> Box<dyn SourceParser> + Send + Sync>) {
+    pub fn register_factory(
+        &mut self,
+        factory: Box<dyn Fn() -> Box<dyn SourceParser> + Send + Sync>,
+    ) {
         let parser = factory();
         self.register(parser);
     }
@@ -257,16 +261,18 @@ impl ParserRegistry {
     /// Get all parsers, initializing any uninitialized parsers.
     pub fn iter_parsers(&self) -> Vec<Arc<RwLock<Box<dyn SourceParser>>>> {
         let mut entries = self.entries.write().unwrap();
-        entries.iter_mut().map(|entry| entry.get_or_init()).collect()
+        entries
+            .iter_mut()
+            .map(|entry| entry.get_or_init())
+            .collect()
     }
 }
 
 impl Default for ParserRegistry {
     fn default() -> Self {
         let mut registry = Self::new();
-        registry.register_lazy_extensions(&["rs"], || {
-            Box::new(crate::parser::rust::RustParser::new())
-        });
+        registry
+            .register_lazy_extensions(&["rs"], || Box::new(crate::parser::rust::RustParser::new()));
         registry.register_lazy_extensions(&["ts", "tsx", "js", "jsx", "mjs", "cjs"], || {
             crate::parser::typescript::create_typescript_parser().unwrap()
         });
@@ -279,14 +285,20 @@ impl Default for ParserRegistry {
         registry.register_lazy_extensions(&["dart"], || {
             crate::parser::dart::create_dart_parser().unwrap()
         });
-        registry.register_lazy_extensions(&["go"], || {
-            crate::parser::go::create_go_parser().unwrap()
-        });
+        registry
+            .register_lazy_extensions(&["go"], || crate::parser::go::create_go_parser().unwrap());
         registry.register_lazy_extensions(&["php", "php8", "phtml"], || {
             crate::parser::php::create_php_parser().unwrap()
         });
         registry.register_lazy_extensions(&["java"], || {
             crate::parser::java::create_java_parser().unwrap()
+        });
+        registry.register_lazy_extensions(&["md", "mdx"], || {
+            crate::parser::markup::MarkupParser::markdown()
+        });
+        registry.register_lazy_extensions(&["rst"], || crate::parser::markup::MarkupParser::rst());
+        registry.register_lazy_extensions(&["adoc"], || {
+            crate::parser::markup::MarkupParser::asciidoc()
         });
         registry
     }
@@ -339,7 +351,10 @@ pub fn extract_tags(doc: &Option<String>) -> Vec<String> {
     if let Some(doc) = doc {
         for line in doc.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
+            if trimmed.starts_with("@impl:")
+                || trimmed.starts_with("@test:")
+                || trimmed.starts_with("@criticality:")
+            {
                 tags.push(trimmed.to_string());
             }
         }
@@ -373,7 +388,10 @@ pub fn extract_tags_from_doc(doc: &Option<String>) -> Vec<String> {
     if let Some(doc) = doc {
         for line in doc.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
+            if trimmed.starts_with("@impl:")
+                || trimmed.starts_with("@test:")
+                || trimmed.starts_with("@criticality:")
+            {
                 tags.push(trimmed.to_string());
             }
         }
@@ -388,7 +406,7 @@ mod tests {
     #[test]
     fn test_lazy_initialization() {
         let registry = ParserRegistry::default();
-        assert_eq!(registry.len(), 8);
+        assert_eq!(registry.len(), 11);
         assert_eq!(registry.initialized_count(), 0);
         assert_eq!(registry.is_initialized(Path::new("test.rs")), Some(false));
         assert_eq!(registry.is_initialized(Path::new("test.py")), Some(false));
@@ -436,7 +454,10 @@ mod tests {
         let registry = ParserRegistry::default();
         assert_eq!(registry.initialized_count(), 0);
 
-        let result = registry.parse_file(Path::new("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }");
+        let result = registry.parse_file(
+            Path::new("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+        );
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "add");
         assert_eq!(registry.initialized_count(), 1);
