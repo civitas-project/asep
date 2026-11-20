@@ -275,14 +275,14 @@ fn test_agent_send_sets_reply_to() {
     let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
     let id = val["id"].as_str().expect("id is string");
 
-    // Raw envelope file must use short key "rt" with reply_to value.
+    // Raw envelope file must use semantic key "reply_to".
     let raw = fs::read_to_string(
         dir.path().join("messages").join(format!("{id}.json")),
     )
     .unwrap();
     assert!(
-        raw.contains("\"rt\":\"msg-prev\""),
-        "raw envelope must contain short rt key with reply_to value"
+        raw.contains("\"reply_to\":\"msg-prev\""),
+        "raw envelope must contain reply_to key with msg-prev value"
     );
 
     // Deserialized envelope must expose reply_to.

@@ -106,26 +106,20 @@ pub enum Kind {
     Custom,
 }
 
-/// The common envelope. New files write short keys (v, i, f, t, k, rt, r, s,
-/// ts); long keys (id, from, to, kind, reply_to, ref, status) remain accepted
-/// as aliases so old message files still deserialize. No `body` field: bodies
-/// travel in sidecar files so tool calls carry only id/path/hash.
+/// The common envelope. Files write full semantic keys (v, id, from, to, kind,
+/// reply_to, ref, status, ts). `ref` is serialized as `"ref"` because `ref` is
+/// a Rust keyword; that is a semantic name, not a shortening. No `body` field:
+/// bodies travel in sidecar files so tool calls carry only id/path/hash.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub v: u8,
-    #[serde(rename = "i", alias = "id")]
     pub id: String,
-    #[serde(rename = "f", alias = "from")]
     pub from: Role,
-    #[serde(rename = "t", alias = "to")]
     pub to: Role,
-    #[serde(rename = "k", alias = "kind")]
     pub kind: Kind,
-    #[serde(rename = "rt", alias = "reply_to")]
     pub reply_to: Option<String>,
-    #[serde(rename = "r", alias = "ref")]
+    #[serde(rename = "ref")]
     pub ref_: Option<String>,
-    #[serde(rename = "s", alias = "status")]
     pub status: String,
     pub ts: String,
 }

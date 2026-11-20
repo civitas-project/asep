@@ -83,7 +83,7 @@ fn test_lead_can_reject_own_sent_message() {
     )
     .unwrap())
     .unwrap();
-    assert_eq!(env["s"], "rejected");
+    assert_eq!(env["status"], "rejected");
     // Non-recipient cannot ack lead's message.
     assert!(store.ack(Role::Judge, &envelope.id, "accepted").is_err());
     // Lead may not ack its own message with a non-rejected status.
@@ -128,10 +128,10 @@ fn test_send_writes_envelope_without_body_in_summary() {
         )
         .unwrap();
     let summary = serde_json::to_string(&envelope).unwrap();
-    assert!(summary.contains("\"i\""));
-    assert!(summary.contains("\"k\""));
-    assert!(summary.contains("\"f\""));
-    assert!(summary.contains("\"t\""));
+    assert!(summary.contains("\"id\""));
+    assert!(summary.contains("\"kind\""));
+    assert!(summary.contains("\"from\""));
+    assert!(summary.contains("\"to\""));
     assert!(!summary.contains("body"));
     assert_eq!(envelope.from, Role::Lead);
     assert_eq!(envelope.to, Role::Executor);
@@ -304,7 +304,7 @@ fn test_schema_drives_body_check() {
 }
 
 #[test]
-fn test_compact_envelope_writes_short_keys_and_reads_legacy() {
+fn test_envelope_uses_full_semantic_keys() {
     let dir = tempfile::tempdir().unwrap();
     let store = MessageStore::new(dir.path());
     let envelope = store
@@ -321,14 +321,17 @@ fn test_compact_envelope_writes_short_keys_and_reads_legacy() {
         dir.path().join("messages").join(format!("{}.json", envelope.id)),
     )
     .unwrap();
-    assert!(raw.contains("\"f\""), "envelope must write short 'f' key");
-    assert!(raw.contains("\"t\""), "envelope must write short 't' key");
-    assert!(raw.contains("\"k\""), "envelope must write short 'k' key");
-    assert!(!raw.contains("\"from\""), "envelope must not write long 'from' key");
-    assert!(!raw.contains("\"to\""), "envelope must not write long 'to' key");
-    assert!(!raw.contains("\"kind\""), "envelope must not write long 'kind' key");
+    let obj: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    let keys = obj.as_object().expect("envelope is a JSON object");
+    for key in ["id", "from", "to", "kind", "reply_to", "ref", "status"] {
+        assert!(keys.contains_key(key), "envelope must write '{key}' key");
+    }
+    for short in ["f", "t", "k", "rt", "r", "s"] {
+        assert!(!keys.contains_key(short), "envelope must not contain short key '{short}'");
+    }
 
     // Legacy long-key envelope must still deserialize and pass validation.
+    // Long keys are now the only format, so this is the same format.
     let legacy = serde_json::json!({
         "v": 1,
         "id": "msg-legacy-001",
