@@ -30,6 +30,84 @@ fn test_markup_parser_constructors() {
     assert_eq!(MarkupParser::rst().extensions(), &["rst"]);
     assert_eq!(MarkupParser::asciidoc().language_id(), "asciidoc");
     assert_eq!(MarkupParser::asciidoc().extensions(), &["adoc"]);
+    assert_eq!(MarkupParser::html().language_id(), "html");
+    assert_eq!(MarkupParser::html().extensions(), &["html", "htm"]);
+    assert_eq!(MarkupParser::xml().language_id(), "xml");
+    assert_eq!(MarkupParser::xml().extensions(), &["xml"]);
+    assert_eq!(MarkupParser::latex().language_id(), "latex");
+    assert_eq!(MarkupParser::latex().extensions(), &["tex", "latex"]);
+}
+
+#[test]
+fn test_html_symbols_and_tags() {
+    let content = "<title>Document Title</title>\n<h2 id=\"sec\">Section</h2>\n<!-- @req:FR-H:MUST -->\n";
+    let (_dir, path) = write_doc(content, "html");
+    let registry = ParserRegistry::default();
+    let result = registry.parse_file(&path, content);
+    let symbols = &result.symbols;
+
+    let title = symbol_named(symbols, "document-title", "Document Title");
+    assert_eq!(title.line, 1);
+
+    let heading = symbol_named(symbols, "heading", "Section");
+    assert_eq!(heading.line, 2);
+
+    let anchor = symbol_named(symbols, "anchor", "sec");
+    assert_eq!(anchor.line, 2);
+
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.tags.iter().any(|tag| tag.contains("@req:FR-H"))),
+        "trace tag @req:FR-H should be attached to some symbol"
+    );
+}
+
+#[test]
+fn test_xml_symbols_and_tags() {
+    let content = "<config>\n  <item id=\"x\">\n  <xs:element name=\"foo\" xmlns:xs=\"http://example.com/xsd\"/>\n  <!-- @impl:FR-X -->\n</config>\n";
+    let (_dir, path) = write_doc(content, "xml");
+    let registry = ParserRegistry::default();
+    let result = registry.parse_file(&path, content);
+    let symbols = &result.symbols;
+
+    let root = symbol_named(symbols, "root", "config");
+    assert_eq!(root.line, 1);
+
+    let element = symbol_named(symbols, "element", "x");
+    assert_eq!(element.line, 2);
+
+    let schema = symbol_named(symbols, "schema", "foo");
+    assert_eq!(schema.line, 3);
+
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.tags.iter().any(|tag| tag.contains("@impl:FR-X"))),
+        "trace tag @impl:FR-X should be attached to some symbol"
+    );
+}
+
+#[test]
+fn test_latex_symbols_and_tags() {
+    let content = "\\section{Intro}\n\\label{sec:intro}\n% @test:FR-L\n";
+    let (_dir, path) = write_doc(content, "tex");
+    let registry = ParserRegistry::default();
+    let result = registry.parse_file(&path, content);
+    let symbols = &result.symbols;
+
+    let heading = symbol_named(symbols, "heading", "Intro");
+    assert_eq!(heading.line, 1);
+
+    let anchor = symbol_named(symbols, "anchor", "sec:intro");
+    assert_eq!(anchor.line, 2);
+
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.tags.iter().any(|tag| tag.contains("@test:FR-L"))),
+        "trace tag @test:FR-L should be attached to some symbol"
+    );
 }
 
 #[test]

@@ -80,7 +80,7 @@ impl ParserEntry {
 /// Thread-safe parser registry with lazy initialization.
 #[derive(Clone)]
 pub struct ParserRegistry {
-    // ponytail: linear scan over small Vec of parsers (11 entries); upgrade to extension HashMap if parser count exceeds 50.
+    // ponytail: linear scan over small Vec of parsers (14 entries); upgrade to extension HashMap if parser count exceeds 50.
     entries: Arc<RwLock<Vec<ParserEntry>>>,
 }
 
@@ -300,6 +300,13 @@ impl Default for ParserRegistry {
         registry.register_lazy_extensions(&["adoc"], || {
             crate::parser::markup::MarkupParser::asciidoc()
         });
+        registry.register_lazy_extensions(&["html", "htm"], || {
+            crate::parser::markup::MarkupParser::html()
+        });
+        registry.register_lazy_extensions(&["xml"], || crate::parser::markup::MarkupParser::xml());
+        registry.register_lazy_extensions(&["tex", "latex"], || {
+            crate::parser::markup::MarkupParser::latex()
+        });
         registry
     }
 }
@@ -406,7 +413,7 @@ mod tests {
     #[test]
     fn test_lazy_initialization() {
         let registry = ParserRegistry::default();
-        assert_eq!(registry.len(), 11);
+        assert_eq!(registry.len(), 14);
         assert_eq!(registry.initialized_count(), 0);
         assert_eq!(registry.is_initialized(Path::new("test.rs")), Some(false));
         assert_eq!(registry.is_initialized(Path::new("test.py")), Some(false));
