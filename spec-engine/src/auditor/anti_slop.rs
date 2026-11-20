@@ -2,7 +2,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 
 use crate::policy::Severity;
 
@@ -29,6 +29,7 @@ struct CompiledRule {
     id: String,
     domain: String,
     severity: Severity,
+    max_nesting: Option<usize>,
     message: String,
     regex: Regex,
 }
@@ -44,6 +45,7 @@ fn antislop_rules_cache() -> &'static [CompiledRule] {
                 id: r.id.clone(),
                 domain: r.domain.clone(),
                 severity: r.severity,
+                max_nesting: r.max_nesting,
                 message: r.message.clone(),
                 regex: Regex::new(&r.pattern).expect("valid antislop rule pattern"),
             })
@@ -73,15 +75,19 @@ enum SegKind {
     BlockComment,
 }
 
-static BOX_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\u{2500}-\u{257F}]").expect("valid box drawing regex")
-});
+/// Returns the compiled rule with the given id, in any domain.
+fn rule_by_id(id: &str) -> Option<&'static CompiledRule> {
+    antislop_rules_cache().iter().find(|r| r.id == id)
+}
 
-/// Banner match: policy AS-CODE-BANNER pattern, plus box drawing (not in policy).
+/// Banner match: policy AS-CODE-BANNER pattern plus canonical AS-CODE-BOXDRAW.
 fn banner_match(trimmed: &str) -> Option<String> {
     code_rule("AS-CODE-BANNER")
         .and_then(|r| r.regex.find(trimmed).map(|m| m.as_str().to_string()))
-        .or_else(|| BOX_REGEX.find(trimmed).map(|m| m.as_str().to_string()))
+        .or_else(|| {
+            code_rule("AS-CODE-BOXDRAW")
+                .and_then(|r| r.regex.find(trimmed).map(|m| m.as_str().to_string()))
+        })
 }
 
 fn lang_of(path: &Path) -> Lang {
@@ -164,7 +170,8 @@ fn check_comment(
         }
     }
 
-    let check_buzzwords = matches!(kind, SegKind::DocLine | SegKind::BlockComment);
+    let check_buzzwords =
+        matches!(kind, SegKind::DocLine | SegKind::LineComment | SegKind::BlockComment);
     if check_buzzwords {
         if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
             for m in rule.regex.find_iter(trimmed) {
@@ -198,8 +205,9 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
             if line.contains("asep:allow-antislop") {
                 continue;
             }
-            // AI buzzwords in markdown keep the existing kind/severity.
-            if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
+            // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
+            // but keep the existing AiBuzzword violation kind.
+            if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
                 for m in rule.regex.find_iter(line) {
                     violations.push(AntiSlopViolation {
                         file_path: path.to_path_buf(),
@@ -210,7 +218,7 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         message: message_for(&AntiSlopViolationKind::AiBuzzword {
                             word: m.as_str().to_string(),
                         }),
-                        severity: Severity::Error,
+                        severity: rule.severity,
                     });
                 }
             }
@@ -350,7 +358,8 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
     violations
 }
 
-/// Scans comment-stripped code for if blocks nested at depth 3 or more.
+/// Scans comment-stripped code for if blocks nested at or above the policy
+/// threshold from canonical rule AS-CODE-NESTING (`max_nesting`, default 3).
 /// An if at depth d is nested inside d-1 enclosing if blocks.
 /// Lines whose numbers are in `allowed_lines` are skipped (inline marker).
 fn scan_nesting(
@@ -359,6 +368,9 @@ fn scan_nesting(
     lines: &[String],
     allowed_lines: &std::collections::HashSet<usize>,
 ) {
+    let nesting_rule = code_rule("AS-CODE-NESTING");
+    let max_nesting = nesting_rule.and_then(|r| r.max_nesting).unwrap_or(3);
+    let severity = nesting_rule.map(|r| r.severity).unwrap_or(Severity::Warning);
     let mut stack: Vec<usize> = Vec::new();
     let mut brace_depth: usize = 0;
 
@@ -386,13 +398,13 @@ fn scan_nesting(
             {
                 let depth = stack.len() + 1;
                 stack.push(brace_depth);
-                if depth >= 3 {
+                if depth >= max_nesting {
                     violations.push(AntiSlopViolation {
                         file_path: path.to_path_buf(),
                         line_number: idx + 1,
                         kind: AntiSlopViolationKind::ExcessiveNesting { depth },
                         message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
-                        severity: Severity::Warning,
+                        severity,
                     });
                 }
                 i += 2;

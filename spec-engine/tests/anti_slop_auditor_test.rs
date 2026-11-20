@@ -135,6 +135,58 @@ fn test_policy_rules_detect_design_copy_and_docs_slop() {
 }
 
 #[test]
+fn test_box_drawing_produces_decorative_banner_error() {
+    let violations = audit_rs("// ┌───┐\nfn foo() {}\n");
+    let banners: Vec<_> = violations
+        .iter()
+        .filter(|v| matches!(v.kind, AntiSlopViolationKind::DecorativeBanner { .. }))
+        .collect();
+    assert!(!banners.is_empty(), "expected DecorativeBanner for box drawing");
+    assert!(
+        banners.iter().all(|v| v.severity == Severity::Error),
+        "box-drawing banner must be Error"
+    );
+}
+
+#[test]
+fn test_markdown_buzzword_uses_copy_rule() {
+    let violations = audit_md("This is a seamless experience.\n");
+    let buzz: Vec<_> = violations
+        .iter()
+        .filter(|v| matches!(v.kind, AntiSlopViolationKind::AiBuzzword { .. }))
+        .collect();
+    assert!(!buzz.is_empty(), "expected AiBuzzword in Markdown");
+    assert!(
+        buzz.iter().all(|v| v.severity == Severity::Error),
+        "AS-COPY-BUZZWORD must be Error"
+    );
+    assert!(
+        buzz.iter().any(|v| {
+            if let AntiSlopViolationKind::AiBuzzword { word } = &v.kind {
+                word == "seamless"
+            } else {
+                false
+            }
+        }),
+        "expected buzzword 'seamless'"
+    );
+}
+
+#[test]
+fn test_nesting_threshold_from_policy() {
+    // Depth 2 is below the policy max_nesting (3): must not be flagged.
+    let violations = audit_rs(
+        "fn foo(x: bool) {\n    if x {\n        if true {\n        }\n    }\n}\n",
+    );
+    assert!(
+        violations
+            .iter()
+            .all(|v| !matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
+        "depth below threshold must not be flagged: {violations:?}"
+    );
+}
+
+#[test]
 fn test_existing_code_slop_kinds_preserved() {
     let violations = audit_rs(
         "// =====================\n// Step 1: validate input\n/// Delve into robust solutions\nfn foo() {}\n",

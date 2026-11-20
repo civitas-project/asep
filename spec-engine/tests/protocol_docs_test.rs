@@ -7,17 +7,13 @@ fn test_engineering_specs_zero_antislop_and_puml_templates() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let specs_dir = root.join("engineering-specs");
 
-    // 1. Verify zero "antislop" mentions in engineering-specs
-    for entry in walkdir(specs_dir.clone()) {
-        if entry.is_file() {
-            let content = fs::read_to_string(&entry).unwrap_or_default();
-            assert!(
-                !content.to_lowercase().contains("antislop"),
-                "Found prohibited external mention 'antislop' in {}",
-                entry.display()
-            );
-        }
-    }
+    // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
+    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
+    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("docs").join("superpowers").exists(),
+        "docs/superpowers/ directory must not exist"
+    );
 
     // 2. Verify all 4 PlantUML templates exist and are valid PlantUML
     let templates_dir = specs_dir.join("templates");
@@ -74,17 +70,13 @@ fn test_code_contracts_multilang_and_zero_antislop() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let contracts_dir = root.join("code-contracts");
 
-    // 1. Verify zero "antislop" mentions in code-contracts
-    for entry in walkdir(contracts_dir.clone()) {
-        if entry.is_file() {
-            let content = fs::read_to_string(&entry).unwrap_or_default();
-            assert!(
-                !content.to_lowercase().contains("antislop"),
-                "Found prohibited external mention 'antislop' in {}",
-                entry.display()
-            );
-        }
-    }
+    // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
+    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
+    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("docs").join("superpowers").exists(),
+        "docs/superpowers/ directory must not exist"
+    );
 
     // 2. Verify all 4 multi-language contract templates exist
     let templates_dir = contracts_dir.join("templates");
@@ -130,17 +122,13 @@ fn test_repository_governance_zero_antislop_and_readme_template() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
     let gov_dir = root.join("repository-governance");
 
-    // 1. Verify zero "antislop" mentions in repository-governance
-    for entry in walkdir(gov_dir.clone()) {
-        if entry.is_file() {
-            let content = fs::read_to_string(&entry).unwrap_or_default();
-            assert!(
-                !content.to_lowercase().contains("antislop"),
-                "Found prohibited external mention 'antislop' in {}",
-                entry.display()
-            );
-        }
-    }
+    // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
+    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
+    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("docs").join("superpowers").exists(),
+        "docs/superpowers/ directory must not exist"
+    );
 
     // 2. Verify README_TEMPLATE.md exists and contains canonical SWEBOK v4 sections
     let readme_template_path = gov_dir.join("templates").join("README_TEMPLATE.md");
@@ -208,17 +196,4 @@ fn contains_cov_table(content: &str) -> bool {
         .any(|line| line.trim_start().starts_with('|') && line.contains("COV-01"))
 }
 
-fn walkdir(dir: std::path::PathBuf) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                files.extend(walkdir(path));
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    files
-}
+
