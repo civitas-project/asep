@@ -5,6 +5,7 @@ pub mod config;
 pub mod diagram;
 pub mod error;
 pub mod graph;
+pub mod affected;
 pub mod harness;
 pub mod init;
 pub mod formal;

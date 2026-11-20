@@ -60,3 +60,88 @@ semantic_evidence_required = true
 [[tiers]]
 id = "T4"
 semantic_evidence_required = true
+
+[[antislop_rules]]
+id = 'AS-CODE-BANNER'
+domain = 'code'
+severity = 'Error'
+pattern = '(?:={5,}|-{5,}|\*{5,}|~{5,}|#{5,})'
+message = 'Decorative banner'
+
+[[antislop_rules]]
+id = 'AS-CODE-NARRATION'
+domain = 'code'
+severity = 'Error'
+pattern = '(?i)^\s*(step\s*\d+|first\b|next\b|finally\b)\s*[:\-]'
+message = 'Workflow narration'
+
+[[antislop_rules]]
+id = 'AS-CODE-BUZZWORD'
+domain = 'code'
+severity = 'Error'
+pattern = '(?i)\b(delve|elevate|seamless|robust|unlock|pivotal|tapestry|testament)\b'
+message = 'AI buzzword'
+
+[[antislop_rules]]
+id = 'AS-DESIGN-VAGUE'
+domain = 'design'
+severity = 'Warning'
+pattern = '(?i)\b(should be fast|user-friendly|good enough|etc\.,|and so on)\b'
+message = 'Vague requirement language'
+
+[[antislop_rules]]
+id = 'AS-DESIGN-TBD'
+domain = 'design'
+severity = 'Warning'
+pattern = '\b(TBD|TBA|FIXME)\b'
+message = 'Unresolved design placeholder'
+
+[[antislop_rules]]
+id = 'AS-COPY-FILLER'
+domain = 'copy'
+severity = 'Warning'
+pattern = '(?i)\b(very|really|actually|just simply|in order to)\b'
+message = 'Filler wording'
+
+[[antislop_rules]]
+id = 'AS-COPY-HYPE'
+domain = 'copy'
+severity = 'Warning'
+pattern = '(?i)\b(game-changer|revolutionary|cutting-edge|best-in-class|world-class)\b'
+message = 'Hype language'
+
+[[antislop_rules]]
+id = 'AS-DOCS-PLACEHOLDER'
+domain = 'docs'
+severity = 'Warning'
+pattern = '(?i)\b(lorem ipsum|placeholder text|write me|TODO)\b'
+message = 'Documentation placeholder'
+
+[[antislop_rules]]
+id = 'AS-DOCS-WORDY'
+domain = 'docs'
+severity = 'Warning'
+pattern = '(?i)\b(in conclusion|as previously mentioned|it is important to note that)\b'
+message = 'Wordy documentation phrasing'
+
+[[antislop_rules]]
+id = 'AS-CODE-BOXDRAW'
+domain = 'code'
+severity = 'Error'
+pattern = '[\u{2500}-\u{257F}]'
+message = 'Box-drawing decoration'
+
+[[antislop_rules]]
+id = 'AS-CODE-NESTING'
+domain = 'code'
+severity = 'Warning'
+pattern = ''
+max_nesting = 3
+message = 'Excessive if nesting'
+
+[[antislop_rules]]
+id = 'AS-COPY-BUZZWORD'
+domain = 'copy'
+severity = 'Error'
+pattern = '(?i)\b(delve|elevate|seamless|robust|unlock|pivotal|tapestry|testament)\b'
+message = 'AI buzzword in prose'

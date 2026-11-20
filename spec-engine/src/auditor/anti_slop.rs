@@ -1,7 +1,10 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::OnceLock;
+
+use crate::policy::Severity;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AntiSlopViolationKind {
@@ -9,6 +12,7 @@ pub enum AntiSlopViolationKind {
     WorkflowNarration { step: String },
     AiBuzzword { word: String },
     ExcessiveNesting { depth: usize },
+    Canonical { rule_id: String, matched: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,6 +21,43 @@ pub struct AntiSlopViolation {
     pub line_number: usize,
     pub kind: AntiSlopViolationKind,
     pub message: String,
+    pub severity: Severity,
+}
+
+/// A compiled canonical anti-slop rule from the policy TOML.
+struct CompiledRule {
+    id: String,
+    domain: String,
+    severity: Severity,
+    max_nesting: Option<usize>,
+    message: String,
+    regex: Regex,
+}
+
+/// Compiles the nine canonical policy regexes exactly once.
+fn antislop_rules_cache() -> &'static [CompiledRule] {
+    static RULES: OnceLock<Vec<CompiledRule>> = OnceLock::new();
+    RULES.get_or_init(|| {
+        crate::policy::load_policy()
+            .antislop_rules()
+            .iter()
+            .map(|r| CompiledRule {
+                id: r.id.clone(),
+                domain: r.domain.clone(),
+                severity: r.severity,
+                max_nesting: r.max_nesting,
+                message: r.message.clone(),
+                regex: Regex::new(&r.pattern).expect("valid antislop rule pattern"),
+            })
+            .collect()
+    })
+}
+
+/// Returns the compiled code-domain rule with the given id, if any.
+fn code_rule(id: &str) -> Option<&'static CompiledRule> {
+    antislop_rules_cache()
+        .iter()
+        .find(|r| r.domain == "code" && r.id == id)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,19 +75,20 @@ enum SegKind {
     BlockComment,
 }
 
-static BANNER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:={5,}|-{5,}|\*{5,}|~{5,}|#{5,})").expect("valid banner regex")
-});
-static BOX_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[\u{2500}-\u{257F}]").expect("valid box drawing regex")
-});
-static WORKFLOW_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^\s*(step\s*\d+|first\b|next\b|finally\b)\s*[:\-]").expect("valid workflow regex")
-});
-static BUZZWORD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(delve|elevate|seamless|robust|unlock|pivotal|tapestry|testament)\b")
-        .expect("valid buzzword regex")
-});
+/// Returns the compiled rule with the given id, in any domain.
+fn rule_by_id(id: &str) -> Option<&'static CompiledRule> {
+    antislop_rules_cache().iter().find(|r| r.id == id)
+}
+
+/// Banner match: policy AS-CODE-BANNER pattern plus canonical AS-CODE-BOXDRAW.
+fn banner_match(trimmed: &str) -> Option<String> {
+    code_rule("AS-CODE-BANNER")
+        .and_then(|r| r.regex.find(trimmed).map(|m| m.as_str().to_string()))
+        .or_else(|| {
+            code_rule("AS-CODE-BOXDRAW")
+                .and_then(|r| r.regex.find(trimmed).map(|m| m.as_str().to_string()))
+        })
+}
 
 fn lang_of(path: &Path) -> Lang {
     match path.extension().and_then(|s| s.to_str()) {
@@ -78,6 +120,9 @@ fn message_for(kind: &AntiSlopViolationKind) -> String {
             "Excessive if nesting depth {}; refactor with guard clauses and early returns",
             depth
         ),
+        AntiSlopViolationKind::Canonical { rule_id, matched } => {
+            format!("{rule_id}: '{matched}'")
+        }
     }
 }
 
@@ -87,25 +132,30 @@ fn check_comment(
     line_number: usize,
     text: &str,
     kind: SegKind,
-    is_markdown: bool,
 ) {
     let trimmed = text.trim();
 
-    if let Some(m) = BANNER_REGEX.find(trimmed).or_else(|| BOX_REGEX.find(trimmed)) {
+    // Inline marker opts a specific line out of anti-slop auditing.
+    if trimmed.contains("asep:allow-antislop") {
+        return;
+    }
+
+    if let Some(banner) = banner_match(trimmed) {
         violations.push(AntiSlopViolation {
             file_path: path.to_path_buf(),
             line_number,
             kind: AntiSlopViolationKind::DecorativeBanner {
-                banner: m.as_str().to_string(),
+                banner: banner.clone(),
             },
             message: message_for(&AntiSlopViolationKind::DecorativeBanner {
-                banner: m.as_str().to_string(),
+                banner: banner.clone(),
             }),
+            severity: Severity::Error,
         });
     }
 
-    if !is_markdown {
-        if let Some(m) = WORKFLOW_REGEX.find(trimmed) {
+    if let Some(rule) = code_rule("AS-CODE-NARRATION") {
+        if let Some(m) = rule.regex.find(trimmed) {
             violations.push(AntiSlopViolation {
                 file_path: path.to_path_buf(),
                 line_number,
@@ -115,23 +165,28 @@ fn check_comment(
                 message: message_for(&AntiSlopViolationKind::WorkflowNarration {
                     step: m.as_str().to_string(),
                 }),
+                severity: Severity::Error,
             });
         }
     }
 
-    let check_buzzwords = is_markdown || matches!(kind, SegKind::DocLine | SegKind::BlockComment);
+    let check_buzzwords =
+        matches!(kind, SegKind::DocLine | SegKind::LineComment | SegKind::BlockComment);
     if check_buzzwords {
-        for m in BUZZWORD_REGEX.find_iter(trimmed) {
-            violations.push(AntiSlopViolation {
-                file_path: path.to_path_buf(),
-                line_number,
-                kind: AntiSlopViolationKind::AiBuzzword {
-                    word: m.as_str().to_string(),
-                },
-                message: message_for(&AntiSlopViolationKind::AiBuzzword {
-                    word: m.as_str().to_string(),
-                }),
-            });
+        if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
+            for m in rule.regex.find_iter(trimmed) {
+                violations.push(AntiSlopViolation {
+                    file_path: path.to_path_buf(),
+                    line_number,
+                    kind: AntiSlopViolationKind::AiBuzzword {
+                        word: m.as_str().to_string(),
+                    },
+                    message: message_for(&AntiSlopViolationKind::AiBuzzword {
+                        word: m.as_str().to_string(),
+                    }),
+                    severity: Severity::Error,
+                });
+            }
         }
     }
 }
@@ -145,17 +200,45 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
 
     if is_markdown {
         for (idx, line) in content.lines().enumerate() {
-            for m in BUZZWORD_REGEX.find_iter(line) {
-                violations.push(AntiSlopViolation {
-                    file_path: path.to_path_buf(),
-                    line_number: idx + 1,
-                    kind: AntiSlopViolationKind::AiBuzzword {
-                        word: m.as_str().to_string(),
-                    },
-                    message: message_for(&AntiSlopViolationKind::AiBuzzword {
-                        word: m.as_str().to_string(),
-                    }),
-                });
+            let line_number = idx + 1;
+            // Inline marker opts a specific line out of anti-slop auditing.
+            if line.contains("asep:allow-antislop") {
+                continue;
+            }
+            // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
+            // but keep the existing AiBuzzword violation kind.
+            if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
+                for m in rule.regex.find_iter(line) {
+                    violations.push(AntiSlopViolation {
+                        file_path: path.to_path_buf(),
+                        line_number,
+                        kind: AntiSlopViolationKind::AiBuzzword {
+                            word: m.as_str().to_string(),
+                        },
+                        message: message_for(&AntiSlopViolationKind::AiBuzzword {
+                            word: m.as_str().to_string(),
+                        }),
+                        severity: rule.severity,
+                    });
+                }
+            }
+            // The six non-code canonical rules apply to Markdown lines only.
+            for rule in antislop_rules_cache() {
+                if rule.domain == "code" {
+                    continue;
+                }
+                for m in rule.regex.find_iter(line) {
+                    violations.push(AntiSlopViolation {
+                        file_path: path.to_path_buf(),
+                        line_number,
+                        kind: AntiSlopViolationKind::Canonical {
+                            rule_id: rule.id.clone(),
+                            matched: m.as_str().to_string(),
+                        },
+                        message: rule.message.clone(),
+                        severity: rule.severity,
+                    });
+                }
             }
         }
         return violations;
@@ -163,10 +246,17 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
 
     let mut in_block = false;
     let mut cleaned_lines: Vec<String> = Vec::new();
+    let mut allowed_lines: HashSet<usize> = HashSet::new();
 
     for (idx, mut remaining) in content.lines().enumerate() {
         let line_number = idx + 1;
         let mut cleaned = String::with_capacity(remaining.len());
+        if remaining.contains("asep:allow-antislop") {
+            allowed_lines.insert(line_number);
+            cleaned.push_str(remaining);
+            cleaned_lines.push(cleaned);
+            continue;
+        }
 
         if in_block {
             match remaining.find("*/") {
@@ -178,7 +268,6 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         line_number,
                         text,
                         SegKind::BlockComment,
-                        false,
                     );
                     cleaned.push_str(&" ".repeat(text.len() + 4));
                     remaining = &remaining[end + 2..];
@@ -191,7 +280,6 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         line_number,
                         remaining,
                         SegKind::BlockComment,
-                        false,
                     );
                     cleaned.push_str(&" ".repeat(remaining.len()));
                     cleaned_lines.push(cleaned);
@@ -203,12 +291,41 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         loop {
             let slash_slash = remaining.find("//");
             let slash_star = remaining.find("/*");
-            let marker = match (slash_slash, slash_star) {
-                (None, None) => break,
-                (Some(a), None) => ("//", a),
-                (None, Some(b)) => ("/*", b),
-                (Some(a), Some(b)) => {
+            let hash = if lang == Lang::Hash {
+                remaining.find('#')
+            } else {
+                None
+            };
+            let marker = match (slash_slash, slash_star, hash) {
+                (None, None, None) => break,
+                (Some(a), None, None) => ("//", a),
+                (None, Some(b), None) => ("/*", b),
+                (None, None, Some(c)) => ("#", c),
+                (Some(a), None, Some(c)) => {
+                    if c <= a {
+                        ("#", c)
+                    } else {
+                        ("//", a)
+                    }
+                }
+                (None, Some(b), Some(c)) => {
+                    if c <= b {
+                        ("#", c)
+                    } else {
+                        ("/*", b)
+                    }
+                }
+                (Some(a), Some(b), None) => {
                     if b <= a {
+                        ("/*", b)
+                    } else {
+                        ("//", a)
+                    }
+                }
+                (Some(a), Some(b), Some(c)) => {
+                    if c <= a.min(b) {
+                        ("#", c)
+                    } else if b <= a {
                         ("/*", b)
                     } else {
                         ("//", a)
@@ -226,7 +343,20 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                     } else {
                         SegKind::LineComment
                     };
-                    check_comment(&mut violations, path, line_number, text, kind, false);
+                    check_comment(&mut violations, path, line_number, text, kind);
+                    cleaned.push_str(&" ".repeat(text.len()));
+                    remaining = "";
+                    break;
+                }
+                "#" => {
+                    let text = &remaining[pos + 1..];
+                    check_comment(
+                        &mut violations,
+                        path,
+                        line_number,
+                        text,
+                        SegKind::LineComment,
+                    );
                     cleaned.push_str(&" ".repeat(text.len()));
                     remaining = "";
                     break;
@@ -241,7 +371,6 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                             line_number,
                             text,
                             SegKind::BlockComment,
-                            false,
                         );
                         cleaned.push_str(&" ".repeat(text.len() + 4));
                         remaining = &after[end + 2..];
@@ -254,7 +383,6 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                             line_number,
                             after,
                             SegKind::BlockComment,
-                            false,
                         );
                         cleaned.push_str(&" ".repeat(after.len()));
                         remaining = "";
@@ -268,17 +396,32 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         cleaned_lines.push(cleaned);
     }
 
-    scan_nesting(&mut violations, path, &cleaned_lines);
+    scan_nesting(&mut violations, path, &cleaned_lines, &allowed_lines);
     violations
 }
 
-/// Scans comment-stripped code for if blocks nested at depth 3 or more.
+/// Scans comment-stripped code for if blocks nested at or above the policy
+/// threshold from canonical rule AS-CODE-NESTING (`max_nesting`, default 3).
 /// An if at depth d is nested inside d-1 enclosing if blocks.
-fn scan_nesting(violations: &mut Vec<AntiSlopViolation>, path: &Path, lines: &[String]) {
+/// Lines whose numbers are in `allowed_lines` are skipped (inline marker).
+fn scan_nesting(
+    violations: &mut Vec<AntiSlopViolation>,
+    path: &Path,
+    lines: &[String],
+    allowed_lines: &std::collections::HashSet<usize>,
+) {
+    let nesting_rule = code_rule("AS-CODE-NESTING");
+    let max_nesting = nesting_rule.and_then(|r| r.max_nesting).unwrap_or(3);
+    let severity = nesting_rule.map(|r| r.severity).unwrap_or(Severity::Warning);
     let mut stack: Vec<usize> = Vec::new();
     let mut brace_depth: usize = 0;
 
     for (idx, line) in lines.iter().enumerate() {
+        let line_number = idx + 1;
+        // Inline marker opts this line out of anti-slop auditing.
+        if allowed_lines.contains(&line_number) {
+            continue;
+        }
         let mut i = 0;
         while i < line.len() {
             if line[i..].starts_with("if")
@@ -297,12 +440,13 @@ fn scan_nesting(violations: &mut Vec<AntiSlopViolation>, path: &Path, lines: &[S
             {
                 let depth = stack.len() + 1;
                 stack.push(brace_depth);
-                if depth >= 3 {
+                if depth >= max_nesting {
                     violations.push(AntiSlopViolation {
                         file_path: path.to_path_buf(),
                         line_number: idx + 1,
                         kind: AntiSlopViolationKind::ExcessiveNesting { depth },
                         message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
+                        severity,
                     });
                 }
                 i += 2;
@@ -390,7 +534,7 @@ mod tests {
 
     #[test]
     fn detects_banner_comment() {
-        let violations = rs("// =====================\nfn foo() {}\n");
+        let violations = rs("// =====================\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
@@ -399,7 +543,7 @@ mod tests {
 
     #[test]
     fn detects_banner_in_block_comment() {
-        let violations = rs("/* ----------------- */\nfn foo() {}\n");
+        let violations = rs("/* ----------------- */\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
@@ -408,7 +552,7 @@ mod tests {
 
     #[test]
     fn detects_workflow_narration() {
-        let violations = rs("// Step 1: validate input\nfn foo() {}\n");
+        let violations = rs("// Step 1: validate input\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::WorkflowNarration { .. }
@@ -417,7 +561,7 @@ mod tests {
 
     #[test]
     fn detects_buzzword_in_docstring() {
-        let violations = rs("/// Delve into robust solutions\nfn foo() {}\n");
+        let violations = rs("/// Delve into robust solutions\nfn foo() {}\n"); // asep:allow-antislop
         let words: Vec<String> = violations
             .iter()
             .filter_map(|v| match &v.kind {

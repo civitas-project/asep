@@ -54,7 +54,7 @@ impl std::str::FromStr for TierId {
 }
 
 /// Rule severity.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Severity {
     Error,
     Warning,
@@ -75,6 +75,18 @@ pub struct Tier {
     pub semantic_evidence_required: bool,
 }
 
+/// Anti-slop rule with a regex-ready pattern.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AntiSlopRule {
+    pub id: String,
+    pub domain: String,
+    pub severity: Severity,
+    pub pattern: String,
+    pub message: String,
+    #[serde(default)]
+    pub max_nesting: Option<usize>,
+}
+
 /// Exit codes from the global constraints.
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct ExitCodes {
@@ -91,6 +103,8 @@ pub struct Policy {
     pub coverage_rules: Vec<CoverageRule>,
     pub tiers: Vec<Tier>,
     pub exit_codes: ExitCodes,
+    #[serde(default)]
+    pub antislop_rules: Vec<AntiSlopRule>,
 }
 
 impl Policy {
@@ -107,6 +121,10 @@ impl Policy {
 
     pub fn exit_codes(&self) -> &ExitCodes {
         &self.exit_codes
+    }
+
+    pub fn antislop_rules(&self) -> &[AntiSlopRule] {
+        &self.antislop_rules
     }
 }
 

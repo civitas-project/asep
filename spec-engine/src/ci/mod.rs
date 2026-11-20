@@ -1,8 +1,9 @@
 //! Unified 5-Gate Local CI Pipeline Runner.
 
+use crate::auditor::audit_project_anti_slop;
 use crate::formal::validate_formal_specs;
 use crate::graph::builder::build_relation_graph;
-use crate::policy::{load_policy, TierId};
+use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::scan_project_tags;
 use crate::verification::evaluate;
 use serde::{Deserialize, Serialize};
@@ -172,12 +173,26 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
             let graph = build_relation_graph(&tags, &policy);
             let strict = ci_strict();
 
+            // Anti-slop audit: Error violations block outside T0; Warning
+            // violations block only under --strict (ci_strict).
+            let anti_slop_violations = audit_project_anti_slop(dir).unwrap_or_default();
+            let anti_errors: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Error)
+                .collect();
+            let anti_warnings: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Warning)
+                .collect();
+            let has_antislop_failure =
+                tier != TierId::T0 && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
+
             // COV-02 is a warning; `--strict` promotes it to failure.
             let has_cov02 = graph
                 .violations
                 .iter()
                 .any(|v| v.rule_id == "COV-02");
-            let passed = graph.is_closed && !(strict && has_cov02);
+            let passed = graph.is_closed && !(strict && has_cov02) && !has_antislop_failure;
 
             if !passed {
                 if strict && has_cov02 {
@@ -191,6 +206,27 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
                 }
             } else {
                 details.push(format!("Closed MUST gates: structural closed, {} violations", graph.violations.len()));
+            }
+
+            for v in &anti_errors {
+                let blocked = tier != TierId::T0;
+                details.push(format!(
+                    "[{}] anti-slop {}:{} {}",
+                    if blocked { "FAIL" } else { "WARN" },
+                    v.file_path.display(),
+                    v.line_number,
+                    v.message
+                ));
+            }
+            for v in &anti_warnings {
+                let blocked = strict && tier != TierId::T0;
+                details.push(format!(
+                    "[{}] anti-slop warning {}:{} {}",
+                    if blocked { "FAIL" } else { "WARN" },
+                    v.file_path.display(),
+                    v.line_number,
+                    v.message
+                ));
             }
 
             let behavioral = dir.join(".spec-engine").join("behavioral.json");

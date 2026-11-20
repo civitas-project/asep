@@ -370,6 +370,8 @@ Before any implementation:
 
 Never create `.superpowers/` or `docs/superpowers/`, and never add a new skill folder for this pattern. `docs/PRD.md`, `docs/TDD.md`, and `docs/TRACEABILITY.md` are the only specification artifacts. Executors never edit PRD/TDD.
 
+Verification scope: run `asep affected <changed-paths>` to derive the exact tests and check targets from the traceability graph. Use its output as the verification command. Do not run the full suite by default; full suite is reserved for merges to `main` or when the user explicitly asks.
+
 For every coding task:
 1. After PRD/TDD approval, decompose the request into small units: one file or one function per unit. If the request is ambiguous, ask the user before delegating.
    If the request touches a project or code area you have not mapped yet, delegate the mapping to the `explorer` subagent first: it reads the project with `tools.asep.srcdump`, then returns a module list with file paths. Use that list to split the units.

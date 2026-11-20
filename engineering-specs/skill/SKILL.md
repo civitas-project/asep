@@ -94,7 +94,7 @@ When benchmarking or preparing empirical performance telemetry:
 ## Mandatory Rule Tiers
 
 ### 1. Hard Gates: Absolute Disqualifications (Zero Tolerance)
-- **Zero AI Slop Vocabulary Blacklist:** Prohibit buzzwords, filler, and poetic metaphors (*delve, tapestry, beacon, testament, seamlessly, game-changer, revolutionary, groundbreaking, blazingly fast, cutting-edge, plethora, multifaceted, foster, harness*).
+- **Zero AI Slop Vocabulary Blacklist:** Prohibit buzzwords, filler, and poetic metaphors (see the zero-tolerance slop vocabulary list in policy).
 - **Zero Em-Dashes in Specifications:** Do not use em-dashes in specification prose; use colons, semicolons, parentheses, or separate sentences.
 - **Deterministic Multi-Line List Formatting (`<br>`):** Prohibit single-line colon bullets (`- **Title**: description`) for complex items and ban backslash line breaks (`\`). Format multi-line list items using an explicit `<br>` immediately after the title (`- **Title**<br>\n  Description`).
 - **No Passive-Voice Actor Omission:** Every requirement must name the exact subsystem or actor performing the action.
@@ -115,6 +115,10 @@ When benchmarking or preparing empirical performance telemetry:
 
 ---
 
+## Canonical Anti-Slop Rules
+
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-DESIGN-VAGUE, AS-DESIGN-TBD, AS-DOCS-PLACEHOLDER, AS-DOCS-WORDY. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+
 ## Canonical Rule References
 
 Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
@@ -125,6 +129,6 @@ This skill applies COV-03, COV-04 and Tier T2..T4; unproven results surface as e
 
 ## Red Flags: STOP and Restart
 - A requirement statement lacks a clear system subject, active verb, or failure mode.
-- The text contains blacklisted words (*delve*, *tapestry*, *seamless*, *blazingly*, *revolutionary*) or em-dashes.
+- The text contains blacklisted slop vocabulary or em-dashes.
 - A raster image (`.png`, `.jpg`) is generated instead of a vector `.svg`.
 - A benchmark chart clips bar labels at the top border due to missing 30% y-axis headroom.

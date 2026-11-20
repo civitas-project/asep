@@ -62,6 +62,80 @@ fn test_skill_text_references_canonical_rule_ids() {
     }
 }
 
+// @test:FR-PACK-EMBED-05
+#[test]
+fn test_skills_reference_antislop_rule_ids() {
+    let skills = get_embedded_skills();
+    assert_eq!(skills.len(), 6, "Expected 6 canonical embedded skills");
+
+    let expected: &[(&str, &[&str])] = &[
+        (
+            "engineering-specs",
+            &["AS-DESIGN-VAGUE", "AS-DESIGN-TBD", "AS-DOCS-PLACEHOLDER", "AS-DOCS-WORDY"],
+        ),
+        (
+            "code-contracts",
+            &[
+                "AS-CODE-BANNER",
+                "AS-CODE-NARRATION",
+                "AS-CODE-BUZZWORD",
+                "AS-CODE-BOXDRAW",
+                "AS-CODE-NESTING",
+            ],
+        ),
+        (
+            "repository-governance",
+            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-COPY-BUZZWORD", "AS-DOCS-WORDY"],
+        ),
+        ("design-tokens", &["AS-COPY-HYPE", "AS-DOCS-PLACEHOLDER"]),
+        (
+            "workflow-router",
+            &[
+                "AS-DESIGN-VAGUE",
+                "AS-DESIGN-TBD",
+                "AS-DOCS-PLACEHOLDER",
+                "AS-DOCS-WORDY",
+                "AS-CODE-BANNER",
+                "AS-CODE-NARRATION",
+                "AS-CODE-BUZZWORD",
+                "AS-CODE-BOXDRAW",
+                "AS-CODE-NESTING",
+                "AS-COPY-FILLER",
+                "AS-COPY-HYPE",
+                "AS-COPY-BUZZWORD",
+            ],
+        ),
+    ];
+
+    for (id, rule_ids) in expected {
+        let skill = skills
+            .iter()
+            .find(|s| s.id == *id)
+            .expect("embedded skill must exist");
+        assert!(
+            skill.content.contains("Canonical Anti-Slop Rules"),
+            "Skill {} must contain 'Canonical Anti-Slop Rules' section",
+            id
+        );
+        let has_rule_id = rule_ids
+            .iter()
+            .any(|rid| skill.content.contains(rid));
+        assert!(
+            has_rule_id,
+            "Skill {} must reference at least one canonical anti-slop AS- rule id",
+            id
+        );
+        for rule_id in rule_ids.iter() {
+            assert!(
+                skill.content.contains(*rule_id),
+                "Skill {} must reference canonical anti-slop rule {}",
+                id,
+                rule_id
+            );
+        }
+    }
+}
+
 // @test:FR-PACK-EMBED-04
 #[test]
 fn test_workflow_router_defines_requirement_and_plan_phase() {
@@ -80,6 +154,24 @@ fn test_workflow_router_defines_requirement_and_plan_phase() {
         assert!(
             router.content.contains(required),
             "workflow-router skill must define requirement and plan phase: missing {:?}",
+            required
+        );
+    }
+}
+
+// @test:FR-PACK-EMBED-05
+#[test]
+fn test_workflow_router_uses_targeted_verification() {
+    let skills = get_embedded_skills();
+    let router = skills
+        .iter()
+        .find(|s| s.id == "workflow-router")
+        .expect("embedded workflow-router skill must exist");
+
+    for required in ["Targeted Verification", "asep affected"] {
+        assert!(
+            router.content.contains(required),
+            "workflow-router skill must document targeted verification: missing {:?}",
             required
         );
     }
