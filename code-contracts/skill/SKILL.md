@@ -128,7 +128,7 @@ unsafe { System.dealloc(ptr, layout) }
 
 ## Canonical Anti-Slop Rules
 
-Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD, AS-CODE-BOXDRAW, AS-CODE-NESTING. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
 
 ## Canonical Rule References
 

@@ -93,7 +93,7 @@ All governance documentation and user-facing copy must maintain an authentic, au
 ### 1. Hard Gates: Absolute Disqualifications (Zero Tolerance)
 - **Zero Em-Dashes (`—`) in Prose and Copy:** Never use em-dashes in `README.md`, `MANUAL.md`, `ARCHITECTURE.md`, or any user-facing copy. Use colons, semicolons, parentheses, or periods.
 - **Deterministic Multi-Line List Formatting (`<br>`):** Prohibit single-line colon bullets (`- **Term**: explanation`) for complex items and ban backslash line breaks (`\`). Format multi-line list items using an explicit `<br>` immediately after the term/title (`- **Term**<br>\n  Explanation`).
-- **Zero Marketing Buzzwords:** Ban words like *smooth, revolutionary, game-changing, blazingly fast, next-generation, marketing-speak, hype-terms*. Use concrete engineering metrics (e.g., `60.48 ns median point lookup`, `0 heap allocations`).
+- **Zero Marketing Buzzwords:** Ban canonical copy-rule terms: `AS-COPY-HYPE` (`game-changer`, `revolutionary`, `cutting-edge`, `best-in-class`, `world-class`) and `AS-COPY-BUZZWORD` (`delve`, `elevate`, `seamless`, `robust`, `unlock`, `pivotal`, `tapestry`, `testament`). Use concrete engineering metrics (e.g., `60.48 ns median point lookup`, `0 heap allocations`). // asep:allow-antislop
 - **Zero Public Vulnerability Reporting:** `SECURITY.md` must mandate private vulnerability disclosure and define concrete SLA timelines (24h triage, 72h reproduction, 14d patch, 30d disclosure).
 - **Zero Topology Drift:** Every crate in `crates/*`, tool in `tools/*`, and script in `scripts/*` must be mapped in `ARCHITECTURE.md` and `README.md`.
 - **Zero Transient Spec Links:** Never reference ephemeral planning folders (such as `docs/superpowers/` or `docs/plans/`) in governance files.
@@ -112,7 +112,7 @@ All governance documentation and user-facing copy must maintain an authentic, au
 
 ## Canonical Anti-Slop Rules
 
-Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY, AS-COPY-BUZZWORD. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
 
 ## Canonical Rule References
 
