@@ -12,7 +12,7 @@ use crate::policy::{load_policy, EdgeKind};
 use crate::scanner::scan_project_tags;
 use serde::Serialize;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -73,11 +73,22 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         changed.iter().any(|p| matches_path(&node.file_path, p))
     };
 
-    // 3. Impl nodes living in changed files.
+    // 3. Nodes living in changed files: impls are the usual starting point,
+    //    but changed requirement and test files start tracing too.
     let impl_nodes: Vec<&TraceNode> = graph
         .nodes
         .iter()
         .filter(|n| n.kind == NodeKind::Impl && is_changed(n))
+        .collect();
+    let changed_req_nodes: Vec<&TraceNode> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Req && is_changed(n))
+        .collect();
+    let changed_test_nodes: Vec<&TraceNode> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Test && is_changed(n))
         .collect();
 
     let graph_req_ids: HashSet<String> = graph
@@ -114,6 +125,10 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
             req_ids.insert(impl_node.id.clone());
         }
     }
+    // Requirements in changed files are starting points themselves.
+    for req_node in &changed_req_nodes {
+        req_ids.insert(req_node.id.clone());
+    }
 
     // 5/6. Incoming Verifies edges -> tests; same-id legacy fallback.
     let mut test_ids: HashSet<String> = HashSet::new();
@@ -130,6 +145,10 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         if !has_verifies && graph_test_ids.contains(req_id) {
             test_ids.insert(req_id.clone());
         }
+    }
+    // Tests in changed files are included directly.
+    for test_node in &changed_test_nodes {
+        test_ids.insert(test_node.id.clone());
     }
 
     let mut impls: Vec<AffectedNode> = impl_nodes
@@ -190,14 +209,12 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     }
     let mut commands: Vec<String> = Vec::new();
     for (file, functions) in file_functions {
-        let Some(stem) = file.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
+        let base = cargo_test_base(root, &file);
         if functions.is_empty() {
-            commands.push(format!("cargo test --test {stem}"));
+            commands.push(base);
         } else {
             for name in functions {
-                commands.push(format!("cargo test --test {stem} -- {name} --exact"));
+                commands.push(format!("{base} -- {name} --exact"));
             }
         }
     }
@@ -217,14 +234,14 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     })
 }
 
-/// Extracts the first `fn <name>` on the tag line and up to the next two lines.
+/// Extracts the first `fn <name>` on the tag line and up to the next six lines.
 fn extract_function(root: &Path, node: &TraceNode) -> Option<String> {
     let path = root.join(&node.file_path);
     let content = std::fs::read_to_string(path).ok()?;
     for line in content
         .lines()
         .skip(node.line_number.saturating_sub(1))
-        .take(3)
+        .take(7)
     {
         if let Some(captures) = FN_RE.captures(line) {
             return Some(captures[1].to_string());
@@ -238,16 +255,82 @@ fn normalize_path(root: &Path, path: &Path) -> PathBuf {
     path.strip_prefix(root).unwrap_or(path).to_path_buf()
 }
 
+/// Collapses `.`/`..` components and redundant separators by walking
+/// `Path::components()`. `ParentDir` pops the last pushed segment when
+/// possible; everything else is copied through verbatim.
+fn normalize_components(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 /// True when `node_file` equals `changed` or lives underneath `changed`.
-/// Purely path-based: `changed` is already relative to `root`; empty path /
-/// `.` matches everything; otherwise a plain `starts_with` handles both file
-/// and directory prefixes without touching the filesystem.
+/// Both paths are normalized through `Path::components()` before comparing,
+/// so trailing slashes and `.` components do not matter: `"src"` and `"src/"`
+/// both match `src/lib.rs`. Empty path / `.` matches everything.
+/// Purely path-based: no filesystem access.
 fn matches_path(node_file: &Path, changed: &Path) -> bool {
-    let changed = changed.strip_prefix("./").unwrap_or(changed);
+    let changed = normalize_components(changed);
     if changed.as_os_str().is_empty() || changed == Path::new(".") {
         return true;
     }
-    node_file == changed || node_file.starts_with(changed)
+    let node_file = normalize_components(node_file);
+    node_file == changed || node_file.starts_with(&changed)
+}
+
+/// Returns the `cargo test` target fragment for a test file: `--test <stem>`
+/// for integration tests under `tests/`, `--bin <name>` for binary crate
+/// sources (the `name` from a `[[bin]] entry in `Cargo.toml`, falling back
+/// to the `src/bin/` convention stem), `--lib` for anything else under
+/// `src/`, and `--test <stem>` as the fallback.
+fn cargo_test_base(root: &Path, file: &Path) -> String {
+    let norm = normalize_components(file);
+    let stem = norm
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("test");
+    let mut components = norm.components();
+    let base = match (components.next(), components.next()) {
+        (Some(Component::Normal(dir)), _) if dir == "tests" => {
+            format!("cargo test --test {stem}")
+        }
+        (Some(Component::Normal(dir)), Some(Component::Normal(sub)))
+            if dir == "src" && sub == "bin" =>
+        {
+            let name = bin_name_from_cargo_toml(root, &norm).unwrap_or_else(|| stem.to_string());
+            format!("cargo test --bin {name}")
+        }
+        (Some(Component::Normal(dir)), _) if dir == "src" => "cargo test --lib".to_string(),
+        _ => format!("cargo test --test {stem}"),
+    };
+    base
+}
+
+/// Detects a binary crate source from `[[bin]] entries in `Cargo.toml`,
+/// returning the declared `name` when a bin `path` matches `file`.
+fn bin_name_from_cargo_toml(root: &Path, file: &Path) -> Option<String> {
+    let manifest = root.join("Cargo.toml");
+    let content = std::fs::read_to_string(&manifest).ok()?;
+    let value: toml::Value = content.parse().ok()?;
+    let bins = value.get("bin")?.as_array()?;
+    for bin in bins {
+        let path = bin.get("path")?.as_str()?;
+        if normalize_components(Path::new(path)) == *file {
+            return bin
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| n.to_string());
+        }
+    }
+    None
 }
 
 /// Sorts by (file, line, id) for deterministic output.

@@ -68,6 +68,112 @@ fn test_affected_graph_relations() {
 }
 
 #[test]
+fn test_affected_path_normalization_matches_slash_and_dot() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(root, "src/lib.rs", "// @impl:IMP-A\n");
+
+    // "src" without trailing slash matches src/lib.rs.
+    let report = affected(root, &[PathBuf::from("src")]).unwrap();
+    assert_eq!(report.impls.len(), 1);
+    assert_eq!(report.impls[0].id, "IMP-A");
+
+    // "src/" with trailing slash matches the same file.
+    let report = affected(root, &[PathBuf::from("src/")]).unwrap();
+    assert_eq!(report.impls.len(), 1);
+    assert_eq!(report.impls[0].id, "IMP-A");
+
+    // "." matches everything.
+    let report = affected(root, &[PathBuf::from(".")]).unwrap();
+    assert_eq!(report.impls.len(), 1);
+    assert_eq!(report.impls[0].id, "IMP-A");
+}
+
+#[test]
+fn test_affected_test_in_src_emits_lib_command() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(root, "src/lib.rs", "// @test:FR-B\nfn verifies_b() {}\n");
+
+    let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
+
+    assert!(report.impls.is_empty());
+    assert_eq!(report.tests.len(), 1);
+    assert_eq!(report.tests[0].id, "FR-B");
+    assert_eq!(report.tests[0].file, PathBuf::from("src/lib.rs"));
+    assert_eq!(report.tests[0].function, Some("verifies_b".to_string()));
+    assert!(
+        report
+            .commands
+            .iter()
+            .any(|c| c == "cargo test --lib -- verifies_b --exact"),
+        "unexpected commands: {:?}",
+        report.commands
+    );
+}
+
+#[test]
+fn test_affected_changed_req_finds_verifying_test() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:FR-C:MUST\n@rel:verifies:test-c->FR-C \"note\"\n",
+    );
+    write_tag_file(root, "tests/c_test.rs", "// @test:test-c\nfn verifies_c() {}\n");
+
+    // Changing the requirement file itself must surface its verification test.
+    let report = affected(root, &[PathBuf::from("docs/spec.md")]).unwrap();
+
+    assert!(report.impls.is_empty());
+    assert_eq!(report.requirements.len(), 1);
+    assert_eq!(report.requirements[0].id, "FR-C");
+    assert_eq!(report.requirements[0].file, PathBuf::from("docs/spec.md"));
+    assert_eq!(report.tests.len(), 1);
+    assert_eq!(report.tests[0].id, "test-c");
+    assert_eq!(report.tests[0].file, PathBuf::from("tests/c_test.rs"));
+    assert!(
+        report
+            .commands
+            .iter()
+            .any(|c| c == "cargo test --test c_test -- verifies_c --exact"),
+        "unexpected commands: {:?}",
+        report.commands
+    );
+}
+
+#[test]
+fn test_affected_extract_function_far_after_tag() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Function is 4 lines after the tag: beyond the old 2-line window.
+    write_tag_file(
+        root,
+        "src/lib.rs",
+        "// @test:FR-D\n// line two\n// line three\n// line four\nfn verifies_d() {}\n",
+    );
+
+    let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
+
+    assert_eq!(report.tests.len(), 1);
+    assert_eq!(report.tests[0].id, "FR-D");
+    assert_eq!(report.tests[0].function, Some("verifies_d".to_string()));
+    assert!(
+        report
+            .commands
+            .iter()
+            .any(|c| c == "cargo test --lib -- verifies_d --exact"),
+        "unexpected commands: {:?}",
+        report.commands
+    );
+}
+
+#[test]
 fn test_affected_legacy_same_id_fallback() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
@@ -138,7 +244,7 @@ fn test_affected_test_without_fn_still_emits_command() {
     // Legacy same-id fallback: impl/req/test all share id FR-X, no @rel edges.
     write_tag_file(root, "docs/spec.md", "@req:FR-X:MUST\n");
     write_tag_file(root, "src/lib.rs", "// @impl:FR-X\n");
-    // @test tag with no `fn` in the tag line or the next two lines.
+    // @test tag with no `fn` in the tag line or the next six lines.
     write_tag_file(root, "tests/b_test.rs", "// @test:FR-X\n// some comment\nlet x = 1;\n");
 
     let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
