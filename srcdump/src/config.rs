@@ -270,6 +270,8 @@ fn default_include_ext() -> Vec<String> {
         // Web
         "html".into(), "css".into(), "scss".into(), "sass".into(), "less".into(),
         "svg".into(),
+        // TeX/LaTeX
+        "tex".into(), "latex".into(),
         // Docs
         "md".into(), "mdx".into(), "txt".into(), "rst".into(), "adoc".into(),
     ]

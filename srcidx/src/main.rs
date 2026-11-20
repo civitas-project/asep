@@ -176,7 +176,7 @@ pub fn hello() -> &'static str {
         let result = parsers.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "hello");
-        assert_eq!(result.symbols[0].tags, vec![]);
+        assert!(result.symbols[0].tags.is_empty());
 
         let mut index = SymbolIndex::new("/test".to_string());
         index.header.files = 1;
