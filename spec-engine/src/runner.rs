@@ -1,4 +1,5 @@
 use crate::adr::create_new_adr;
+use crate::affected::affected;
 use crate::auditor::audit_project_docstrings;
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
 use crate::diagram::render_plantuml_diagrams;
@@ -18,6 +19,7 @@ use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
 use std::fs;
+use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -436,6 +438,104 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
+        }
+
+        Some(Commands::Affected {
+            paths,
+            stdin,
+            root,
+        }) => {
+            let root_path = root.unwrap_or_else(|| PathBuf::from("."));
+
+            let mut changed: Vec<PathBuf> = paths;
+            if stdin {
+                let stdin = io::stdin();
+                for line in stdin.lock().lines() {
+                    let line = match line {
+                        Ok(line) => line,
+                        Err(e) => {
+                            eprintln!("{} Failed to read stdin: {e}", "✖".red());
+                            return ExitCode::from(1);
+                        }
+                    };
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        changed.push(PathBuf::from(trimmed));
+                    }
+                }
+            }
+
+            let report = match affected(&root_path, &changed) {
+                Ok(report) => report,
+                Err(e) => {
+                    eprintln!("{} {}", "✖".red(), e);
+                    return ExitCode::from(1);
+                }
+            };
+
+            if args.json {
+                match serde_json::to_string_pretty(&report) {
+                    Ok(json) => println!("{json}"),
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to serialize affected report: {e}",
+                            "✖".red()
+                        );
+                        return ExitCode::from(2);
+                    }
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            println!(
+                "{} {}",
+                "ASEP Affected Impact Analysis".bold().cyan(),
+                root_path.display()
+            );
+            println!("Changed paths: {}", changed.len().to_string().bold());
+
+            println!("\n{}", "Requirements:".bold());
+            if report.requirements.is_empty() {
+                println!("  (none)");
+            } else {
+                for req in &report.requirements {
+                    println!(
+                        "  - {} ({}:{})",
+                        req.id.bold(),
+                        req.file.display(),
+                        req.line
+                    );
+                }
+            }
+
+            println!("\n{}", "Tests:".bold());
+            if report.tests.is_empty() {
+                println!("  (none)");
+            } else {
+                for test in &report.tests {
+                    if let Some(function) = &test.function {
+                        println!(
+                            "  - {}:{} :: {}",
+                            test.file.display(),
+                            test.line,
+                            function.bold()
+                        );
+                    } else {
+                        println!("  - {}:{}", test.file.display(), test.line);
+                    }
+                }
+            }
+
+            println!("\n{}", "Verification commands:".bold());
+            if report.commands.is_empty() {
+                println!("  (none)");
+            } else {
+                for command in &report.commands {
+                    println!("  {command}");
+                }
+            }
+
+            ExitCode::SUCCESS
         }
 
         Some(Commands::Adr { sub }) => match sub {
