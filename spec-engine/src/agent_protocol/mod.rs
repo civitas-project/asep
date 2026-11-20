@@ -6,7 +6,9 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -17,7 +19,51 @@ const MESSAGES_DIR: &str = "messages";
 const ENVELOPE_VERSION: u8 = 1;
 const STATUS_SENT: &str = "sent";
 
-const ALLOWED_STATUSES: &[&str] = &["sent", "accepted", "rejected", "done"];
+/// Canonical protocol schema, loaded once from `policy/agent-protocol.toml`.
+#[derive(Debug, Deserialize)]
+pub struct ProtocolSchema {
+    pub version: u64,
+    pub statuses: Vec<String>,
+    pub roles: Vec<RoleSchema>,
+    pub kinds: Vec<KindSchema>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoleSchema {
+    pub name: String,
+    pub kinds: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct KindSchema {
+    pub name: String,
+    #[serde(default)]
+    pub required: Vec<String>,
+    #[serde(default)]
+    pub array_fields: Vec<String>,
+    #[serde(default)]
+    pub nested: Vec<NestedField>,
+    #[serde(default)]
+    pub requires_schema_id: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NestedField {
+    pub field: String,
+    pub required: Vec<String>,
+    #[serde(default)]
+    pub numeric: bool,
+}
+
+static PROTOCOL_SCHEMA: OnceLock<ProtocolSchema> = OnceLock::new();
+
+/// Loads the canonical protocol schema once from `policy/agent-protocol.toml`.
+pub fn protocol_schema() -> &'static ProtocolSchema {
+    PROTOCOL_SCHEMA.get_or_init(|| {
+        let data = include_str!("../../policy/agent-protocol.toml");
+        toml::from_str(data).expect("failed to parse policy/agent-protocol.toml")
+    })
+}
 
 /// Every role allowed on the bus.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,9 +106,10 @@ pub enum Kind {
     Custom,
 }
 
-/// The common envelope. Fields serialize in protocol order: v, id, from, to,
-/// kind, reply_to, ref, status, ts. No `body` field: bodies travel in sidecar
-/// files so tool calls carry only id/path/hash.
+/// The common envelope. Files write full semantic keys (v, id, from, to, kind,
+/// reply_to, ref, status, ts). `ref` is serialized as `"ref"` because `ref` is
+/// a Rust keyword; that is a semantic name, not a shortening. No `body` field:
+/// bodies travel in sidecar files so tool calls carry only id/path/hash.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub v: u8,
@@ -144,6 +191,7 @@ impl MessageStore {
         kind: Kind,
         body: Value,
         ref_path: Option<&Path>,
+        reply_to: Option<&str>,
     ) -> Result<Envelope, String> {
         if !Self::kind_allowed(&from, &kind) {
             return Err(format!(
@@ -169,7 +217,7 @@ impl MessageStore {
             from,
             to,
             kind,
-            reply_to: None,
+            reply_to: reply_to.map(|s| s.to_string()),
             ref_,
             status: STATUS_SENT.to_string(),
             ts,
@@ -223,7 +271,12 @@ impl MessageStore {
     }
 
     pub fn ack(&self, agent: Role, id: &str, status: &str) -> Result<(), String> {
-        if !ALLOWED_STATUSES.contains(&status) || status == STATUS_SENT {
+        if !protocol_schema()
+            .statuses
+            .iter()
+            .any(|s| s == status)
+            || status == STATUS_SENT
+        {
             return Err(format!("invalid ack status: {status}"));
         }
         let env_path = self.messages_dir.join(format!("{id}.json"));
@@ -240,15 +293,15 @@ impl MessageStore {
     }
 
     fn kind_allowed(from: &Role, kind: &Kind) -> bool {
-        matches!(
-            (from, kind),
-            (Role::Lead, Kind::TaskDispatch)
-                | (Role::Lead, Kind::Ruling)
-                | (Role::Executor, Kind::TaskReport)
-                | (Role::Judge, Kind::Verdict)
-                | (Role::Explorer, Kind::MapReport)
-                | (_, Kind::Custom)
-        )
+        // CUSTOM is allowed for every role.
+        if matches!(kind, Kind::Custom) {
+            return true;
+        }
+        let schema = protocol_schema();
+        let Some(role) = schema.roles.iter().find(|r| r.name == from.as_str()) else {
+            return false;
+        };
+        role.kinds.iter().any(|k| k == kind_as_str(kind))
     }
 
     fn rel_path(&self, path: &Path) -> Result<PathBuf, String> {
@@ -262,9 +315,9 @@ impl MessageStore {
             .duration_since(UNIX_EPOCH)
             .expect("system clock before unix epoch");
         let ms = epoch.as_millis();
-        let mut sub = epoch.subsec_nanos() % 1_000_000;
+        let mut suffix = random_id_suffix();
         loop {
-            let id = format!("msg-{ms}-{sub:06x}");
+            let id = format!("msg-{ms}-{suffix}");
             if !self
                 .messages_dir
                 .join(format!("{id}.json"))
@@ -272,9 +325,26 @@ impl MessageStore {
             {
                 return id;
             }
-            sub = sub.wrapping_add(1);
+            suffix = random_id_suffix();
         }
     }
+}
+
+/// 8 bytes from /dev/urandom encoded as hex, falling back to epoch nanos
+/// when the device is unavailable.
+fn random_id_suffix() -> String {
+    let mut buf = [0u8; 8];
+    if std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut buf))
+        .is_ok()
+    {
+        return buf.iter().map(|byte| format!("{byte:02x}")).collect();
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .subsec_nanos();
+    format!("{nanos:06x}")
 }
 
 fn kind_as_str(kind: &Kind) -> &str {
@@ -288,9 +358,9 @@ fn kind_as_str(kind: &Kind) -> &str {
     }
 }
 
-fn require_keys(obj: &Map<String, Value>, keys: &[&str]) -> Result<(), String> {
+fn require_keys(obj: &Map<String, Value>, keys: &[String]) -> Result<(), String> {
     for key in keys {
-        if !obj.contains_key(*key) {
+        if !obj.contains_key(key) {
             return Err(format!("body missing required key: {key}"));
         }
     }
@@ -298,64 +368,47 @@ fn require_keys(obj: &Map<String, Value>, keys: &[&str]) -> Result<(), String> {
 }
 
 fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
+    let schema = protocol_schema();
     let obj = body
         .as_object()
         .ok_or_else(|| "body must be a JSON object".to_string())?;
-    match kind {
-        Kind::TaskDispatch => require_keys(
-            obj,
-            &["task", "files", "acceptance", "verification_command"],
-        ),
-        Kind::Ruling => require_keys(obj, &["finding", "decision", "cost_if_wrong"]),
-        Kind::TaskReport => {
-            require_keys(obj, &["status", "commits", "tests", "concerns"])?;
-            obj.get("concerns")
-                .and_then(Value::as_array)
-                .ok_or_else(|| "concerns must be an array".to_string())?;
-            let tests = obj
-                .get("tests")
-                .and_then(Value::as_object)
-                .ok_or_else(|| "tests must be an object".to_string())?;
-            require_keys(tests, &["exit_code", "ref"])?;
-            Ok(())
-        }
-        Kind::Verdict => {
-            require_keys(
-                obj,
-                &[
-                    "verdict",
-                    "blocking",
-                    "non_blocking",
-                    "missing_evidence",
-                    "next_action",
-                    "rerun",
-                ],
-            )?;
-            let rerun = obj
-                .get("rerun")
-                .and_then(Value::as_object)
-                .ok_or_else(|| "rerun must be an object".to_string())?;
-            let numeric = |v: &Value| matches!(v, Value::Number(_));
-            let test_v = rerun
-                .get("test")
-                .ok_or_else(|| "rerun.test missing".to_string())?;
-            let check_v = rerun
-                .get("check")
-                .ok_or_else(|| "rerun.check missing".to_string())?;
-            if !numeric(test_v) || !numeric(check_v) {
-                return Err("rerun.test and rerun.check must be numeric".to_string());
+    let Some(kind_schema) = schema
+        .kinds
+        .iter()
+        .find(|k| k.name == kind_as_str(kind))
+    else {
+        return Err(format!("unknown kind: {}", kind_as_str(kind)));
+    };
+    require_keys(obj, &kind_schema.required)?;
+    for field in &kind_schema.array_fields {
+        obj.get(field)
+            .and_then(Value::as_array)
+            .ok_or_else(|| format!("{field} must be an array"))?;
+    }
+    for nested in &kind_schema.nested {
+        let parent = obj
+            .get(&nested.field)
+            .and_then(Value::as_object)
+            .ok_or_else(|| format!("{} must be an object", nested.field))?;
+        require_keys(parent, &nested.required)?;
+        if nested.numeric {
+            for key in &nested.required {
+                let value = parent
+                    .get(key)
+                    .ok_or_else(|| format!("{}.{} missing", nested.field, key))?;
+                if !matches!(value, Value::Number(_)) {
+                    return Err(format!("{}.{} must be numeric", nested.field, key));
+                }
             }
-            Ok(())
-        }
-        Kind::MapReport => require_keys(obj, &["modules", "read_only"]),
-        Kind::Custom => {
-            obj.get("schema_id")
-                .and_then(Value::as_str)
-                .filter(|s| !s.is_empty())
-                .ok_or_else(|| "CUSTOM requires a non-empty schema_id".to_string())?;
-            Ok(())
         }
     }
+    if kind_schema.requires_schema_id {
+        obj.get("schema_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "CUSTOM requires a non-empty schema_id".to_string())?;
+    }
+    Ok(())
 }
 
 fn validate_envelope(
@@ -368,7 +421,11 @@ fn validate_envelope(
     if envelope.v != ENVELOPE_VERSION {
         errors.push(format!("{prefix}: unknown envelope version {}", envelope.v));
     }
-    if !ALLOWED_STATUSES.contains(&envelope.status.as_str()) {
+    if !protocol_schema()
+        .statuses
+        .iter()
+        .any(|s| s == &envelope.status)
+    {
         errors.push(format!("{prefix}: invalid status {}", envelope.status));
     }
     if !MessageStore::kind_allowed(&envelope.from, &envelope.kind) {
