@@ -185,6 +185,20 @@ pub enum Commands {
         #[arg(short, long, help = "Target project directory")]
         path: Option<PathBuf>,
     },
+
+    /// List tests impacted by changed files using the traceability graph
+    Affected {
+        /// Changed file or directory paths
+        paths: Vec<PathBuf>,
+
+        /// Read changed paths from stdin, one per line
+        #[arg(long)]
+        stdin: bool,
+
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
