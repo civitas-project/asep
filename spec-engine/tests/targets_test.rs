@@ -271,6 +271,9 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     // Lead must know when to delegate mapping to the explorer.
     let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
     assert!(lead_system.contains("`explorer` subagent"), "lead prompt lacks explorer rule");
+    assert!(lead_system.contains("docs/PRD.md"), "lead prompt lacks PRD reference");
+    assert!(lead_system.contains("docs/TDD.md"), "lead prompt lacks TDD reference");
+    assert!(lead_system.contains(".superpowers/"), "lead prompt lacks superpowers prohibition");
 
     // Executor and judge carry their own scope and step rules.
     let exec_system = parsed["agents"]["executor"]["system"].as_str().unwrap();
