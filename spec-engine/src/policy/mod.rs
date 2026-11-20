@@ -54,7 +54,7 @@ impl std::str::FromStr for TierId {
 }
 
 /// Rule severity.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum Severity {
     Error,
     Warning,

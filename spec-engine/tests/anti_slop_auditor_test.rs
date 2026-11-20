@@ -1,9 +1,16 @@
-use asep::auditor::{audit_anti_slop, audit_project_anti_slop, AntiSlopViolationKind};
+use asep::auditor::{
+    audit_anti_slop, audit_project_anti_slop, AntiSlopViolation, AntiSlopViolationKind,
+};
+use asep::policy::Severity;
 use std::fs;
 use std::path::Path;
 
 fn audit_rs(content: &str) -> Vec<asep::auditor::AntiSlopViolation> {
     audit_anti_slop(Path::new("test.rs"), content)
+}
+
+fn audit_md(content: &str) -> Vec<asep::auditor::AntiSlopViolation> {
+    audit_anti_slop(Path::new("spec.md"), content)
 }
 
 #[test]
@@ -84,4 +91,61 @@ fn test_audit_project_anti_slop_tempdir() {
         })
         .collect();
     assert!(!buzz.is_empty(), "expected buzzword violation in README.md:1");
+}
+
+#[test]
+fn test_policy_rules_detect_design_copy_and_docs_slop() {
+    let violations = audit_md(
+        "## Design\nTBD: decide later. This is very good indeed.\n## Copy\nA game-changer release.\n## Docs\nLorem ipsum draft.\n",
+    );
+
+    let ids: Vec<&str> = violations
+        .iter()
+        .filter_map(|v| match &v.kind {
+            AntiSlopViolationKind::Canonical { rule_id, .. } => Some(rule_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(ids.contains(&"AS-DESIGN-TBD"), "missing AS-DESIGN-TBD in {ids:?}");
+    assert!(ids.contains(&"AS-COPY-FILLER"), "missing AS-COPY-FILLER in {ids:?}");
+    assert!(ids.contains(&"AS-COPY-HYPE"), "missing AS-COPY-HYPE in {ids:?}");
+    assert!(
+        ids.contains(&"AS-DOCS-PLACEHOLDER"),
+        "missing AS-DOCS-PLACEHOLDER in {ids:?}"
+    );
+
+    for v in &violations {
+        if matches!(&v.kind, AntiSlopViolationKind::Canonical { .. }) {
+            assert_eq!(
+                v.severity,
+                Severity::Warning,
+                "canonical violation {} should be Warning",
+                v.message
+            );
+        }
+    }
+}
+
+#[test]
+fn test_existing_code_slop_kinds_preserved() {
+    let violations = audit_rs(
+        "// =====================\n// Step 1: validate input\n/// Delve into robust solutions\nfn foo() {}\n",
+    );
+
+    let has_banner = violations
+        .iter()
+        .any(|v| matches!(&v.kind, AntiSlopViolationKind::DecorativeBanner { .. }));
+    let has_narration = violations.iter().any(|v| {
+        matches!(&v.kind, AntiSlopViolationKind::WorkflowNarration { .. })
+    });
+    let has_buzzword = violations
+        .iter()
+        .any(|v| matches!(&v.kind, AntiSlopViolationKind::AiBuzzword { .. }));
+    assert!(has_banner, "expected DecorativeBanner");
+    assert!(has_narration, "expected WorkflowNarration");
+    assert!(has_buzzword, "expected AiBuzzword");
+
+    for v in &violations {
+        assert_eq!(v.severity, Severity::Error, "existing detection {:?} should be Error", v.kind);
+    }
 }
