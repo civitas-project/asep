@@ -1,6 +1,8 @@
+use asep::agent_protocol::Envelope;
 use asep::mcp::server::process_jsonrpc_request;
 use asep::mcp::tools::execute_tool;
 use serde_json::json;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 // @test:FR-MCP-PROTO-01
@@ -223,4 +225,50 @@ fn test_agent_recv_filters_by_agent() {
         !list[0].as_object().unwrap().contains_key("body"),
         "recv must not return body payload"
     );
+}
+
+// @test:FR-MCP-PROTO-10
+#[test]
+fn test_agent_send_sets_reply_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let run_dir_s = run_dir.to_str().unwrap().to_string();
+    let body = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": body,
+            "reply_to": "msg-prev",
+        }),
+        Path::new(""),
+    )
+    .expect("asep_agent_send must succeed");
+
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    let id = val["id"].as_str().expect("id is string");
+
+    // Raw envelope file must use short key "rt" with reply_to value.
+    let raw = fs::read_to_string(
+        dir.path().join("messages").join(format!("{id}.json")),
+    )
+    .unwrap();
+    assert!(
+        raw.contains("\"rt\":\"msg-prev\""),
+        "raw envelope must contain short rt key with reply_to value"
+    );
+
+    // Deserialized envelope must expose reply_to.
+    let envelope: Envelope = serde_json::from_str(&raw).unwrap();
+    assert_eq!(envelope.reply_to.as_deref(), Some("msg-prev"));
 }

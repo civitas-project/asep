@@ -245,6 +245,10 @@ pub fn get_tools_list() -> serde_json::Value {
                         "ref": {
                             "type": "string",
                             "description": "Optional ref to a file under the run dir"
+                        },
+                        "reply_to": {
+                            "type": "string",
+                            "description": "Optional id of the message this is a reply to"
                         }
                     },
                     "required": ["run_dir", "agent", "to", "kind", "body"]
@@ -694,8 +698,9 @@ pub fn execute_tool(
                 .get("ref")
                 .and_then(|v| v.as_str())
                 .map(Path::new);
+            let reply_to = arguments.get("reply_to").and_then(|v| v.as_str());
             let store = MessageStore::new(&run_dir);
-            let envelope = store.send(from, to, kind, body, ref_path)?;
+            let envelope = store.send(from, to, kind, body, ref_path, reply_to)?;
             mcp_text(json!({
                 "id": envelope.id,
                 "path": mcp_msg_path(&envelope.id),

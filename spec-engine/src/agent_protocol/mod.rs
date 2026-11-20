@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,8 +18,6 @@ use sha2::{Digest, Sha256};
 const MESSAGES_DIR: &str = "messages";
 const ENVELOPE_VERSION: u8 = 1;
 const STATUS_SENT: &str = "sent";
-
-const ALLOWED_STATUSES: &[&str] = &["sent", "accepted", "rejected", "done"];
 
 /// Canonical protocol schema, loaded once from `policy/agent-protocol.toml`.
 #[derive(Debug, Deserialize)]
@@ -107,19 +106,26 @@ pub enum Kind {
     Custom,
 }
 
-/// The common envelope. Fields serialize in protocol order: v, id, from, to,
-/// kind, reply_to, ref, status, ts. No `body` field: bodies travel in sidecar
-/// files so tool calls carry only id/path/hash.
+/// The common envelope. New files write short keys (v, i, f, t, k, rt, r, s,
+/// ts); long keys (id, from, to, kind, reply_to, ref, status) remain accepted
+/// as aliases so old message files still deserialize. No `body` field: bodies
+/// travel in sidecar files so tool calls carry only id/path/hash.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub v: u8,
+    #[serde(rename = "i", alias = "id")]
     pub id: String,
+    #[serde(rename = "f", alias = "from")]
     pub from: Role,
+    #[serde(rename = "t", alias = "to")]
     pub to: Role,
+    #[serde(rename = "k", alias = "kind")]
     pub kind: Kind,
+    #[serde(rename = "rt", alias = "reply_to")]
     pub reply_to: Option<String>,
-    #[serde(rename = "ref")]
+    #[serde(rename = "r", alias = "ref")]
     pub ref_: Option<String>,
+    #[serde(rename = "s", alias = "status")]
     pub status: String,
     pub ts: String,
 }
@@ -191,6 +197,7 @@ impl MessageStore {
         kind: Kind,
         body: Value,
         ref_path: Option<&Path>,
+        reply_to: Option<&str>,
     ) -> Result<Envelope, String> {
         if !Self::kind_allowed(&from, &kind) {
             return Err(format!(
@@ -216,7 +223,7 @@ impl MessageStore {
             from,
             to,
             kind,
-            reply_to: None,
+            reply_to: reply_to.map(|s| s.to_string()),
             ref_,
             status: STATUS_SENT.to_string(),
             ts,
@@ -270,7 +277,12 @@ impl MessageStore {
     }
 
     pub fn ack(&self, agent: Role, id: &str, status: &str) -> Result<(), String> {
-        if !ALLOWED_STATUSES.contains(&status) || status == STATUS_SENT {
+        if !protocol_schema()
+            .statuses
+            .iter()
+            .any(|s| s == status)
+            || status == STATUS_SENT
+        {
             return Err(format!("invalid ack status: {status}"));
         }
         let env_path = self.messages_dir.join(format!("{id}.json"));
@@ -309,9 +321,9 @@ impl MessageStore {
             .duration_since(UNIX_EPOCH)
             .expect("system clock before unix epoch");
         let ms = epoch.as_millis();
-        let mut sub = epoch.subsec_nanos() % 1_000_000;
+        let mut suffix = random_id_suffix();
         loop {
-            let id = format!("msg-{ms}-{sub:06x}");
+            let id = format!("msg-{ms}-{suffix}");
             if !self
                 .messages_dir
                 .join(format!("{id}.json"))
@@ -319,9 +331,26 @@ impl MessageStore {
             {
                 return id;
             }
-            sub = sub.wrapping_add(1);
+            suffix = random_id_suffix();
         }
     }
+}
+
+/// 8 bytes from /dev/urandom encoded as hex, falling back to epoch nanos
+/// when the device is unavailable.
+fn random_id_suffix() -> String {
+    let mut buf = [0u8; 8];
+    if std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut buf))
+        .is_ok()
+    {
+        return buf.iter().map(|byte| format!("{byte:02x}")).collect();
+    }
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .subsec_nanos();
+    format!("{nanos:06x}")
 }
 
 fn kind_as_str(kind: &Kind) -> &str {
@@ -354,7 +383,7 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
         .iter()
         .find(|k| k.name == kind_as_str(kind))
     else {
-        return Ok(());
+        return Err(format!("unknown kind: {}", kind_as_str(kind)));
     };
     require_keys(obj, &kind_schema.required)?;
     for field in &kind_schema.array_fields {
