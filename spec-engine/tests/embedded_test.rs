@@ -62,6 +62,29 @@ fn test_skill_text_references_canonical_rule_ids() {
     }
 }
 
+// @test:FR-PACK-EMBED-04
+#[test]
+fn test_workflow_router_defines_requirement_and_plan_phase() {
+    let skills = get_embedded_skills();
+    let router = skills
+        .iter()
+        .find(|s| s.id == "workflow-router")
+        .expect("embedded workflow-router skill must exist");
+
+    for required in [
+        "Requirement and Plan Phase",
+        "docs/PRD.md",
+        "docs/TDD.md",
+        "Never create .superpowers/",
+    ] {
+        assert!(
+            router.content.contains(required),
+            "workflow-router skill must define requirement and plan phase: missing {:?}",
+            required
+        );
+    }
+}
+
 // @test:FR-PACK-EMBED-02
 #[test]
 fn test_get_default_manifests_valid_json() {

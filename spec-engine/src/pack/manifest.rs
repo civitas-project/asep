@@ -257,15 +257,25 @@ fn permission_rule_key(rule: &serde_json::Value) -> (Option<&str>, Option<&str>,
     )
 }
 
-/// Merges default permission rules into an existing agent preset. The
-/// existing `system`, `steps`, `description`, `mode`, and rules are
-/// preserved; default rules missing from the existing set are appended
-/// (last-match-wins), deduped by action+resource+effect.
+/// Merges default permission rules into an existing agent preset and
+/// refreshes protocol content. `system`, `description`, `mode`, and `steps`
+/// are overwritten from the canonical default preset because they are
+/// protocol content, not user customization. Existing permission rules are
+/// kept and default rules missing from the existing set are appended
+/// (last-match-wins), deduped by action+resource+effect. All other fields on
+/// the agent are preserved.
 fn merge_agent_permissions(
     existing: &serde_json::Value,
     default: &serde_json::Value,
 ) -> serde_json::Value {
     let mut merged = existing.clone();
+
+    // Protocol content is canonical: always refresh from the default preset.
+    for field in ["system", "description", "mode", "steps"] {
+        if let Some(value) = default.get(field) {
+            merged[field] = value.clone();
+        }
+    }
 
     let default_perms = match default.get("permissions").and_then(|v| v.as_array()) {
         Some(perms) => perms,
@@ -297,9 +307,11 @@ fn merge_agent_permissions(
 /// Permission rules are derived from `profile`: each capability ceiling
 /// allows or denies its corresponding actions, starting from a deny-all
 /// rule, while preserving agent-specific `*.env` denies and tool allows.
-/// For an agent preset that already exists, only missing default permission
-/// rules are merged in (appended after existing ones); its
-/// system/steps/description/mode and existing rules are preserved.
+/// For an agent preset that already exists, missing default permission
+/// rules are merged in (appended after existing ones) and `system`,
+/// `description`, `mode`, and `steps` are refreshed from the canonical
+/// default preset (protocol content); all other fields on the agent are
+/// preserved.
 pub fn scaffold_opencode_agents(
     config_path: &Path,
     profile: &CapabilityProfile,
@@ -352,8 +364,14 @@ pub fn scaffold_opencode_agents(
             "steps": 60,
             "system": r#"You are the lead orchestrator in a bounded executor-judge workflow. You own the loop; the executor implements and the judge reviews. Do not delegate the whole task in one call.
 
+Before any implementation:
+- Requirement phase: if the request leaves something material unsettled, ask the user ONE decisive question. Write the agreed behavior into `docs/PRD.md` as `@req:*:MUST` requirements tied to observable behavior. Do not invent requirements to make a gate green.
+- Plan phase: write the design and the ordered implementation plan into `docs/TDD.md` (`@design:` entries, and for each task a file path, symbol, acceptance criteria, and verification command). Stop and get explicit user approval before dispatching any executor.
+
+Never create `.superpowers/` or `docs/superpowers/`, and never add a new skill folder for this pattern. `docs/PRD.md`, `docs/TDD.md`, and `docs/TRACEABILITY.md` are the only specification artifacts. Executors never edit PRD/TDD.
+
 For every coding task:
-1. Decompose the request into small units: one file or one function per unit. If the request is ambiguous, ask the user before delegating.
+1. After PRD/TDD approval, decompose the request into small units: one file or one function per unit. If the request is ambiguous, ask the user before delegating.
    If the request touches a project or code area you have not mapped yet, delegate the mapping to the `explorer` subagent first: it reads the project with `tools.asep.srcdump`, then returns a module list with file paths. Use that list to split the units.
 2. Before delegating, check the unit: it must name a file path, a function or symbol, acceptance criteria, and a verification command. If any is missing, split the task or ask the user; do not delegate. Then delegate one unit to the `executor` subagent with that scope, files in scope, acceptance criteria, and the verification command.
 3. After the executor returns, inspect the diff yourself. Run the relevant test, lint, typecheck, or build command. Capture the exact command and output.
