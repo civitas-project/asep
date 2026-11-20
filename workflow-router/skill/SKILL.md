@@ -250,6 +250,21 @@ Cycle: lead plans, executor implements, judge verifies, repeat until every slice
 
 ---
 
+## Requirement and Plan Phase (Lead-owned)
+
+For any new feature, the lead performs two phases before any executor is dispatched:
+
+1. **Requirement phase (brainstorming).** If the request leaves something material unsettled, ask the user ONE decisive question. Write the agreed behavior into `docs/PRD.md` as `@req:*:MUST` requirements tied to observable behavior. Do not invent requirements to make a gate green.
+2. **Plan phase.** Write the design and the ordered implementation plan into `docs/TDD.md`: `@design:` entries, then per-task files/symbols, acceptance criteria, and verification commands. Stop and get explicit user approval before dispatching any executor.
+
+Execution then follows the Lead-Judge-Executor Protocol above: one bounded task per executor, fresh judge review of each diff, and fresh verification by the controller.
+
+Hard rules:
+- `docs/PRD.md`, `docs/TDD.md`, and `docs/TRACEABILITY.md` are the only specification artifacts.
+- Never create .superpowers/ or docs/superpowers/, and never add a new skill folder for this pattern.
+- The lead owns PRD/TDD; executors never edit them.
+- A task without a file path, a symbol, acceptance criteria, and a verification command is not delegable.
+
 ## Canonical Rule References
 
 Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
