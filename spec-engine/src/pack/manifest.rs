@@ -2,6 +2,7 @@
 
 use crate::config::settings::CapabilityProfile;
 use serde_json::json;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
@@ -185,6 +186,41 @@ fn read_only_env_denies() -> Vec<serde_json::Value> {
     ]
 }
 
+/// Role-scoped allows for the ASEP agent message tools (`asep_agent_*`).
+/// `subagent` is never widened here: executor keeps an explicit subagent
+/// deny, and judge/explorer keep theirs via `read_only_action_denies`.
+fn lead_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "asep_agent_send", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_recv", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_read", "resource": "*", "effect": "allow"}),
+        json!({"action": "asep_agent_ack", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Executor may only `asep_agent_send` with `kind=TASK_REPORT` and
+/// `asep_agent_recv`; `subagent` stays denied.
+fn executor_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "subagent", "resource": "*", "effect": "deny"}),
+        json!({"action": "asep_agent_send", "resource": "kind=TASK_REPORT", "effect": "allow"}),
+        json!({"action": "asep_agent_recv", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Judge may only `asep_agent_send` with `kind=VERDICT` and `asep_agent_read`.
+fn judge_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![
+        json!({"action": "asep_agent_send", "resource": "kind=VERDICT", "effect": "allow"}),
+        json!({"action": "asep_agent_read", "resource": "*", "effect": "allow"}),
+    ]
+}
+
+/// Explorer may only `asep_agent_send` with `kind=MAP_REPORT`.
+fn explorer_agent_message_rules() -> Vec<serde_json::Value> {
+    vec![json!({"action": "asep_agent_send", "resource": "kind=MAP_REPORT", "effect": "allow"})]
+}
+
 /// Explorer keeps its read-only tool allows (`execute`, `asep_srcdump`,
 /// `asep_srcidx`) regardless of the profile.
 fn explorer_tool_allows() -> Vec<serde_json::Value> {
@@ -211,11 +247,59 @@ fn read_only_action_denies() -> Vec<serde_json::Value> {
     ]
 }
 
+/// Dedupe key for a permission rule: identical action+resource+effect means
+/// the same rule, regardless of position (last-match-wins semantics).
+fn permission_rule_key(rule: &serde_json::Value) -> (Option<&str>, Option<&str>, Option<&str>) {
+    (
+        rule.get("action").and_then(serde_json::Value::as_str),
+        rule.get("resource").and_then(serde_json::Value::as_str),
+        rule.get("effect").and_then(serde_json::Value::as_str),
+    )
+}
+
+/// Merges default permission rules into an existing agent preset. The
+/// existing `system`, `steps`, `description`, `mode`, and rules are
+/// preserved; default rules missing from the existing set are appended
+/// (last-match-wins), deduped by action+resource+effect.
+fn merge_agent_permissions(
+    existing: &serde_json::Value,
+    default: &serde_json::Value,
+) -> serde_json::Value {
+    let mut merged = existing.clone();
+
+    let default_perms = match default.get("permissions").and_then(|v| v.as_array()) {
+        Some(perms) => perms,
+        None => return merged,
+    };
+
+    let merged_perms = match existing.get("permissions").and_then(|v| v.as_array()) {
+        Some(existing_perms) => {
+            let mut rules = existing_perms.clone();
+            let mut seen: HashSet<(Option<&str>, Option<&str>, Option<&str>)> =
+                existing_perms.iter().map(permission_rule_key).collect();
+            for rule in default_perms {
+                let key = permission_rule_key(rule);
+                if seen.insert(key) {
+                    rules.push(rule.clone());
+                }
+            }
+            rules
+        }
+        None => default_perms.clone(),
+    };
+
+    merged["permissions"] = serde_json::Value::Array(merged_perms);
+    merged
+}
+
 /// Installs default Lead-Judge-Executor agent presets into `opencode.json`
 /// without clobbering pre-existing top-level keys or pre-existing agents.
 /// Permission rules are derived from `profile`: each capability ceiling
 /// allows or denies its corresponding actions, starting from a deny-all
 /// rule, while preserving agent-specific `*.env` denies and tool allows.
+/// For an agent preset that already exists, only missing default permission
+/// rules are merged in (appended after existing ones); its
+/// system/steps/description/mode and existing rules are preserved.
 pub fn scaffold_opencode_agents(
     config_path: &Path,
     profile: &CapabilityProfile,
@@ -284,7 +368,7 @@ Rules:
 - Never claim completion without fresh verification output.
 - Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
 - Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user."#,
-            "permissions": agent_permissions(profile, &[])
+            "permissions": agent_permissions(profile, &lead_agent_message_rules())
         },
         "executor": {
             "description": "Fast coding executor in a bounded executor-judge pipeline.",
@@ -303,7 +387,7 @@ Working limits:
 8. End the report with exactly one status line: `DONE` when the task scope is complete and verification ran and passed, `UNCERTAIN: <reason>`, or `BLOCKED: <reason>`. Never omit the status line.
 
 Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
-            "permissions": agent_permissions(profile, &[])
+            "permissions": agent_permissions(profile, &executor_agent_message_rules())
         },
         "judge": {
             "description": "Read-only reviewer verifying executor output against task, diff, and test evidence.",
@@ -326,7 +410,12 @@ Rules:
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
             "permissions": agent_permissions(
                 profile,
-                &[read_only_env_denies(), read_only_action_denies()].concat()
+                &[
+                    read_only_env_denies(),
+                    read_only_action_denies(),
+                    judge_agent_message_rules(),
+                ]
+                .concat()
             )
         },
         "explorer": {
@@ -351,6 +440,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
                     read_only_env_denies(),
                     explorer_tool_allows(),
                     read_only_action_denies(),
+                    explorer_agent_message_rules(),
                 ]
                 .concat()
             )
@@ -362,8 +452,19 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
         .expect("agents object was just ensured")
         .as_object_mut()
         .expect("agents value is an object");
-    for (key, value) in default_agents.as_object().expect("default_agents is an object") {
-        agents_obj.entry(key.clone()).or_insert(value.clone());
+    for (key, default_value) in default_agents.as_object().expect("default_agents is an object") {
+        match agents_obj.get(key) {
+            // Missing agent: insert the full default preset.
+            None => {
+                agents_obj.insert(key.clone(), default_value.clone());
+            }
+            // Existing agent: preserve system/steps/description/mode and
+            // existing rules; merge in only the missing default permission
+            // rules, appended after existing ones (last-match-wins).
+            Some(existing) => {
+                agents_obj.insert(key.clone(), merge_agent_permissions(existing, default_value));
+            }
+        }
     }
 
     // Back up the original content before overwriting (best effort).

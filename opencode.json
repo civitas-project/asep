@@ -25,6 +25,16 @@
           "action": "websearch",
           "resource": "*",
           "effect": "deny"
+        },
+        {
+          "action": "asep_agent_send",
+          "resource": "kind=TASK_REPORT",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_recv",
+          "resource": "*",
+          "effect": "allow"
         }
       ]
     },
@@ -78,6 +88,11 @@
           "action": "asep_srcidx",
           "resource": "*",
           "effect": "allow"
+        },
+        {
+          "action": "asep_agent_send",
+          "resource": "kind=MAP_REPORT",
+          "effect": "allow"
         }
       ]
     },
@@ -116,6 +131,16 @@
           "action": "grep",
           "resource": "*",
           "effect": "allow"
+        },
+        {
+          "action": "asep_agent_send",
+          "resource": "kind=VERDICT",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_read",
+          "resource": "*",
+          "effect": "allow"
         }
       ]
     },
@@ -133,6 +158,26 @@
         {
           "action": "subagent",
           "resource": "executor",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_send",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_recv",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_read",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "asep_agent_ack",
+          "resource": "*",
           "effect": "allow"
         },
         {
