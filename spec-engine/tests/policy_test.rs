@@ -1,4 +1,5 @@
 use asep::policy::{CoverageRule, Policy, Severity, TierId, load_policy};
+use regex::Regex;
 
 fn rule_by_id<'a>(policy: &'a Policy, id: &str) -> &'a CoverageRule {
     policy
@@ -47,4 +48,32 @@ fn tier_t2_requires_semantic_evidence() {
 fn tier_t0_does_not_require_semantic_evidence() {
     let policy = load_policy();
     assert!(!policy.tier(TierId::T0).semantic_evidence_required);
+}
+
+#[test]
+fn test_policy_loads_antislop_rules_for_four_domains() {
+    let policy = load_policy();
+    let rules = policy.antislop_rules();
+    assert_eq!(rules.len(), 9);
+
+    let mut domains: Vec<&str> = rules.iter().map(|r| r.domain.as_str()).collect();
+    domains.sort_unstable();
+    domains.dedup();
+    assert_eq!(domains, vec!["code", "copy", "design", "docs"]);
+
+    let banner = rules
+        .iter()
+        .find(|r| r.id == "AS-CODE-BANNER")
+        .expect("AS-CODE-BANNER present in policy");
+    assert_eq!(banner.severity, Severity::Error);
+
+    let hype = rules
+        .iter()
+        .find(|r| r.id == "AS-COPY-HYPE")
+        .expect("AS-COPY-HYPE present in policy");
+    assert_eq!(hype.severity, Severity::Warning);
+
+    for rule in rules {
+        Regex::new(&rule.pattern).expect("antislop pattern must compile as regex");
+    }
 }
