@@ -70,9 +70,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
 
     let changed: Vec<PathBuf> = changed.iter().map(|p| normalize_path(root, p)).collect();
     let is_changed = |node: &TraceNode| {
-        changed
-            .iter()
-            .any(|p| matches_path(root, &node.file_path, p))
+        changed.iter().any(|p| matches_path(&node.file_path, p))
     };
 
     // 3. Impl nodes living in changed files.
@@ -177,8 +175,11 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         let mut map: std::collections::BTreeMap<PathBuf, HashSet<String>> =
             std::collections::BTreeMap::new();
         for test in &tests {
+            // Ensure every test file yields a command, even when no `fn` was
+            // extracted (plain `cargo test --test <stem>`).
+            let names = map.entry(test.file.clone()).or_default();
             if let Some(name) = &test.function {
-                map.entry(test.file.clone()).or_default().insert(name.clone());
+                names.insert(name.clone());
             }
         }
         for (file, names) in map {
@@ -237,13 +238,16 @@ fn normalize_path(root: &Path, path: &Path) -> PathBuf {
     path.strip_prefix(root).unwrap_or(path).to_path_buf()
 }
 
-/// True when `node_file` equals `changed`, or `changed` is a directory and
-/// `node_file` lives underneath it.
-fn matches_path(root: &Path, node_file: &Path, changed: &Path) -> bool {
-    if node_file == changed {
+/// True when `node_file` equals `changed` or lives underneath `changed`.
+/// Purely path-based: `changed` is already relative to `root`; empty path /
+/// `.` matches everything; otherwise a plain `starts_with` handles both file
+/// and directory prefixes without touching the filesystem.
+fn matches_path(node_file: &Path, changed: &Path) -> bool {
+    let changed = changed.strip_prefix("./").unwrap_or(changed);
+    if changed.as_os_str().is_empty() || changed == Path::new(".") {
         return true;
     }
-    root.join(changed).is_dir() && node_file.starts_with(changed)
+    node_file == changed || node_file.starts_with(changed)
 }
 
 /// Sorts by (file, line, id) for deterministic output.
