@@ -85,6 +85,24 @@ fn test_workflow_router_defines_requirement_and_plan_phase() {
     }
 }
 
+// @test:FR-PACK-EMBED-05
+#[test]
+fn test_workflow_router_uses_targeted_verification() {
+    let skills = get_embedded_skills();
+    let router = skills
+        .iter()
+        .find(|s| s.id == "workflow-router")
+        .expect("embedded workflow-router skill must exist");
+
+    for required in ["Targeted Verification", "asep affected"] {
+        assert!(
+            router.content.contains(required),
+            "workflow-router skill must document targeted verification: missing {:?}",
+            required
+        );
+    }
+}
+
 // @test:FR-PACK-EMBED-02
 #[test]
 fn test_get_default_manifests_valid_json() {

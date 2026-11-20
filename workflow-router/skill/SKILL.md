@@ -265,6 +265,10 @@ Hard rules:
 - The lead owns PRD/TDD; executors never edit them.
 - A task without a file path, a symbol, acceptance criteria, and a verification command is not delegable.
 
+## Targeted Verification
+
+Run `asep affected <changed-paths>` before dispatching verification. It reads the traceability graph and returns the exact test files, requirements, and commands to run. Use that output as the verification command; do not run the full suite by default. Full suite is reserved for merges to `main` or an explicit user request.
+
 ## Canonical Rule References
 
 Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.

@@ -592,3 +592,27 @@ fn test_scaffold_updates_existing_agent_system() {
     // Top-level keys preserved.
     assert_eq!(parsed["model"], "9router/ag/claude-sonnet-4-6");
 }
+
+// @test:ARCH-06
+#[test]
+fn test_lead_system_defaults_to_targeted_verification() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
+    let normalized = lead_system.to_ascii_lowercase().replace('`', "");
+
+    assert!(
+        normalized.contains("asep affected"),
+        "lead system must direct verification to `asep affected`"
+    );
+    assert!(
+        normalized.contains("full suite is reserved for merges to main"),
+        "lead system must reserve the full suite for merges to main"
+    );
+}
