@@ -21,7 +21,7 @@ pub fn get_tools_list() -> serde_json::Value {
         "tools": [
             {
                 "name": "asep_check",
-                "description": "Deterministic SDLC validator: scans workspace for 1:1 traceability tags (@req <-> @impl <-> @test) and audits docstring contracts.",
+                "description": "Validates @req/@impl/@test tags; audits docstring contracts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -46,7 +46,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "spec_check",
-                "description": "Deterministic SDLC validator (legacy alias for asep_check): scans workspace for 1:1 traceability tags (@req <-> @impl <-> @test) and audits docstring contracts.",
+                "description": "Legacy alias for asep_check; validates traceability tags.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -71,7 +71,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "adr_new",
-                "description": "Scaffolds a newly numbered Rich Architecture Decision Record (ADR).",
+                "description": "Creates a numbered Architecture Decision Record (ADR).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -102,7 +102,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "srcidx",
-                "description": "Semantic source indexer: extracts symbols (functions, structs, traits, etc.) from source files and emits NDJSON with self-describing header. Supports Rust, TypeScript, Python, Dart, Go, PHP, Java, Typst.",
+                "description": "Source symbol indexer emitting NDJSON (Rust, TS, Go, etc.).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -150,7 +150,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "srcdump",
-                "description": "Source code dumper for LLM consumption: streams source files as token-efficient NDJSON with configurable formatting modes.",
+                "description": "Dumps source as token-efficient NDJSON for LLM consumption.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -218,7 +218,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "asep_agent_send",
-                "description": "Send an agent message: writes an envelope under <run-dir>/messages/ and returns id + path only, never the payload.",
+                "description": "Sends an agent message envelope; returns id and path only.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -256,7 +256,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "asep_agent_recv",
-                "description": "List message ids/paths for a role, only messages with status 'sent'.",
+                "description": "Lists message ids/paths for a role; only 'sent' messages.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -292,7 +292,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "asep_agent_ack",
-                "description": "Ack a message by id with a status (accepted/rejected/done) as the caller role.",
+                "description": "Acks a message by id with status accepted/rejected/done.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

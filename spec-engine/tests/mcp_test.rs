@@ -1,6 +1,6 @@
 use asep::agent_protocol::Envelope;
 use asep::mcp::server::process_jsonrpc_request;
-use asep::mcp::tools::execute_tool;
+use asep::mcp::tools::{execute_tool, get_tools_list};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +35,23 @@ fn test_mcp_tools_list() {
     assert!(names.contains(&"spec_check"));
     assert!(names.contains(&"adr_new"));
     assert!(names.contains(&"render_diagrams"));
+}
+
+// @test:FR-MCP-PROTO-COMPACT
+#[test]
+fn test_tool_descriptions_are_compact() {
+    let tools = get_tools_list();
+    let tool_list = tools["tools"].as_array().expect("tools array");
+    assert_eq!(tool_list.len(), 10, "expected exactly 10 tools");
+    for tool in tool_list {
+        let name = tool["name"].as_str().unwrap_or("<unnamed>");
+        let desc = tool["description"].as_str().expect("description string");
+        assert!(
+            desc.chars().count() <= 60,
+            "tool '{name}' description too long: {} chars",
+            desc.chars().count()
+        );
+    }
 }
 
 // @test:FR-MCP-PROTO-03
