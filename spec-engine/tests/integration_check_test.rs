@@ -266,6 +266,7 @@ fn test_check_messages_accepts_valid_dir() {
                 "verification_command": "cargo test -p asep"
             }),
             None,
+            None,
         )
         .expect("send valid message");
 
