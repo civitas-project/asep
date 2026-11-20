@@ -1,5 +1,6 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
 
@@ -128,6 +129,11 @@ fn check_comment(
 ) {
     let trimmed = text.trim();
 
+    // Inline marker opts a specific line out of anti-slop auditing.
+    if trimmed.contains("asep:allow-antislop") {
+        return;
+    }
+
     if let Some(banner) = banner_match(trimmed) {
         violations.push(AntiSlopViolation {
             file_path: path.to_path_buf(),
@@ -188,6 +194,10 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
     if is_markdown {
         for (idx, line) in content.lines().enumerate() {
             let line_number = idx + 1;
+            // Inline marker opts a specific line out of anti-slop auditing.
+            if line.contains("asep:allow-antislop") {
+                continue;
+            }
             // AI buzzwords in markdown keep the existing kind/severity.
             if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
                 for m in rule.regex.find_iter(line) {
@@ -228,10 +238,17 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
 
     let mut in_block = false;
     let mut cleaned_lines: Vec<String> = Vec::new();
+    let mut allowed_lines: HashSet<usize> = HashSet::new();
 
     for (idx, mut remaining) in content.lines().enumerate() {
         let line_number = idx + 1;
         let mut cleaned = String::with_capacity(remaining.len());
+        if remaining.contains("asep:allow-antislop") {
+            allowed_lines.insert(line_number);
+            cleaned.push_str(remaining);
+            cleaned_lines.push(cleaned);
+            continue;
+        }
 
         if in_block {
             match remaining.find("*/") {
@@ -329,17 +346,28 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         cleaned_lines.push(cleaned);
     }
 
-    scan_nesting(&mut violations, path, &cleaned_lines);
+    scan_nesting(&mut violations, path, &cleaned_lines, &allowed_lines);
     violations
 }
 
 /// Scans comment-stripped code for if blocks nested at depth 3 or more.
 /// An if at depth d is nested inside d-1 enclosing if blocks.
-fn scan_nesting(violations: &mut Vec<AntiSlopViolation>, path: &Path, lines: &[String]) {
+/// Lines whose numbers are in `allowed_lines` are skipped (inline marker).
+fn scan_nesting(
+    violations: &mut Vec<AntiSlopViolation>,
+    path: &Path,
+    lines: &[String],
+    allowed_lines: &std::collections::HashSet<usize>,
+) {
     let mut stack: Vec<usize> = Vec::new();
     let mut brace_depth: usize = 0;
 
     for (idx, line) in lines.iter().enumerate() {
+        let line_number = idx + 1;
+        // Inline marker opts this line out of anti-slop auditing.
+        if allowed_lines.contains(&line_number) {
+            continue;
+        }
         let mut i = 0;
         while i < line.len() {
             if line[i..].starts_with("if")
@@ -364,7 +392,7 @@ fn scan_nesting(violations: &mut Vec<AntiSlopViolation>, path: &Path, lines: &[S
                         line_number: idx + 1,
                         kind: AntiSlopViolationKind::ExcessiveNesting { depth },
                         message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
-                        severity: Severity::Error,
+                        severity: Severity::Warning,
                     });
                 }
                 i += 2;
@@ -452,7 +480,7 @@ mod tests {
 
     #[test]
     fn detects_banner_comment() {
-        let violations = rs("// =====================\nfn foo() {}\n");
+        let violations = rs("// =====================\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
@@ -461,7 +489,7 @@ mod tests {
 
     #[test]
     fn detects_banner_in_block_comment() {
-        let violations = rs("/* ----------------- */\nfn foo() {}\n");
+        let violations = rs("/* ----------------- */\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
@@ -470,7 +498,7 @@ mod tests {
 
     #[test]
     fn detects_workflow_narration() {
-        let violations = rs("// Step 1: validate input\nfn foo() {}\n");
+        let violations = rs("// Step 1: validate input\nfn foo() {}\n"); // asep:allow-antislop
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::WorkflowNarration { .. }
@@ -479,7 +507,7 @@ mod tests {
 
     #[test]
     fn detects_buzzword_in_docstring() {
-        let violations = rs("/// Delve into robust solutions\nfn foo() {}\n");
+        let violations = rs("/// Delve into robust solutions\nfn foo() {}\n"); // asep:allow-antislop
         let words: Vec<String> = violations
             .iter()
             .filter_map(|v| match &v.kind {

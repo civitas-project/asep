@@ -1,5 +1,5 @@
 use asep::auditor::{
-    audit_anti_slop, audit_project_anti_slop, AntiSlopViolation, AntiSlopViolationKind,
+    audit_anti_slop, audit_project_anti_slop, AntiSlopViolationKind,
 };
 use asep::policy::Severity;
 use std::fs;
@@ -96,7 +96,7 @@ fn test_audit_project_anti_slop_tempdir() {
 #[test]
 fn test_policy_rules_detect_design_copy_and_docs_slop() {
     let violations = audit_md(
-        "## Design\nTBD: decide later. This is very good indeed.\n## Copy\nA game-changer release.\n## Docs\nLorem ipsum draft.\n",
+        "## Design\nTBD: decide later. This should be fast indeed.\n## Copy\nA very game-changer release.\n## Docs\nLorem ipsum draft. It is important to note that nothing is required here.\n",
     );
 
     let ids: Vec<&str> = violations
@@ -112,6 +112,14 @@ fn test_policy_rules_detect_design_copy_and_docs_slop() {
     assert!(
         ids.contains(&"AS-DOCS-PLACEHOLDER"),
         "missing AS-DOCS-PLACEHOLDER in {ids:?}"
+    );
+    assert!(
+        ids.contains(&"AS-DESIGN-VAGUE"),
+        "missing AS-DESIGN-VAGUE in {ids:?}"
+    );
+    assert!(
+        ids.contains(&"AS-DOCS-WORDY"),
+        "missing AS-DOCS-WORDY in {ids:?}"
     );
 
     for v in &violations {

@@ -1,6 +1,6 @@
 use crate::adr::create_new_adr;
 use crate::affected::affected;
-use crate::auditor::audit_project_docstrings;
+use crate::auditor::{audit_project_anti_slop, audit_project_docstrings};
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::{build_relation_graph, build_trace_graph};
@@ -9,7 +9,7 @@ use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
-use crate::policy::{load_policy, TierId};
+use crate::policy::{load_policy, Severity, TierId};
 use crate::skill::inspector::detect_skill_drift;
 use crate::config::EngineConfig;
 use crate::scanner::scan_project_tags;
@@ -37,6 +37,8 @@ struct CheckJsonReport {
     doc_contract_violations: usize,
     traceability: crate::graph::model::TraceabilityReport,
     violations: Vec<crate::auditor::DocContractViolation>,
+    anti_slop_violations: usize,
+    anti_slop_warnings: usize,
 }
 
 /// Resolves the rigor tier for a check run.
@@ -163,6 +165,26 @@ pub fn run() -> ExitCode {
                 }
             };
 
+            // Anti-slop audit: Error violations block outside T0; Warning
+            // violations block only under --strict.
+            let anti_slop_violations = match audit_project_anti_slop(&target_path) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("{} Failed to audit anti-slop: {e}", "✖".red());
+                    return e.exit_code();
+                }
+            };
+            let anti_errors: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Error)
+                .collect();
+            let anti_warnings: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Warning)
+                .collect();
+            let has_antislop_failure =
+                tier != TierId::T0 && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
+
             // Structural verification: installed skill copies must match embedded canonicals.
             let skill_drift_dirs = [
                 target_path.join(".opencode").join("skills"),
@@ -182,7 +204,8 @@ pub fn run() -> ExitCode {
                 && !has_doc_contract_failure
                 && !has_strict_failure
                 && !has_deny_drafts_failure
-                && !has_skill_drift;
+                && !has_skill_drift
+                && !has_antislop_failure;
 
             // --messages: validate agent message directory; errors fold into `passed`.
             if let Some(messages_dir) = &messages {
@@ -208,6 +231,8 @@ pub fn run() -> ExitCode {
                     draft_total: report.draft_total,
                     draft_pending: report.draft_pending.len(),
                     doc_contract_violations: violations.len(),
+                    anti_slop_violations: anti_slop_violations.len(),
+                    anti_slop_warnings: anti_warnings.len(),
                     traceability: report,
                     violations,
                 };
@@ -344,6 +369,47 @@ pub fn run() -> ExitCode {
                             v.line_number,
                             if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                         );
+                    }
+                }
+
+                if !anti_errors.is_empty() {
+                    let header = if tier == TierId::T0 {
+                        "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold()
+                    } else {
+                        "❌ Anti-slop Violations:".red().bold()
+                    };
+                    println!("\n{header}");
+                    for v in &anti_errors {
+                        println!(
+                            "   - {}:{}: {}",
+                            v.file_path.display(),
+                            v.line_number,
+                            if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
+                        );
+                    }
+                }
+
+                if !anti_warnings.is_empty() {
+                    if strict {
+                        println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
+                        for v in &anti_warnings {
+                            println!(
+                                "   - {}:{}: {}",
+                                v.file_path.display(),
+                                v.line_number,
+                                v.message.red()
+                            );
+                        }
+                    } else {
+                        eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
+                        for v in &anti_warnings {
+                            eprintln!(
+                                "   - {}:{}: {}",
+                                v.file_path.display(),
+                                v.line_number,
+                                v.message.yellow()
+                            );
+                        }
                     }
                 }
 

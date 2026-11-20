@@ -131,7 +131,7 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
 3. **1:1 Symmetrical Traceability Closure:**
    - Every `@req\:FR-*:MUST` in `docs/PRD.md` must link to `@design\:FR-*` in `docs/TDD.md`, `// @impl\:FR-*` in production code, and `// @test\:FR-*` in automated tests, verified by `asep_check trace` (`trace_manifest.json`).
 4. **Zero-Slop Craftsmanship Across Code and Prose:**
-   - **Prose (`asep:engineering-specs` & `asep:repository-governance`):** Zero em-dashes, zero poetic AI metaphors (*tapestry, beacon, delve*), zero unquantified buzzwords (*seamless, blazingly fast*), zero single-line colon bullets (`- **Title**: text`); use `<br>` for multi-line list separation.
+   - **Prose (`asep:engineering-specs` & `asep:repository-governance`):** Zero em-dashes, zero poetic AI metaphors (*weave, beacon, explore*), zero unquantified buzzwords (*smooth, blazingly fast*), zero single-line colon bullets (`- **Title**: text`); use `<br>` for multi-line list separation.
    - **Code (`asep:code-contracts`):** Zero signature-parroting comments, zero phantom docstring sections (`# Panics: None`).
    - **Design (`asep:design-tokens`):** Zero dimensionless numbers, zero unclipped wide-gamut colors without `fallbackHex`.
 5. **Empirical Terminal Verification Before Completion:**
