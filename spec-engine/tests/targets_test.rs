@@ -3,6 +3,7 @@ use asep::pack::manifest::{
     generate_plugin_json, scaffold_opencode_agents, update_opencode_json,
 };
 use asep::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -442,4 +443,71 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     assert!(has("lead", "shell", "allow"), "lead: shell must be allowed");
     assert!(has("executor", "edit", "allow"), "executor: edit must be allowed");
     assert!(has("executor", "shell", "allow"), "executor: shell must be allowed");
+}
+
+// @test:FR-PACK-MANIFEST-06
+#[test]
+fn test_scaffold_opencode_agents_merges_missing_permissions_into_existing_agent() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    // Pre-existing executor agent with a subset of the default rules (one of
+    // them intentionally identical to a default rule to exercise dedup).
+    let initial_json = r#"{
+        "provider": "openai",
+        "agents": {
+            "executor": {
+                "system": "Custom executor system prompt.",
+                "steps": 99,
+                "description": "Custom executor agent",
+                "mode": "subagent",
+                "permissions": [
+                    {"action": "read", "resource": "*", "effect": "allow"},
+                    {"action": "asep_agent_send", "resource": "kind=TASK_REPORT", "effect": "allow"}
+                ]
+            }
+        }
+    }"#;
+    fs::write(&config_file, initial_json).unwrap();
+
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
+
+    let updated_content = fs::read_to_string(&config_file).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&updated_content).unwrap();
+
+    let executor = &parsed["agents"]["executor"];
+
+    // Existing agent fields must be preserved unchanged.
+    assert_eq!(executor["system"], "Custom executor system prompt.");
+    assert_eq!(executor["steps"], 99);
+    assert_eq!(executor["description"], "Custom executor agent");
+    assert_eq!(executor["mode"], "subagent");
+
+    let perms = executor["permissions"].as_array().expect("permissions must be an array");
+    let has = |action: &str, resource: &str, effect: &str| -> bool {
+        perms.iter().any(|r| {
+            r["action"].as_str() == Some(action)
+                && r["resource"].as_str() == Some(resource)
+                && r["effect"].as_str() == Some(effect)
+        })
+    };
+
+    // Missing default permission rules were merged in (last-match-wins: appended after existing rules).
+    assert!(has("asep_agent_send", "kind=TASK_REPORT", "allow"));
+    assert!(has("asep_agent_recv", "*", "allow"));
+    assert!(has("read", "*", "allow"), "existing rule kept");
+
+    // No duplicate rules (identical action+resource+effect).
+    let mut seen: HashSet<(&str, &str, &str)> = HashSet::new();
+    for rule in perms {
+        let key = (
+            rule["action"].as_str().unwrap_or(""),
+            rule["resource"].as_str().unwrap_or(""),
+            rule["effect"].as_str().unwrap_or(""),
+        );
+        assert!(seen.insert(key), "duplicate permission rule: {:?}", key);
+    }
+
+    // Top-level keys untouched.
+    assert_eq!(parsed["provider"], "openai");
 }
