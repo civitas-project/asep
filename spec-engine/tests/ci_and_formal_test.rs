@@ -68,6 +68,60 @@ fn test_ci_gate_1_name_is_structural_traceability() {
     );
 }
 
+// @test:FR-CI-GATE-ANTISLOP-01
+#[test]
+fn test_ci_gate_1_antislop_warnings_only() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(
+        root.join("notes.md"),
+        "## Notes\nThis is very important documentation.\n",
+    )
+    .unwrap();
+
+    // Warning-only anti-slop passes Gate 1 (Warning does not block without --strict).
+    let opts = CiOptions {
+        gate: Some(1),
+        skip: Vec::new(),
+        rigor: "T1".to_string(),
+    };
+    let report = run_ci_pipeline(root, &opts);
+    assert!(
+        report.gates[0].passed,
+        "anti-slop warnings only should pass Gate 1: {:?}",
+        report.gates[0].details
+    );
+}
+
+// @test:FR-CI-GATE-ANTISLOP-02
+#[test]
+fn test_ci_gate_1_antislop_error_fails() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::write(root.join("main.rs"), "// ==========\nfn main() {}\n").unwrap();
+
+    let opts = CiOptions {
+        gate: Some(1),
+        skip: Vec::new(),
+        rigor: "T1".to_string(),
+    };
+
+    let report = run_ci_pipeline(root, &opts);
+    assert!(
+        !report.gates[0].passed,
+        "anti-slop Error violation should fail Gate 1 at T1"
+    );
+    assert!(
+        report
+            .gates[0]
+            .details
+            .iter()
+            .any(|d| d.contains("anti-slop")),
+        "expected anti-slop error detail, got {:?}",
+        report.gates[0].details
+    );
+}
+
 // @test:FR-CI-GATE-02
 #[test]
 fn test_ci_gate_1_cov02_strict_promotion() {

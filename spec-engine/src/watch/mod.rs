@@ -1,6 +1,7 @@
 //! Watch mode daemon: live SDLC validation and traceability re-evaluation.
 
-use crate::policy::TierId;
+use crate::auditor::audit_project_anti_slop;
+use crate::policy::{Severity, TierId};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::mpsc::channel;
@@ -89,7 +90,35 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
                     }
                 }
             }
+
+            let (anti_errors, anti_warnings) = anti_slop_summary(dir);
+            println!("🧹 Anti-slop: {anti_errors} errors, {anti_warnings} warnings");
         }
         Err(e) => eprintln!("Scanner error: {e}"),
+    }
+}
+
+/// Counts anti-slop violations by severity for `dir` without failing the
+/// cycle. Watch mode reports these every cycle but never exits non-zero.
+pub fn anti_slop_summary(dir: &Path) -> (usize, usize) {
+    let violations = audit_project_anti_slop(dir).unwrap_or_default();
+    let errors = violations.iter().filter(|v| v.severity == Severity::Error).count();
+    let warnings = violations.iter().filter(|v| v.severity == Severity::Warning).count();
+    (errors, warnings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anti_slop_summary_counts_errors_and_warnings() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        std::fs::write(dir.path().join("note.md"), "This is a very draft.\n")
+            .expect("write markdown fixture");
+        std::fs::write(dir.path().join("main.rs"), "// ==========\nfn main() {}\n") // asep:allow-antislop
+            .expect("write rust fixture");
+        let (errors, warnings) = anti_slop_summary(dir.path());
+        assert_eq!((errors, warnings), (1, 1));
     }
 }

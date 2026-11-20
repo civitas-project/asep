@@ -10,7 +10,7 @@ Dummy crate `spsc_ring`, payload `u64`, safe Rust only (no `unsafe`). Runs under
 Write `01-prd.md` in the run directory. The PRD must:
 
 1. State the observable behavior as `\@req:*:MUST` traceability requirements, one per requirement, e.g. `\@req:fifo:MUST`, `\@req:no-loss:MUST`, `\@req:no-dup:MUST`, `\@req:capacity:MUST`, `\@req:safe:MUST`.
-2. Tie every `@req:*:MUST` to observable FIFO/no-loss behavior:
+2. Tie every `\@req:*:MUST` to observable FIFO/no-loss behavior:
    - `push` of `u64` values returns `Ok(())` while the ring has a free slot, `Err(PushError)` when full; nothing is dropped silently.
    - `pop` returns values in strict FIFO order, exactly once, `None` only when empty.
    - Capacity is a power of two; `SpscRing::new(capacity)` panics on non-power-of-two (or as specified in P2).
@@ -22,4 +22,4 @@ Write `01-prd.md` in the run directory. The PRD must:
 `01-prd.md` — PRD containing `@req:*:MUST` requirements tied to observable FIFO/no-loss behavior, plus the verification command.
 
 ## Verification
-`grep -R "\@req:.*MUST" 01-prd.md` returns at least one requirement, and each `\@req:*:MUST` maps to an observable assertion in the stress fixture (`harness/e2e/fixtures/stress_test.rs`).
+`grep -R "\\@req:.*MUST" 01-prd.md` returns at least one requirement, and each `\@req:*:MUST` maps to an observable assertion in the stress fixture (`harness/e2e/fixtures/stress_test.rs`).

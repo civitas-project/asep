@@ -131,7 +131,7 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
 3. **1:1 Symmetrical Traceability Closure:**
    - Every `@req\:FR-*:MUST` in `docs/PRD.md` must link to `@design\:FR-*` in `docs/TDD.md`, `// @impl\:FR-*` in production code, and `// @test\:FR-*` in automated tests, verified by `asep_check trace` (`trace_manifest.json`).
 4. **Zero-Slop Craftsmanship Across Code and Prose:**
-   - **Prose (`asep:engineering-specs` & `asep:repository-governance`):** Zero em-dashes, zero poetic AI metaphors (*tapestry, beacon, delve*), zero unquantified buzzwords (*seamless, blazingly fast*), zero single-line colon bullets (`- **Title**: text`); use `<br>` for multi-line list separation.
+   - **Prose (`asep:engineering-specs` & `asep:repository-governance`):** Zero em-dashes, zero poetic AI metaphors (*weave, beacon, explore*), zero unquantified buzzwords (*smooth, blazingly fast*), zero single-line colon bullets (`- **Title**: text`); use `<br>` for multi-line list separation.
    - **Code (`asep:code-contracts`):** Zero signature-parroting comments, zero phantom docstring sections (`# Panics: None`).
    - **Design (`asep:design-tokens`):** Zero dimensionless numbers, zero unclipped wide-gamut colors without `fallbackHex`.
 5. **Empirical Terminal Verification Before Completion:**
@@ -268,6 +268,10 @@ Hard rules:
 ## Targeted Verification
 
 Run `asep affected <changed-paths>` before dispatching verification. It reads the traceability graph and returns the exact test files, requirements, and commands to run. Use that output as the verification command; do not run the full suite by default. Full suite is reserved for merges to `main` or an explicit user request.
+
+## Canonical Anti-Slop Rules
+
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill routes anti-slop checks by domain to `asep:engineering-specs` (AS-DESIGN-VAGUE, AS-DESIGN-TBD, AS-DOCS-PLACEHOLDER, AS-DOCS-WORDY), `asep:code-contracts` (AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD, AS-CODE-BOXDRAW, AS-CODE-NESTING), `asep:repository-governance` (AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY, AS-COPY-BUZZWORD), and `asep:design-tokens` (AS-COPY-HYPE, AS-DOCS-PLACEHOLDER). `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
 
 ## Canonical Rule References
 

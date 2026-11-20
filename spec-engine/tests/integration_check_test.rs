@@ -312,6 +312,69 @@ fn test_check_messages_wrong_messages_folder_fails() {
         .stderr(predicate::str::contains("messages directory missing or unreadable"));
 }
 
+// @test:FR-CLI-CHECK-ANTISLOP-01
+#[test]
+fn test_check_antislop_warning_only_passes_without_strict() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project so the exit code reflects anti-slop only.
+    write_t2_closed_project(root, "FR-ANTISLOP-WARN");
+    // Only a Warning-severity slop phrase ("very" filler) in Markdown.
+    fs::write(
+        root.join("notes.md"),
+        "## Notes\nThis is very important documentation.\n",
+    )
+    .expect("write notes.md");
+
+    // T1, no --strict: Warning does not block => pass, reported on stderr.
+    let mut cmd_lenient = Command::cargo_bin("asep").expect("binary exists");
+    cmd_lenient
+        .arg("check")
+        .arg("--rigor")
+        .arg("T1")
+        .arg(root);
+    cmd_lenient
+        .assert()
+        .success()
+        .code(0)
+        .stderr(predicate::str::contains("Filler wording"));
+
+    // T1, --strict: Warning is promoted to failure => fail.
+    let mut cmd_strict = Command::cargo_bin("asep").expect("binary exists");
+    cmd_strict
+        .arg("check")
+        .arg("--rigor")
+        .arg("T1")
+        .arg("--strict")
+        .arg(root);
+    cmd_strict
+        .assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("Filler wording"));
+}
+
+// @test:FR-CLI-CHECK-ANTISLOP-02
+#[test]
+fn test_check_antislop_error_banner_fails_at_t1() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project so the exit code reflects anti-slop only.
+    write_t2_closed_project(root, "FR-ANTISLOP-ERR");
+    // Decorative banner comment is Error-severity and blocks at T1.
+    fs::write(
+        root.join("main.rs"),
+        "// ==========\nfn main() {}\n",
+    )
+    .expect("write main.rs");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert().failure().code(1).stdout(predicate::str::contains("=="));
+}
+
 // @test:FR-VERIFY-01
 #[test]
 fn test_broken_coverage_is_fail() {

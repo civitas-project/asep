@@ -2,8 +2,8 @@
 //!
 //! Parses Markdown/MDX, reStructuredText, AsciiDoc, HTML, XML, and LaTeX
 //! with no external parsing dependencies. Extracts headings, anchors, and
-//! traceability tags (`@req:...`, `@design:...`, `@impl:...`, `@test:...`,
-//! `@adr:...`) from comment lines.
+//! traceability tags (`@req:<id>`, `@design:<id>`, `@impl:<id>`, `@test:<id>`,
+//! `@adr:<id>`) from comment lines.
 
 use crate::index::{Symbol, SymbolKind, Visibility};
 use crate::parser::{ParseResult, SourceParser};
@@ -34,7 +34,7 @@ struct HtmlCommentState {
 }
 
 impl MarkupParser {
-    /// Markdown/MDX parser (`md`, `mdx`).
+    /// Create a Markdown/MDX parser (`md`, `mdx`).
     pub fn markdown() -> Box<dyn SourceParser> {
         Box::new(MarkupParser {
             flavor: MarkupFlavor::Markdown,
@@ -52,7 +52,7 @@ impl MarkupParser {
         })
     }
 
-    /// AsciiDoc parser (`adoc`).
+    /// Build an AsciiDoc parser (`adoc`).
     pub fn asciidoc() -> Box<dyn SourceParser> {
         Box::new(MarkupParser {
             flavor: MarkupFlavor::Asciidoc,
@@ -61,7 +61,7 @@ impl MarkupParser {
         })
     }
 
-    /// HTML parser (`html`, `htm`).
+    /// An HTML parser (`html`, `htm`).
     pub fn html() -> Box<dyn SourceParser> {
         Box::new(MarkupParser {
             flavor: MarkupFlavor::Html,
@@ -70,7 +70,7 @@ impl MarkupParser {
         })
     }
 
-    /// XML parser (`xml`).
+    /// An XML parser (`xml`).
     pub fn xml() -> Box<dyn SourceParser> {
         Box::new(MarkupParser {
             flavor: MarkupFlavor::Xml,
@@ -79,7 +79,7 @@ impl MarkupParser {
         })
     }
 
-    /// LaTeX parser (`tex`, `latex`).
+    /// A LaTeX parser (`tex`, `latex`).
     pub fn latex() -> Box<dyn SourceParser> {
         Box::new(MarkupParser {
             flavor: MarkupFlavor::Latex,
