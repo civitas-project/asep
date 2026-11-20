@@ -1,5 +1,5 @@
 use asep::auditor::{
-    audit_anti_slop, audit_project_anti_slop, AntiSlopViolationKind,
+    audit_anti_slop, audit_project_anti_slop, AntiSlopViolation, AntiSlopViolationKind,
 };
 use asep::policy::Severity;
 use std::fs;
@@ -208,4 +208,47 @@ fn test_existing_code_slop_kinds_preserved() {
     for v in &violations {
         assert_eq!(v.severity, Severity::Error, "existing detection {:?} should be Error", v.kind);
     }
+}
+
+fn py(content: &str) -> Vec<AntiSlopViolation> {
+    audit_anti_slop(Path::new("test.py"), content)
+}
+
+#[test]
+fn python_hash_comments_produce_code_domain_violations() {
+    let violations = py("# =====================\n# Step 1: validate\n# delve into robust solutions\ndef foo():\n    pass\n");
+
+    assert!(
+        violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::DecorativeBanner { .. }
+        )),
+        "expected DecorativeBanner for '# =====================', got {violations:?}"
+    );
+
+    assert!(
+        violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::WorkflowNarration { .. }
+        )),
+        "expected WorkflowNarration for '# Step 1: validate', got {violations:?}"
+    );
+
+    let words: Vec<String> = violations
+        .iter()
+        .filter_map(|v| match &v.kind {
+            AntiSlopViolationKind::AiBuzzword { word } => Some(word.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        words.iter().any(|w| w == "delve"),
+        "expected buzzword 'delve' for '# delve into robust solutions', got {words:?}"
+    );
+}
+
+#[test]
+fn python_code_outside_comments_is_not_flagged() {
+    let violations = py("def foo():\n    return 1\n");
+    assert!(violations.is_empty(), "expected no violations, got {violations:?}");
 }

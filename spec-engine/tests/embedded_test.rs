@@ -75,11 +75,17 @@ fn test_skills_reference_antislop_rule_ids() {
         ),
         (
             "code-contracts",
-            &["AS-CODE-BANNER", "AS-CODE-NARRATION", "AS-CODE-BUZZWORD"],
+            &[
+                "AS-CODE-BANNER",
+                "AS-CODE-NARRATION",
+                "AS-CODE-BUZZWORD",
+                "AS-CODE-BOXDRAW",
+                "AS-CODE-NESTING",
+            ],
         ),
         (
             "repository-governance",
-            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-DOCS-WORDY"],
+            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-COPY-BUZZWORD", "AS-DOCS-WORDY"],
         ),
         ("design-tokens", &["AS-COPY-HYPE", "AS-DOCS-PLACEHOLDER"]),
         (
@@ -92,8 +98,11 @@ fn test_skills_reference_antislop_rule_ids() {
                 "AS-CODE-BANNER",
                 "AS-CODE-NARRATION",
                 "AS-CODE-BUZZWORD",
+                "AS-CODE-BOXDRAW",
+                "AS-CODE-NESTING",
                 "AS-COPY-FILLER",
                 "AS-COPY-HYPE",
+                "AS-COPY-BUZZWORD",
             ],
         ),
     ];

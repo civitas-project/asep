@@ -291,12 +291,41 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         loop {
             let slash_slash = remaining.find("//");
             let slash_star = remaining.find("/*");
-            let marker = match (slash_slash, slash_star) {
-                (None, None) => break,
-                (Some(a), None) => ("//", a),
-                (None, Some(b)) => ("/*", b),
-                (Some(a), Some(b)) => {
+            let hash = if lang == Lang::Hash {
+                remaining.find('#')
+            } else {
+                None
+            };
+            let marker = match (slash_slash, slash_star, hash) {
+                (None, None, None) => break,
+                (Some(a), None, None) => ("//", a),
+                (None, Some(b), None) => ("/*", b),
+                (None, None, Some(c)) => ("#", c),
+                (Some(a), None, Some(c)) => {
+                    if c <= a {
+                        ("#", c)
+                    } else {
+                        ("//", a)
+                    }
+                }
+                (None, Some(b), Some(c)) => {
+                    if c <= b {
+                        ("#", c)
+                    } else {
+                        ("/*", b)
+                    }
+                }
+                (Some(a), Some(b), None) => {
                     if b <= a {
+                        ("/*", b)
+                    } else {
+                        ("//", a)
+                    }
+                }
+                (Some(a), Some(b), Some(c)) => {
+                    if c <= a.min(b) {
+                        ("#", c)
+                    } else if b <= a {
                         ("/*", b)
                     } else {
                         ("//", a)
@@ -315,6 +344,19 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         SegKind::LineComment
                     };
                     check_comment(&mut violations, path, line_number, text, kind);
+                    cleaned.push_str(&" ".repeat(text.len()));
+                    remaining = "";
+                    break;
+                }
+                "#" => {
+                    let text = &remaining[pos + 1..];
+                    check_comment(
+                        &mut violations,
+                        path,
+                        line_number,
+                        text,
+                        SegKind::LineComment,
+                    );
                     cleaned.push_str(&" ".repeat(text.len()));
                     remaining = "";
                     break;

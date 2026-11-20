@@ -271,7 +271,7 @@ Run `asep affected <changed-paths>` before dispatching verification. It reads th
 
 ## Canonical Anti-Slop Rules
 
-Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill routes anti-slop checks by domain to `asep:engineering-specs` (AS-DESIGN-VAGUE, AS-DESIGN-TBD, AS-DOCS-PLACEHOLDER, AS-DOCS-WORDY), `asep:code-contracts` (AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD), `asep:repository-governance` (AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY), and `asep:design-tokens` (AS-COPY-HYPE, AS-DOCS-PLACEHOLDER). `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill routes anti-slop checks by domain to `asep:engineering-specs` (AS-DESIGN-VAGUE, AS-DESIGN-TBD, AS-DOCS-PLACEHOLDER, AS-DOCS-WORDY), `asep:code-contracts` (AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD, AS-CODE-BOXDRAW, AS-CODE-NESTING), `asep:repository-governance` (AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY, AS-COPY-BUZZWORD), and `asep:design-tokens` (AS-COPY-HYPE, AS-DOCS-PLACEHOLDER). `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
 
 ## Canonical Rule References
 
