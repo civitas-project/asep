@@ -123,3 +123,25 @@ domain = 'docs'
 severity = 'Warning'
 pattern = '(?i)\b(in conclusion|as previously mentioned|it is important to note that)\b'
 message = 'Wordy documentation phrasing'
+
+[[antislop_rules]]
+id = 'AS-CODE-BOXDRAW'
+domain = 'code'
+severity = 'Error'
+pattern = '[\u{2500}-\u{257F}]'
+message = 'Box-drawing decoration'
+
+[[antislop_rules]]
+id = 'AS-CODE-NESTING'
+domain = 'code'
+severity = 'Warning'
+pattern = ''
+max_nesting = 3
+message = 'Excessive if nesting'
+
+[[antislop_rules]]
+id = 'AS-COPY-BUZZWORD'
+domain = 'copy'
+severity = 'Error'
+pattern = '(?i)\b(delve|elevate|seamless|robust|unlock|pivotal|tapestry|testament)\b'
+message = 'AI buzzword in prose'

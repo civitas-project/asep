@@ -83,6 +83,8 @@ pub struct AntiSlopRule {
     pub severity: Severity,
     pub pattern: String,
     pub message: String,
+    #[serde(default)]
+    pub max_nesting: Option<usize>,
 }
 
 /// Exit codes from the global constraints.
