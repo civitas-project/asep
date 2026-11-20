@@ -206,3 +206,72 @@ fn test_orphan_reply_to_rejected() {
     assert!(!errors.is_empty());
     assert!(errors.iter().any(|e| e.contains("reply_to")));
 }
+
+#[test]
+fn test_protocol_schema_loads() {
+    let schema = asep::agent_protocol::protocol_schema();
+    assert_eq!(schema.version, 1);
+    assert_eq!(schema.roles.len(), 4);
+    assert_eq!(
+        schema.roles.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        vec!["lead", "executor", "judge", "explorer"]
+    );
+    assert_eq!(schema.kinds.len(), 6);
+    assert_eq!(
+        schema.kinds.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(),
+        vec![
+            "TASK_DISPATCH",
+            "RULING",
+            "TASK_REPORT",
+            "VERDICT",
+            "MAP_REPORT",
+            "CUSTOM"
+        ]
+    );
+}
+
+#[test]
+fn test_schema_drives_role_kind_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+    // executor may not send TASK_DISPATCH per schema.
+    assert!(store
+        .send(Role::Executor, Role::Lead, Kind::TaskDispatch, dispatch_body(), None)
+        .is_err());
+    // executor may send TASK_REPORT per schema.
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskReport,
+            task_report_body(json!([])),
+            None
+        )
+        .is_ok());
+}
+
+#[test]
+fn test_schema_drives_body_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+    // TASK_REPORT missing required "concerns" is rejected.
+    let mut no_concerns = task_report_body(json!([]));
+    no_concerns.as_object_mut().unwrap().remove("concerns");
+    assert!(store
+        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None)
+        .is_err());
+    // VERDICT rerun with non-numeric test is rejected.
+    let mut bad_verdict = verdict_body();
+    bad_verdict
+        .as_object_mut()
+        .unwrap()
+        .get_mut("rerun")
+        .unwrap()["test"] = json!("one");
+    assert!(store
+        .send(Role::Judge, Role::Lead, Kind::Verdict, bad_verdict, None)
+        .is_err());
+    // numeric rerun is accepted.
+    assert!(store
+        .send(Role::Judge, Role::Lead, Kind::Verdict, verdict_body(), None)
+        .is_ok());
+}
