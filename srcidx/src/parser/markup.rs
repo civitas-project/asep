@@ -2,8 +2,8 @@
 //!
 //! Parses Markdown/MDX, reStructuredText, AsciiDoc, HTML, XML, and LaTeX
 //! with no external parsing dependencies. Extracts headings, anchors, and
-//! traceability tags (`@req:...`, `@design:...`, `@impl:...`, `@test:...`,
-//! `@adr:...`) from comment lines.
+//! traceability tags (`@req:<id>`, `@design:<id>`, `@impl:<id>`, `@test:<id>`,
+//! `@adr:<id>`) from comment lines.
 
 use crate::index::{Symbol, SymbolKind, Visibility};
 use crate::parser::{ParseResult, SourceParser};
