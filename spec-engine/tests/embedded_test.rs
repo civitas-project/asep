@@ -62,6 +62,71 @@ fn test_skill_text_references_canonical_rule_ids() {
     }
 }
 
+// @test:FR-PACK-EMBED-05
+#[test]
+fn test_skills_reference_antislop_rule_ids() {
+    let skills = get_embedded_skills();
+    assert_eq!(skills.len(), 6, "Expected 6 canonical embedded skills");
+
+    let expected: &[(&str, &[&str])] = &[
+        (
+            "engineering-specs",
+            &["AS-DESIGN-VAGUE", "AS-DESIGN-TBD", "AS-DOCS-PLACEHOLDER", "AS-DOCS-WORDY"],
+        ),
+        (
+            "code-contracts",
+            &["AS-CODE-BANNER", "AS-CODE-NARRATION", "AS-CODE-BUZZWORD"],
+        ),
+        (
+            "repository-governance",
+            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-DOCS-WORDY"],
+        ),
+        ("design-tokens", &["AS-COPY-HYPE", "AS-DOCS-PLACEHOLDER"]),
+        (
+            "workflow-router",
+            &[
+                "AS-DESIGN-VAGUE",
+                "AS-DESIGN-TBD",
+                "AS-DOCS-PLACEHOLDER",
+                "AS-DOCS-WORDY",
+                "AS-CODE-BANNER",
+                "AS-CODE-NARRATION",
+                "AS-CODE-BUZZWORD",
+                "AS-COPY-FILLER",
+                "AS-COPY-HYPE",
+            ],
+        ),
+    ];
+
+    for (id, rule_ids) in expected {
+        let skill = skills
+            .iter()
+            .find(|s| s.id == *id)
+            .expect("embedded skill must exist");
+        assert!(
+            skill.content.contains("Canonical Anti-Slop Rules"),
+            "Skill {} must contain 'Canonical Anti-Slop Rules' section",
+            id
+        );
+        let has_rule_id = rule_ids
+            .iter()
+            .any(|rid| skill.content.contains(rid));
+        assert!(
+            has_rule_id,
+            "Skill {} must reference at least one canonical anti-slop AS- rule id",
+            id
+        );
+        for rule_id in rule_ids.iter() {
+            assert!(
+                skill.content.contains(*rule_id),
+                "Skill {} must reference canonical anti-slop rule {}",
+                id,
+                rule_id
+            );
+        }
+    }
+}
+
 // @test:FR-PACK-EMBED-04
 #[test]
 fn test_workflow_router_defines_requirement_and_plan_phase() {

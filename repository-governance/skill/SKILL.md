@@ -110,6 +110,10 @@ All governance documentation and user-facing copy must maintain an authentic, au
 
 ---
 
+## Canonical Anti-Slop Rules
+
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+
 ## Canonical Rule References
 
 Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.

@@ -269,6 +269,10 @@ Hard rules:
 
 Run `asep affected <changed-paths>` before dispatching verification. It reads the traceability graph and returns the exact test files, requirements, and commands to run. Use that output as the verification command; do not run the full suite by default. Full suite is reserved for merges to `main` or an explicit user request.
 
+## Canonical Anti-Slop Rules
+
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill routes anti-slop checks by domain to `asep:engineering-specs` (AS-DESIGN-VAGUE, AS-DESIGN-TBD, AS-DOCS-PLACEHOLDER, AS-DOCS-WORDY), `asep:code-contracts` (AS-CODE-BANNER, AS-CODE-NARRATION, AS-CODE-BUZZWORD), `asep:repository-governance` (AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY), and `asep:design-tokens` (AS-COPY-HYPE, AS-DOCS-PLACEHOLDER). `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+
 ## Canonical Rule References
 
 Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
