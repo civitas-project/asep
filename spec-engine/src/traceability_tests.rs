@@ -136,7 +136,7 @@ fn test_jsonrpc_request_deserialization_and_processing() {
 fn test_mcp_tool_catalogue_contains_expected_tools() {
     let tools = get_tools_list();
     let arr = tools["tools"].as_array().expect("tools list must be an array");
-    assert_eq!(arr.len(), 6);
+    assert_eq!(arr.len(), 10);
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "asep_check",
@@ -145,6 +145,10 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
         "render_diagrams",
         "srcidx",
         "srcdump",
+        "asep_agent_send",
+        "asep_agent_recv",
+        "asep_agent_read",
+        "asep_agent_ack",
     ] {
         assert!(names.contains(&expected), "missing MCP tool {expected}");
     }

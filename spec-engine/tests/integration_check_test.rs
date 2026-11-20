@@ -221,6 +221,96 @@ fn test_missing_semantic_evidence_is_unproven() {
     cmd.assert().failure().code(3);
 }
 
+// @test:FR-CLI-CHECK-MESSAGES-01
+#[test]
+fn test_check_messages_rejects_bad_envelope() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-01");
+
+    let messages_dir = dir.path().join("messages");
+    fs::create_dir_all(&messages_dir).expect("create messages dir");
+    fs::write(
+        messages_dir.join("msg-bad.json"),
+        r#"{"v": 99, "id": "msg-bad", "from": "lead", "to": "executor", "kind": "TASK_DISPATCH", "reply_to": null, "ref": null, "status": "sent", "ts": "2026-11-20T10:00:00Z"}"#,
+    )
+    .expect("write bad envelope");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(root);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("unknown envelope version"));
+}
+
+// @test:FR-CLI-CHECK-MESSAGES-02
+#[test]
+fn test_check_messages_accepts_valid_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-02");
+
+    let store = asep::agent_protocol::MessageStore::new(dir.path());
+    store
+        .send(
+            asep::agent_protocol::Role::Lead,
+            asep::agent_protocol::Role::Executor,
+            asep::agent_protocol::Kind::TaskDispatch,
+            serde_json::json!({
+                "task": "implement feature",
+                "files": ["src/feature.rs"],
+                "acceptance": "feature works",
+                "verification_command": "cargo test -p asep"
+            }),
+            None,
+        )
+        .expect("send valid message");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(root);
+    cmd.assert().success().code(0);
+}
+
+// @test:FR-CLI-CHECK-MESSAGES-03
+#[test]
+fn test_check_messages_missing_dir_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-03");
+
+    let missing = root.join("does_not_exist");
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(&missing);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+}
+
+// @test:FR-CLI-CHECK-MESSAGES-04
+#[test]
+fn test_check_messages_wrong_messages_folder_fails() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-MSG-04");
+
+    let messages_dir = root.join("messages");
+    fs::create_dir_all(&messages_dir).expect("create messages dir");
+
+    // Passing the messages/ folder itself (not its parent run dir) must fail closed.
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg(root).arg("--messages").arg(&messages_dir);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+}
+
 // @test:FR-VERIFY-01
 #[test]
 fn test_broken_coverage_is_fail() {

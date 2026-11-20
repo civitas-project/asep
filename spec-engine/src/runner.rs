@@ -86,6 +86,7 @@ pub fn run() -> ExitCode {
             dir,
             path,
             strict,
+            messages,
             behavioral_report,
             deny_drafts,
             watch,
@@ -180,6 +181,19 @@ pub fn run() -> ExitCode {
                 && !has_strict_failure
                 && !has_deny_drafts_failure
                 && !has_skill_drift;
+
+            // --messages: validate agent message directory; errors fold into `passed`.
+            if let Some(messages_dir) = &messages {
+                match crate::agent_protocol::validate_dir(messages_dir) {
+                    Ok(()) => {}
+                    Err(errors) => {
+                        for e in &errors {
+                            eprintln!("{} {}", "✖".red(), e);
+                        }
+                        passed = false;
+                    }
+                }
+            }
 
             if args.json {
                 let json_output = CheckJsonReport {
