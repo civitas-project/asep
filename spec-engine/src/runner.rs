@@ -326,34 +326,33 @@ pub fn run() -> ExitCode {
                     if report.draft_total > 0 {
                         println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
                         for draft in &report.draft_pending {
-                            let mut missing = Vec::new();
-                            if draft.missing_design {
-                                missing.push("@design");
-                            }
-                            if draft.missing_impl {
-                                missing.push("@impl");
-                            }
-                            if draft.missing_test {
-                                missing.push("@test");
-                            }
+                            let missing: Vec<&str> = [
+                                (draft.missing_design, "@design"),
+                                (draft.missing_impl, "@impl"),
+                                (draft.missing_test, "@test"),
+                            ]
+                            .into_iter()
+                            .filter_map(|(cond, label)| cond.then_some(label))
+                            .collect();
+                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            let missing_display = match missing.is_empty() {
+                                true => "none".to_string(),
+                                false => missing.join(", ").yellow().to_string(),
+                            };
                             println!(
                                 "   - {} ({}:{}) in-progress (missing: {})",
                                 draft.id.bold().cyan(),
                                 draft.file_path.display(),
                                 draft.line_number,
-                                if missing.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    missing.join(", ").yellow().to_string()
-                                }
+                                missing_display,
                             );
                         }
-                        if report.draft_pending.is_empty() {
-                            println!(
-                                "   All {} DRAFT requirements have full design, impl, and test scaffolds.",
-                                report.draft_total
-                            );
-                        }
+                    }
+                    if report.draft_total > 0 && report.draft_pending.is_empty() {
+                        println!(
+                            "   All {} DRAFT requirements have full design, impl, and test scaffolds.",
+                            report.draft_total
+                        );
                     }
 
                     if has_deny_drafts_failure {
@@ -368,60 +367,59 @@ pub fn run() -> ExitCode {
                     }
 
                     if !violations.is_empty() {
-                        let header = if tier == TierId::T0 {
-                            "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold()
-                        } else {
-                            "❌ Docstring Contract Violations:".red().bold()
+                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        let header = match tier == TierId::T0 {
+                            true => "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold(),
+                            false => "❌ Docstring Contract Violations:".red().bold(),
                         };
                         println!("\n{header}");
                         for v in &violations {
-                            println!(
-                                "   - {}:{}: {}",
-                                v.file_path.display(),
-                                v.line_number,
-                                if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
-                            );
+                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            let message = match tier == TierId::T0 {
+                                true => v.message.yellow(),
+                                false => v.message.red(),
+                            };
+                            println!("   - {}:{}: {}", v.file_path.display(), v.line_number, message);
                         }
                     }
 
                     if !anti_errors.is_empty() {
-                        let header = if tier == TierId::T0 {
-                            "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold()
-                        } else {
-                            "❌ Anti-slop Violations:".red().bold()
+                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        let header = match tier == TierId::T0 {
+                            true => "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold(),
+                            false => "❌ Anti-slop Violations:".red().bold(),
                         };
                         println!("\n{header}");
                         for v in &anti_errors {
+                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            let message = match tier == TierId::T0 {
+                                true => v.message.yellow(),
+                                false => v.message.red(),
+                            };
+                            println!("   - {}:{}: {}", v.file_path.display(), v.line_number, message);
+                        }
+                    }
+
+                    if !anti_warnings.is_empty() && strict {
+                        println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
+                        for v in &anti_warnings {
                             println!(
                                 "   - {}:{}: {}",
                                 v.file_path.display(),
                                 v.line_number,
-                                if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
+                                v.message.red()
                             );
                         }
                     }
-
-                    if !anti_warnings.is_empty() {
-                        if strict {
-                            println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
-                            for v in &anti_warnings {
-                                println!(
-                                    "   - {}:{}: {}",
-                                    v.file_path.display(),
-                                    v.line_number,
-                                    v.message.red()
-                                );
-                            }
-                        } else {
-                            eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
-                            for v in &anti_warnings {
-                                eprintln!(
-                                    "   - {}:{}: {}",
-                                    v.file_path.display(),
-                                    v.line_number,
-                                    v.message.yellow()
-                                );
-                            }
+                    if !anti_warnings.is_empty() && !strict {
+                        eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
+                        for v in &anti_warnings {
+                            eprintln!(
+                                "   - {}:{}: {}",
+                                v.file_path.display(),
+                                v.line_number,
+                                v.message.yellow()
+                            );
                         }
                     }
 
@@ -447,10 +445,10 @@ pub fn run() -> ExitCode {
                                 let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
                                 println!("\n{}", "🎯 Requirement Traceability Test Coverage:".bold().cyan());
                                 for item in &cov_rep.items {
-                                    let badge = if item.passed {
-                                        format!("{:.1}% PASS", item.percentage).green()
-                                    } else {
-                                        format!("{:.1}% FAIL (< 80%)", item.percentage).red()
+                                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                                    let badge = match item.passed {
+                                        true => format!("{:.1}% PASS", item.percentage).green(),
+                                        false => format!("{:.1}% FAIL (< 80%)", item.percentage).red(),
                                     };
                                     println!(
                                         "   - {}: {} ({}/{} impl lines covered)",
@@ -460,9 +458,7 @@ pub fn run() -> ExitCode {
                                         item.total_lines
                                     );
                                 }
-                                if !cov_rep.all_passed && tier != TierId::T0 {
-                                    passed = false;
-                                }
+                                passed = passed && (cov_rep.all_passed || tier == TierId::T0);
                             }
                             Err(e) => {
                                 eprintln!("{} Failed to parse coverage file {}: {e}", "⚠".yellow(), cov_path.display());
@@ -484,10 +480,10 @@ pub fn run() -> ExitCode {
                         violations.len().to_string().red().bold(),
                     );
 
-                    if passed {
-                        println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold());
-                    } else {
-                        println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold());
+                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                    match passed {
+                        true => println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold()),
+                        false => println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold()),
                     }
 
                     println!(
@@ -510,10 +506,10 @@ pub fn run() -> ExitCode {
                 VerificationStatus::Unproven => ExitCode::from(exit_codes.unproven),
                 VerificationStatus::Fail => ExitCode::from(exit_codes.fail),
                 VerificationStatus::Pass => {
-                    if passed {
-                        ExitCode::from(exit_codes.pass)
-                    } else {
-                        ExitCode::from(exit_codes.fail)
+                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                    match passed {
+                        true => ExitCode::from(exit_codes.pass),
+                        false => ExitCode::from(exit_codes.fail),
                     }
                 }
             }
@@ -538,10 +534,9 @@ pub fn run() -> ExitCode {
                         }
                     };
                     let trimmed = line.trim();
-                    if !trimmed.is_empty() {
-                        changed.push(PathBuf::from(trimmed));
-                    }
+                    changed.push(PathBuf::from(trimmed));
                 }
+                changed.retain(|p| !p.as_os_str().is_empty());
             }
 
             let report = match affected(&root_path, &changed) {
@@ -574,43 +569,52 @@ pub fn run() -> ExitCode {
             println!("Changed paths: {}", changed.len().to_string().bold());
 
             println!("\n{}", "Requirements:".bold());
-            if report.requirements.is_empty() {
-                println!("  (none)");
-            } else {
-                for req in &report.requirements {
-                    println!(
-                        "  - {} ({}:{})",
-                        req.id.bold(),
-                        req.file.display(),
-                        req.line
-                    );
+            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+            match report.requirements.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for req in &report.requirements {
+                        println!(
+                            "  - {} ({}:{})",
+                            req.id.bold(),
+                            req.file.display(),
+                            req.line
+                        );
+                    }
                 }
             }
 
             println!("\n{}", "Tests:".bold());
-            if report.tests.is_empty() {
-                println!("  (none)");
-            } else {
-                for test in &report.tests {
-                    if let Some(function) = &test.function {
-                        println!(
-                            "  - {}:{} :: {}",
-                            test.file.display(),
-                            test.line,
-                            function.bold()
-                        );
-                    } else {
-                        println!("  - {}:{}", test.file.display(), test.line);
+            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+            match report.tests.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for test in &report.tests {
+                        match &test.function {
+                            Some(function) => {
+                                println!(
+                                    "  - {}:{} :: {}",
+                                    test.file.display(),
+                                    test.line,
+                                    function.bold()
+                                );
+                            }
+                            None => {
+                                println!("  - {}:{}", test.file.display(), test.line);
+                            }
+                        }
                     }
                 }
             }
 
             println!("\n{}", "Verification commands:".bold());
-            if report.commands.is_empty() {
-                println!("  (none)");
-            } else {
-                for command in &report.commands {
-                    println!("  {command}");
+            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+            match report.commands.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for command in &report.commands {
+                        println!("  {command}");
+                    }
                 }
             }
 
@@ -662,15 +666,14 @@ pub fn run() -> ExitCode {
                     "{}",
                     serde_json::to_string_pretty(&report).unwrap_or_default()
                 );
-            } else {
+            }
+            if !args.json {
                 println!("\n{}", "=== 5-Gate Local CI Verification Pipeline ===".bold());
                 for g in &report.gates {
-                    let status_badge = if g.skipped {
-                        "⊘ SKIPPED".yellow()
-                    } else if g.passed {
-                        "✔ PASSED".green()
-                    } else {
-                        "✖ FAILED".red()
+                    let status_badge = match (g.skipped, g.passed) {
+                        (true, _) => "⊘ SKIPPED".yellow(),
+                        (_, true) => "✔ PASSED".green(),
+                        (false, false) => "✖ FAILED".red(),
                     };
                     println!(
                         "[{}] {} ({}ms)",
@@ -683,27 +686,29 @@ pub fn run() -> ExitCode {
                     }
                 }
                 println!("--------------------------------------------------");
-                if report.all_passed() {
-                    println!(
-                        "{} All CI gates satisfied in {}ms.",
-                        "✔".green().bold(),
-                        report.total_duration_ms
-                    );
-                } else {
-                    println!(
-                        "{} CI pipeline failed in {}ms.",
-                        "✖".red().bold(),
-                        report.total_duration_ms
-                    );
+                #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                match report.all_passed() {
+                    true => {
+                        println!(
+                            "{} All CI gates satisfied in {}ms.",
+                            "✔".green().bold(),
+                            report.total_duration_ms
+                        );
+                    }
+                    false => {
+                        println!(
+                            "{} CI pipeline failed in {}ms.",
+                            "✖".red().bold(),
+                            report.total_duration_ms
+                        );
+                    }
                 }
             }
 
-            if report.unproven {
-                ExitCode::from(3)
-            } else if report.all_passed() {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(1)
+            match (report.unproven, report.all_passed()) {
+                (true, _) => ExitCode::from(3),
+                (false, true) => ExitCode::SUCCESS,
+                (false, false) => ExitCode::from(1),
             }
         },
 
@@ -758,17 +763,14 @@ pub fn run() -> ExitCode {
                 .or(pos_dir)
                 .unwrap_or_else(|| PathBuf::from("."));
 
-            let scope = if local {
-                Some(InstallScope::Local(target_path.clone()))
-            } else if global {
-                Some(InstallScope::Global(default_global_home()))
-            } else {
-                None
+            let scope = match (local, global) {
+                (true, _) => Some(InstallScope::Local(target_path.clone())),
+                (false, true) => Some(InstallScope::Global(default_global_home())),
+                (false, false) => None,
             };
 
             let mut agents = Vec::new();
-            if let Some(agent_str) = agent {
-                for item in agent_str.split(',') {
+            for item in agent.iter().flat_map(|s| s.split(',')) {
                     let trimmed = item.trim();
                     if trimmed.is_empty() {
                         continue;
@@ -857,7 +859,6 @@ pub fn run() -> ExitCode {
                         }
                     }
                 }
-            }
 
             let opts = PackOptions {
                 scope,
