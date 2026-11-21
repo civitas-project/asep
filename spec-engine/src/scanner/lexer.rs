@@ -65,17 +65,10 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
         let part2 = caps.get(3).map(|m| m.as_str());
 
         let kind = match tag_type {
-            "req" => {
-                let priority = match part2 {
-                    Some(p) if p.eq_ignore_ascii_case("SHOULD") => Priority::Should,
-                    Some(p) if p.eq_ignore_ascii_case("DRAFT") => Priority::Draft,
-                    _ => Priority::Must,
-                };
-                TagKind::Req {
-                    id: part1.to_string(),
-                    priority,
-                }
-            }
+            "req" => TagKind::Req {
+                id: part1.to_string(),
+                priority: req_priority(part2),
+            },
             "design" => TagKind::Design {
                 id: part1.to_string(),
             },
@@ -89,13 +82,7 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
                 id: part1.to_string(),
             },
             "gov" => {
-                let (category, id) = if let Some(p2) = part2 {
-                    (part1.to_string(), p2.to_string())
-                } else if let Some((cat, rest)) = part1.split_once('-') {
-                    (cat.to_string(), rest.to_string())
-                } else {
-                    ("GENERAL".to_string(), part1.to_string())
-                };
+                let (category, id) = gov_parts(part1, part2);
                 TagKind::Gov { category, id }
             }
             "adr" => TagKind::Adr { id: part1.to_string() },
@@ -146,4 +133,31 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
             raw_line: line.to_string(),
         })
         .collect()
+}
+
+/// Priority for a `@req:ID:PRIORITY` tag, defaulting to `Must`.
+fn req_priority(part2: Option<&str>) -> Priority {
+    let p = match part2 {
+        Some(p) => p,
+        None => return Priority::Must,
+    };
+    if p.eq_ignore_ascii_case("SHOULD") {
+        return Priority::Should;
+    }
+    if p.eq_ignore_ascii_case("DRAFT") {
+        return Priority::Draft;
+    }
+    Priority::Must
+}
+
+/// Splits a `@gov` tag into `(category, id)`.
+fn gov_parts(part1: &str, part2: Option<&str>) -> (String, String) {
+    if let Some(p2) = part2 {
+        return (part1.to_string(), p2.to_string());
+    }
+    if !part1.contains('-') {
+        return ("GENERAL".to_string(), part1.to_string());
+    }
+    let (cat, rest) = part1.split_once('-').expect("part1 contains '-'");
+    (cat.to_string(), rest.to_string())
 }
