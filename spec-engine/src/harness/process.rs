@@ -44,11 +44,10 @@ pub fn parse_size_bytes(s: &str) -> Result<usize, String> {
 
 /// Replace `{n}` with `n`; append ` n` when the template has no placeholder.
 fn substitute_n(cmd_template: &str, n: usize) -> String {
-    if cmd_template.contains("{n}") {
-        cmd_template.replace("{n}", &n.to_string())
-    } else {
-        format!("{cmd_template} {n}")
+    if !cmd_template.contains("{n}") {
+        return format!("{cmd_template} {n}");
     }
+    cmd_template.replace("{n}", &n.to_string())
 }
 
 /// Spawn `cmd` through the platform shell (`sh -c` on Unix, `cmd /c` on
@@ -59,8 +58,12 @@ fn spawn_shell(cmd: &str) -> Result<Child, String> {
     #[cfg(not(target_os = "windows"))]
     let mut command = Command::new("sh");
 
+    #[cfg(target_os = "windows")]
+    command.arg("/c");
+    #[cfg(not(target_os = "windows"))]
+    command.arg("-c");
+
     command
-        .arg(if cfg!(target_os = "windows") { "/c" } else { "-c" })
         .arg(cmd)
         .stdout(Stdio::piped())
         .spawn()
@@ -102,14 +105,16 @@ fn capture_output(child: &mut Child, start: Instant) -> Result<(String, u64), St
 /// Parse `{"steps": N}` from stdout; fall back to elapsed microseconds.
 fn steps_from_output(output: &str, fallback: u64) -> u64 {
     let trimmed = output.trim();
-    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
-        if let Some(object) = value.as_object() {
-            if let Some(steps) = object.get("steps").and_then(Value::as_u64) {
-                return steps;
-            }
-        }
+    match serde_json::from_str::<Value>(trimmed) {
+        Ok(value) => match value.as_object() {
+            Some(object) => match object.get("steps").and_then(Value::as_u64) {
+                Some(steps) => steps,
+                None => fallback,
+            },
+            None => fallback,
+        },
+        Err(_) => fallback,
     }
-    fallback
 }
 
 /// Run one shell command and return its step count.
