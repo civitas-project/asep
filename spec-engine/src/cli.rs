@@ -558,4 +558,12 @@ pub enum HarnessCommands {
         #[arg(long, default_value = "30s", help = "Timeout")]
         timeout: String,
     },
+    /// Scaffold a new ASEP e2e run directory and write manifest.json
+    NewRun {
+        /// Run identifier
+        run_id: String,
+        /// Run root (default: /tmp/opencode/asep-e2e, env RUN_ROOT overrides)
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
 }

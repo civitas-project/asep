@@ -1722,6 +1722,21 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
+            HarnessCommands::NewRun { run_id, root } => {
+                let root = root
+                    .or_else(|| std::env::var("RUN_ROOT").ok().map(PathBuf::from))
+                    .unwrap_or_else(|| PathBuf::from(crate::harness::e2e::DEFAULT_RUN_ROOT));
+                match crate::harness::e2e::new_run(&root, &run_id) {
+                    Ok(run_dir) => {
+                        println!("{}", run_dir.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{} {e}", "✖".red());
+                        ExitCode::from(1)
+                    }
+                }
+            },
         },
 
         None => {
