@@ -34,15 +34,14 @@ pub fn render_plantuml_diagrams(root: &Path) -> Result<usize, AsepError> {
             .arg(&path)
             .output();
 
-        match output {
-            Ok(out) => {
-                if out.status.success() {
-                    count += 1;
-                    continue;
-                }
-            }
-            Err(_) => {}
+        let succeeded = match output {
+            Ok(out) => out.status.success(),
+            Err(_) => false,
+        };
+        if !succeeded {
+            continue;
         }
+        count += 1;
 
         // Fallback to plantuml runner with output flag
         let fallback = Command::new("plantuml")
