@@ -34,40 +34,35 @@ pub fn render_plantuml_diagrams(root: &Path) -> Result<usize, AsepError> {
             .arg(&path)
             .output();
 
-        let succeeded = match output {
+        let first_ok = match output {
             Ok(out) => out.status.success(),
             Err(_) => false,
         };
-        if !succeeded {
+        if first_ok {
+            count += 1;
             continue;
         }
-        count += 1;
 
-        // Fallback to plantuml runner with output flag
+        // only reached when the first command failed or could not be spawned
         let fallback = Command::new("plantuml")
             .arg("-o")
             .arg(&rendered_dir)
             .arg(&path)
             .output();
-
         match fallback {
+            Ok(out) if out.status.success() => {
+                count += 1;
+            }
             Ok(out) => {
-                if out.status.success() {
-                    count += 1;
-                }
-                if !out.status.success() {
-                    let err_msg = String::from_utf8_lossy(&out.stderr);
-                    return Err(AsepError::Diagram(format!(
-                        "plantuml exited with code {:?}: {}",
-                        out.status.code(),
-                        err_msg.trim()
-                    )));
-                }
+                let err_msg = String::from_utf8_lossy(&out.stderr);
+                return Err(AsepError::Diagram(format!(
+                    "plantuml exited with code {:?}: {}",
+                    out.status.code(),
+                    err_msg.trim()
+                )));
             }
             Err(e) => {
-                return Err(AsepError::Diagram(format!(
-                    "failed to execute plantuml: {e}"
-                )));
+                return Err(AsepError::Diagram(format!("failed to execute plantuml: {e}")));
             }
         }
     }
