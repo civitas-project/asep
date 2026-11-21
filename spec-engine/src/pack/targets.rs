@@ -156,23 +156,26 @@ pub enum InstallScope {
 
 /// Helper to check if a binary exists in the system PATH.
 pub fn is_binary_in_path(bin_name: &str) -> bool {
-    if let Some(paths) = std::env::var_os("PATH") {
-        for path in std::env::split_paths(&paths) {
-            let candidate = path.join(bin_name);
-            if candidate.is_file() {
-                return true;
-            }
-            #[cfg(windows)]
-            {
-                let candidate_exe = path.join(format!("{}.exe", bin_name));
-                let candidate_cmd = path.join(format!("{}.cmd", bin_name));
-                if candidate_exe.is_file() || candidate_cmd.is_file() {
+    match std::env::var_os("PATH") {
+        Some(paths) => {
+            for path in std::env::split_paths(&paths) {
+                let candidate = path.join(bin_name);
+                if candidate.is_file() {
                     return true;
                 }
+                #[cfg(windows)]
+                {
+                    let candidate_exe = path.join(format!("{}.exe", bin_name));
+                    let candidate_cmd = path.join(format!("{}.cmd", bin_name));
+                    if candidate_exe.is_file() || candidate_cmd.is_file() {
+                        return true;
+                    }
+                }
             }
+            false
         }
+        None => false,
     }
-    false
 }
 
 /// Resolves the default global user home directory cross-platform.
