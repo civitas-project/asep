@@ -1724,6 +1724,98 @@ pub fn run() -> ExitCode {
             }
         },
 
+        Some(Commands::Clean {
+            max_gb,
+            target,
+            dry_run,
+            measure,
+        }) => {
+            let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let target_dir = target.clone().unwrap_or_else(|| root.join("target"));
+            const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+            if measure {
+                let bytes = crate::clean::measure_dir(&target_dir);
+                if let Err(e) = crate::clean::write_baseline(&root, bytes) {
+                    eprintln!("{} Failed to write baseline: {e}", "✖".red());
+                    return ExitCode::from(1);
+                }
+                let threshold = crate::clean::threshold_bytes(bytes);
+                if args.json {
+                    let report = serde_json::json!({
+                        "command": "clean",
+                        "measure": true,
+                        "target": target_dir,
+                        "baseline_bytes": bytes,
+                        "threshold_bytes": threshold,
+                    });
+                    match serde_json::to_string_pretty(&report) {
+                        Ok(j) => println!("{j}"),
+                        Err(e) => {
+                            eprintln!("{} Failed to serialize report: {e}", "✖".red());
+                            return ExitCode::from(2);
+                        }
+                    }
+                } else {
+                    println!(
+                        "{} {}: {} bytes (baseline written)",
+                        "ASEP clean".bold().cyan(),
+                        target_dir.display(),
+                        bytes
+                    );
+                    println!(
+                        "  threshold: {} bytes ({:.2} GiB)",
+                        threshold,
+                        threshold as f64 / GIB
+                    );
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            let default_threshold = || {
+                crate::clean::read_baseline(&root)
+                    .map(crate::clean::threshold_bytes)
+                    .unwrap_or(8 * 1024 * 1024 * 1024)
+            };
+
+            let threshold = match max_gb {
+                Some(gb) => {
+                    if gb <= 0.0 && !dry_run {
+                        eprintln!("{} --max-gb must be greater than 0 GiB", "✖".red());
+                        return ExitCode::from(1);
+                    }
+                    (gb * GIB) as u64
+                }
+                None => default_threshold(),
+            };
+
+            match crate::clean::execute(&root, &target_dir, threshold, dry_run) {
+                Ok(report) => {
+                    if args.json {
+                        match serde_json::to_string_pretty(&report) {
+                            Ok(j) => println!("{j}"),
+                            Err(e) => {
+                                eprintln!("{} Failed to serialize report: {e}", "✖".red());
+                                return ExitCode::from(2);
+                            }
+                        }
+                    } else {
+                        println!("{} {}", "ASEP clean".bold().cyan(), target_dir.display());
+                        println!("  before: {} bytes", report.before_bytes);
+                        println!("  threshold: {} bytes", report.threshold_bytes);
+                        println!("  action: {:?}", report.action);
+                        println!("  after: {} bytes", report.after_bytes);
+                        println!("  removed: {} bytes", report.removed_bytes);
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("{} {}", "✖".red(), e);
+                    ExitCode::from(1)
+                }
+            }
+        }
+
         None => {
             println!(
                 "{}",
