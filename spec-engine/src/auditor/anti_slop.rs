@@ -422,7 +422,7 @@ fn report_excessive_nesting(
     }
 }
 
-// @impl:FR-ANTISLOP-06 @impl:FR-ANTISLOP-09
+// @impl:FR-ANTISLOP-06
 /// Scans comment-stripped code for if blocks nested deeper than the policy
 /// threshold from canonical rule AS-CODE-NESTING. `max_nesting` is the number
 /// of allowed enclosing `if` levels (default 0). An `if` is flagged when the
