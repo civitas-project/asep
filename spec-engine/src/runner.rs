@@ -958,69 +958,69 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let skills = crate::skill::inspector::inspect_skills(&skills_dir);
-                    if let Some(skill) = skills.iter().find(|s| s.id == *id) {
-                        if skill.status == crate::skill::model::SkillStatus::Missing {
-                            eprintln!(
-                                "{} Skill '{}' is missing on disk. Restore it first.",
-                                "✖".red(),
-                                id
-                            );
+                    let skill = match skills.iter().find(|s| s.id == *id) {
+                        Some(s) => s,
+                        None => {
+                            eprintln!("{} Skill '{}' not found in workspace", "✖".red(), id);
                             return ExitCode::from(1);
                         }
-                        match crate::skill::editor::dispatch_editor(
-                            &skill.file_path,
-                            &config_dir,
-                            false,
-                        ) {
-                            Ok(_) => {
-                                if sync {
-                                    let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
-                                    let agents: Vec<_> = crate::pack::targets::TargetAgent::ALL
-                                        .iter()
-                                        .copied()
-                                        .filter(|a| a.is_detected(&scope))
-                                        .collect();
-                                    let agents = if agents.is_empty() {
-                                        vec![crate::pack::targets::TargetAgent::OpenCode]
-                                    } else {
-                                        agents
-                                    };
-                                    let report = crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
-                                    println!(
-                                        "{} Synced {} skill(s) after edit",
-                                        "✔".green(),
-                                        report.synced
-                                    );
-                                }
-                                ExitCode::SUCCESS
+                    };
+                    if skill.status == crate::skill::model::SkillStatus::Missing {
+                        eprintln!(
+                            "{} Skill '{}' is missing on disk. Restore it first.",
+                            "✖".red(),
+                            id
+                        );
+                        return ExitCode::from(1);
+                    }
+                    match crate::skill::editor::dispatch_editor(
+                        &skill.file_path,
+                        &config_dir,
+                        false,
+                    ) {
+                        Ok(_) => {
+                            if !sync {
+                                return ExitCode::SUCCESS;
                             }
-                            Err(e) => {
-                                eprintln!("{} Editor error: {e}", "✖".red());
-                                ExitCode::from(1)
-                            }
+                            let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
+                            let agents: Vec<_> = crate::pack::targets::TargetAgent::ALL
+                                .iter()
+                                .copied()
+                                .filter(|a| a.is_detected(&scope))
+                                .collect();
+                            #[allow(clippy::match_bool)] // avoid `else` branch; keep fetched agents when non-empty
+                            let agents = match agents.is_empty() {
+                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                false => agents,
+                            };
+                            let report = crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
+                            println!(
+                                "{} Synced {} skill(s) after edit",
+                                "✔".green(),
+                                report.synced
+                            );
+                            ExitCode::SUCCESS
                         }
-                    } else {
-                        eprintln!("{} Skill '{}' not found in workspace", "✖".red(), id);
-                        ExitCode::from(1)
+                        Err(e) => {
+                            eprintln!("{} Editor error: {e}", "✖".red());
+                            ExitCode::from(1)
+                        }
                     }
                 }
                 Some(SkillCommands::Delete { id, yes, dir, path }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
 
-                    if !yes {
-                        let confirmed = inquire::Confirm::new(&format!(
-                            "Are you sure you want to delete skill '{}'?",
-                            id
-                        ))
-                        .with_default(false)
-                        .prompt()
-                        .unwrap_or(false);
-
-                        if !confirmed {
-                            println!("{}", "Deletion cancelled.".yellow());
-                            return ExitCode::SUCCESS;
-                        }
+                    let confirmed = yes || inquire::Confirm::new(&format!(
+                        "Are you sure you want to delete skill '{}'?",
+                        id
+                    ))
+                    .with_default(false)
+                    .prompt()
+                    .unwrap_or(false);
+                    if !confirmed {
+                        println!("{}", "Deletion cancelled.".yellow());
+                        return ExitCode::SUCCESS;
                     }
 
                     match crate::skill::manager::delete_skill(&skills_dir, &id) {
@@ -1043,22 +1043,7 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
 
-                    if all || skills.is_empty() {
-                        match crate::skill::restore::restore_all_builtin_skills(&skills_dir) {
-                            Ok(restored) => {
-                                println!(
-                                    "{} Restored {} built-in skill(s)",
-                                    "✔".green(),
-                                    restored.len()
-                                );
-                                ExitCode::SUCCESS
-                            }
-                            Err(e) => {
-                                eprintln!("{} Failed to restore skills: {e}", "✖".red());
-                                ExitCode::from(1)
-                            }
-                        }
-                    } else {
+                    if !all && !skills.is_empty() {
                         let refs: Vec<&str> = skills.iter().map(|s| s.as_str()).collect();
                         match crate::skill::restore::restore_skills(&skills_dir, &refs) {
                             Ok(restored) => {
@@ -1068,12 +1053,26 @@ pub fn run() -> ExitCode {
                                     restored.len(),
                                     restored.join(", ")
                                 );
-                                ExitCode::SUCCESS
+                                return ExitCode::SUCCESS;
                             }
                             Err(e) => {
                                 eprintln!("{} Failed to restore skills: {e}", "✖".red());
-                                ExitCode::from(1)
+                                return ExitCode::from(1);
                             }
+                        }
+                    }
+                    match crate::skill::restore::restore_all_builtin_skills(&skills_dir) {
+                        Ok(restored) => {
+                            println!(
+                                "{} Restored {} built-in skill(s)",
+                                "✔".green(),
+                                restored.len()
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(e) => {
+                            eprintln!("{} Failed to restore skills: {e}", "✖".red());
+                            ExitCode::from(1)
                         }
                     }
                 }
@@ -1123,45 +1122,51 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let mut config = crate::config::load_config(&target_dir);
 
-                    if let Some(pref) = preference {
-                        match pref.to_lowercase().as_str() {
-                            "ask" => {
-                                config.editor.preference = crate::config::EditorPreference::Ask
-                            }
-                            "terminal" => {
-                                config.editor.preference = crate::config::EditorPreference::Terminal
-                            }
-                            "gui" => {
-                                config.editor.preference = crate::config::EditorPreference::Gui
-                            }
-                            other => {
-                                eprintln!(
-                                    "{} Unknown preference '{}'. Use 'ask', 'terminal', or 'gui'.",
-                                    "✖".red(),
-                                    other
-                                );
-                                return ExitCode::from(1);
-                            }
+                    match preference {
+                        None => {
+                            println!("Current configuration:");
+                            println!(
+                                "  Editor preference: {}",
+                                config.editor.preference.to_string().cyan()
+                            );
+                            println!(
+                                "  Custom command:    {}",
+                                config.editor.custom_command.yellow()
+                            );
                         }
-                        if let Err(e) = crate::config::save_config(&target_dir, &config) {
-                            eprintln!("{} Failed to save config: {e}", "✖".red());
-                            return ExitCode::from(1);
+                        Some(pref) => {
+                            match pref.to_lowercase().as_str() {
+                                "ask" => {
+                                    config.editor.preference = crate::config::EditorPreference::Ask
+                                }
+                                "terminal" => {
+                                    config.editor.preference = crate::config::EditorPreference::Terminal
+                                }
+                                "gui" => {
+                                    config.editor.preference = crate::config::EditorPreference::Gui
+                                }
+                                other => {
+                                    eprintln!(
+                                        "{} Unknown preference '{}'. Use 'ask', 'terminal', or 'gui'.",
+                                        "✖".red(),
+                                        other
+                                    );
+                                    return ExitCode::from(1);
+                                }
+                            }
+                            match crate::config::save_config(&target_dir, &config) {
+                                Ok(()) => {}
+                                Err(e) => {
+                                    eprintln!("{} Failed to save config: {e}", "✖".red());
+                                    return ExitCode::from(1);
+                                }
+                            }
+                            println!(
+                                "{} Editor preference updated to: {}",
+                                "✔".green(),
+                                config.editor.preference
+                            );
                         }
-                        println!(
-                            "{} Editor preference updated to: {}",
-                            "✔".green(),
-                            config.editor.preference
-                        );
-                    } else {
-                        println!("Current configuration:");
-                        println!(
-                            "  Editor preference: {}",
-                            config.editor.preference.to_string().cyan()
-                        );
-                        println!(
-                            "  Custom command:    {}",
-                            config.editor.custom_command.yellow()
-                        );
                     }
                     ExitCode::SUCCESS
                 }
@@ -1170,32 +1175,37 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let entries = crate::skill::inspector::inspect_skills(&skills_dir);
-                    if let Some(entry) = entries.iter().find(|e| e.id == id) {
-                        if entry.status == crate::skill::model::SkillStatus::Missing {
-                            eprintln!("{} Skill '{}' is missing on disk. Restore it first.", "✖".red(), id);
+                    let entry = match entries.iter().find(|e| e.id == id) {
+                        Some(e) => e,
+                        None => {
+                            eprintln!("{} Skill '{}' not found in workspace", "✖".red(), id);
                             return ExitCode::from(1);
                         }
-                        let content = std::fs::read_to_string(&entry.file_path).unwrap_or_default();
-                        let errors = crate::skill::validator::validate_skill_content(&content);
-                        if errors.is_empty() {
-                            println!("{} Skill '{}' passed validation (0 errors, 0 warnings)", "✔".green(), id);
-                            ExitCode::SUCCESS
-                        } else {
-                            let err_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Error).count();
-                            let warn_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Warning).count();
-                            println!("{} Skill '{}' validation results: {} errors, {} warnings", "✖".red(), id, err_count, warn_count);
-                            for e in &errors {
-                                println!("   - {} [{}] {}", e.code, if e.level == crate::skill::validator::ValidationLevel::Error { "ERROR" } else { "WARN" }, e.message);
-                            }
-                            if crate::skill::validator::has_errors(&errors) {
-                                ExitCode::from(1)
-                            } else {
-                                ExitCode::SUCCESS
-                            }
-                        }
-                    } else {
-                        eprintln!("{} Skill '{}' not found in workspace", "✖".red(), id);
-                        ExitCode::from(1)
+                    };
+                    if entry.status == crate::skill::model::SkillStatus::Missing {
+                        eprintln!("{} Skill '{}' is missing on disk. Restore it first.", "✖".red(), id);
+                        return ExitCode::from(1);
+                    }
+                    let content = std::fs::read_to_string(&entry.file_path).unwrap_or_default();
+                    let errors = crate::skill::validator::validate_skill_content(&content);
+                    if errors.is_empty() {
+                        println!("{} Skill '{}' passed validation (0 errors, 0 warnings)", "✔".green(), id);
+                        return ExitCode::SUCCESS;
+                    }
+                    let err_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Error).count();
+                    let warn_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Warning).count();
+                    println!("{} Skill '{}' validation results: {} errors, {} warnings", "✖".red(), id, err_count, warn_count);
+                    for e in &errors {
+                        let level = match e.level {
+                            crate::skill::validator::ValidationLevel::Error => "ERROR",
+                            _ => "WARN",
+                        };
+                        println!("   - {} [{}] {}", e.code, level, e.message);
+                    }
+                    #[allow(clippy::match_bool)] // avoid `else` branch; warning-only validation succeeds
+                    match crate::skill::validator::has_errors(&errors) {
+                        true => ExitCode::from(1),
+                        false => ExitCode::SUCCESS,
                     }
                 }
 
@@ -1218,34 +1228,52 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
-                    let agents: Vec<crate::pack::targets::TargetAgent> = if let Some(a) = agent {
-                        let mut v = Vec::new();
-                        for item in a.split(',') {
-                            let t = item.trim().to_lowercase();
-                            match t.as_str() {
-                                "all" => {
-                                    for ag in crate::pack::targets::TargetAgent::ALL {
-                                        if !v.contains(&ag) { v.push(ag); }
+                    #[allow(clippy::match_bool)] // avoid `else` branch; empty selection defaults to OpenCode
+                    let agents: Vec<crate::pack::targets::TargetAgent> = match agent {
+                        Some(a) => {
+                            let mut v = Vec::new();
+                            for item in a.split(',') {
+                                let t = item.trim().to_lowercase();
+                                match t.as_str() {
+                                    "all" => {
+                                        for ag in crate::pack::targets::TargetAgent::ALL {
+                                            if !v.contains(&ag) {
+                                                v.push(ag);
+                                            }
+                                        }
                                     }
-                                }
-                                "detected" => {
-                                    for ag in crate::pack::targets::TargetAgent::ALL {
-                                        if ag.is_detected(&scope) && !v.contains(&ag) { v.push(ag); }
+                                    "detected" => {
+                                        for ag in crate::pack::targets::TargetAgent::ALL {
+                                            if ag.is_detected(&scope) && !v.contains(&ag) {
+                                                v.push(ag);
+                                            }
+                                        }
                                     }
+                                    "opencode" => v.push(crate::pack::targets::TargetAgent::OpenCode),
+                                    "cursor" => v.push(crate::pack::targets::TargetAgent::Cursor),
+                                    "claude" | "claudecode" => v.push(crate::pack::targets::TargetAgent::ClaudeCode),
+                                    "windsurf" => v.push(crate::pack::targets::TargetAgent::Windsurf),
+                                    "antigravity" | "agy" => v.push(crate::pack::targets::TargetAgent::Antigravity),
+                                    "goose" => v.push(crate::pack::targets::TargetAgent::Goose),
+                                    _ => {}
                                 }
-                                "opencode" => v.push(crate::pack::targets::TargetAgent::OpenCode),
-                                "cursor" => v.push(crate::pack::targets::TargetAgent::Cursor),
-                                "claude" | "claudecode" => v.push(crate::pack::targets::TargetAgent::ClaudeCode),
-                                "windsurf" => v.push(crate::pack::targets::TargetAgent::Windsurf),
-                                "antigravity" | "agy" => v.push(crate::pack::targets::TargetAgent::Antigravity),
-                                "goose" => v.push(crate::pack::targets::TargetAgent::Goose),
-                                _ => {}
+                            }
+                            match v.is_empty() {
+                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                false => v,
                             }
                         }
-                        if v.is_empty() { vec![crate::pack::targets::TargetAgent::OpenCode] } else { v }
-                    } else {
-                        let detected: Vec<_> = crate::pack::targets::TargetAgent::ALL.iter().copied().filter(|a| a.is_detected(&scope)).collect();
-                        if detected.is_empty() { vec![crate::pack::targets::TargetAgent::OpenCode] } else { detected }
+                        None => {
+                            let detected: Vec<_> = crate::pack::targets::TargetAgent::ALL
+                                .iter()
+                                .copied()
+                                .filter(|a| a.is_detected(&scope))
+                                .collect();
+                            match detected.is_empty() {
+                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                false => detected,
+                            }
+                        }
                     };
                     let report = crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
                     println!("{} Synced {} skill(s), skipped {}, errors: {}", "✔".green(), report.synced, report.skipped, report.errors.len());
@@ -1260,12 +1288,14 @@ pub fn run() -> ExitCode {
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     if list {
                         let backups = crate::skill::rollback::list_backups(&skills_dir, &id);
-                        if backups.is_empty() {
-                            println!("No backups found for '{}'", id);
-                        } else {
-                            println!("Backups for '{}':", id);
-                            for b in &backups {
-                                println!("   - {}", b);
+                        #[allow(clippy::match_bool)] // avoid `else` branch; both paths print then succeed
+                        match backups.is_empty() {
+                            true => println!("No backups found for '{}'", id),
+                            false => {
+                                println!("Backups for '{}':", id);
+                                for b in &backups {
+                                    println!("   - {}", b);
+                                }
                             }
                         }
                         return ExitCode::SUCCESS;
@@ -1287,12 +1317,14 @@ pub fn run() -> ExitCode {
                 let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                 match crate::skill::state::check_drift(&skills_dir) {
                     Ok(drifts) => {
-                        if drifts.is_empty() {
-                            println!("{} No drift detected", "✔".green());
-                        } else {
-                            println!("{} Drift detected ({}):", "⚠".yellow(), drifts.len());
-                            for d in &drifts {
-                                println!("   - {} [{}] {}", d.id, d.kind, d.detail);
+                        #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
+                        match drifts.is_empty() {
+                            true => println!("{} No drift detected", "✔".green()),
+                            false => {
+                                println!("{} Drift detected ({}):", "⚠".yellow(), drifts.len());
+                                for d in &drifts {
+                                    println!("   - {} [{}] {}", d.id, d.kind, d.detail);
+                                }
                             }
                         }
                         ExitCode::SUCCESS
@@ -1309,31 +1341,30 @@ pub fn run() -> ExitCode {
             Some(SkillCommands::State { rebuild, dir, path }) => {
                 let target_dir = path.or(dir).unwrap_or(base_path.clone());
                 let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
-                if rebuild {
-                    let state = crate::skill::state::rebuild_state(&skills_dir);
-                    match crate::skill::state::save_state(&skills_dir, &state) {
-                        Ok(_) => {
-                            println!("{} State rebuilt with {} skill(s)", "✔".green(), state.skills.len());
-                            ExitCode::SUCCESS
-                        }
-                        Err(e) => {
-                            eprintln!("{} {}", "✖".red(), e);
-                            ExitCode::from(1)
-                        }
-                    }
-                } else {
+                if !rebuild {
                     match crate::skill::state::load_state(&skills_dir) {
                         Some(s) => {
                             println!("State snapshot: {} skill(s), generated {}", s.skills.len(), s.generated_at);
                             for sk in &s.skills {
                                 println!("   - {} v{:?} [{}]", sk.id, sk.version, sk.status);
                             }
-                            ExitCode::SUCCESS
+                            return ExitCode::SUCCESS;
                         }
                         None => {
                             eprintln!("{} No state file. Use --rebuild.", "✖".red());
-                            ExitCode::from(1)
+                            return ExitCode::from(1);
                         }
+                    }
+                }
+                let state = crate::skill::state::rebuild_state(&skills_dir);
+                match crate::skill::state::save_state(&skills_dir, &state) {
+                    Ok(_) => {
+                        println!("{} State rebuilt with {} skill(s)", "✔".green(), state.skills.len());
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{} {}", "✖".red(), e);
+                        ExitCode::from(1)
                     }
                 }
             }
@@ -1341,35 +1372,33 @@ pub fn run() -> ExitCode {
             Some(SkillCommands::Lock { verify, dir, path }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
-                    if verify {
-                        match crate::skill::lock::verify_lock(&skills_dir) {
-                            Ok(drifts) => {
-                                if drifts.is_empty() {
-                                    println!("{} Lock file verified: no drift", "✔".green());
-                                    ExitCode::SUCCESS
-                                } else {
-                                    println!("{} Lock drift detected ({}):", "⚠".yellow(), drifts.len());
-                                    for d in &drifts {
-                                        println!("   - {} [{}] {}", d.id, d.kind, d.detail);
-                                    }
-                                    ExitCode::from(1)
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("{} {}", "✖".red(), e);
-                                ExitCode::from(1)
-                            }
-                        }
-                    } else {
+                    if !verify {
                         match crate::skill::lock::generate_lock(&skills_dir) {
                             Ok(lock) => {
                                 println!("{} Generated skills.lock with {} skill(s)", "✔".green(), lock.skills.len());
-                                ExitCode::SUCCESS
+                                return ExitCode::SUCCESS;
                             }
                             Err(e) => {
                                 eprintln!("{} {}", "✖".red(), e);
-                                ExitCode::from(1)
+                                return ExitCode::from(1);
                             }
+                        }
+                    }
+                    match crate::skill::lock::verify_lock(&skills_dir) {
+                        Ok(drifts) => {
+                            if drifts.is_empty() {
+                                println!("{} Lock file verified: no drift", "✔".green());
+                                return ExitCode::SUCCESS;
+                            }
+                            println!("{} Lock drift detected ({}):", "⚠".yellow(), drifts.len());
+                            for d in &drifts {
+                                println!("   - {} [{}] {}", d.id, d.kind, d.detail);
+                            }
+                            ExitCode::from(1)
+                        }
+                        Err(e) => {
+                            eprintln!("{} {}", "✖".red(), e);
+                            ExitCode::from(1)
                         }
                     }
                 }
@@ -1378,11 +1407,13 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let results = crate::skill::search::search_skills(&skills_dir, &query);
-                    if results.is_empty() {
-                        println!("No skills found matching '{}'", query);
-                    } else {
-                        println!("Found {} skill(s) matching '{}':", results.len(), query);
-                        crate::skill::menu::print_skills_table(&results);
+                    #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
+                    match results.is_empty() {
+                        true => println!("No skills found matching '{}'", query),
+                        false => {
+                            println!("Found {} skill(s) matching '{}':", results.len(), query);
+                            crate::skill::menu::print_skills_table(&results);
+                        }
                     }
                     ExitCode::SUCCESS
                 }
@@ -1438,12 +1469,14 @@ pub fn run() -> ExitCode {
                         crate::skill::remote::SkillSource::Registry { id: ref reg_id, .. } => {
                             match crate::skill::install::install_skill(&skills_dir, reg_id, !no_deps) {
                                 Ok(paths) => {
-                                    if paths.is_empty() {
-                                        println!("Skill '{}' (and its dependencies) already installed.", reg_id);
-                                    } else {
-                                        println!("{} Installed {} skill(s):", "✔".green(), paths.len());
-                                        for p in paths {
-                                            println!("   - {}", p.display());
+                                    #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
+                                    match paths.is_empty() {
+                                        true => println!("Skill '{}' (and its dependencies) already installed.", reg_id),
+                                        false => {
+                                            println!("{} Installed {} skill(s):", "✔".green(), paths.len());
+                                            for p in paths {
+                                                println!("   - {}", p.display());
+                                            }
                                         }
                                     }
                                     ExitCode::SUCCESS
@@ -1494,16 +1527,15 @@ pub fn run() -> ExitCode {
                         }
                     };
 
-                    let remote_content = if let Some(r_path) = remote {
-                        match std::fs::read_to_string(r_path) {
+                    let remote_content = match remote {
+                        Some(r_path) => match std::fs::read_to_string(r_path) {
                             Ok(c) => c,
                             Err(e) => {
                                 eprintln!("{} Failed to read remote skill: {e}", "✖".red());
                                 return ExitCode::from(1);
                             }
-                        }
-                    } else {
-                        base_content.to_string()
+                        },
+                        None => base_content.to_string(),
                     };
 
                     let (mut merged, has_conflict) =
@@ -1511,9 +1543,13 @@ pub fn run() -> ExitCode {
 
                     if has_conflict && interactive {
                         println!("Starting interactive conflict resolution for '{}'...", id);
-                        if let Ok(resolved) = crate::skill::merge::interactive_resolve_conflicts(&merged) {
-                            merged = resolved;
-                            println!("{} All conflict chunks resolved.", "✔".green());
+                        #[allow(clippy::match_wild_err_arm, clippy::single_match)] // `if let` would nest inside an enclosing `if`; match keeps guard-clause style
+                        match crate::skill::merge::interactive_resolve_conflicts(&merged) {
+                            Ok(resolved) => {
+                                merged = resolved;
+                                println!("{} All conflict chunks resolved.", "✔".green());
+                            }
+                            Err(_) => {}
                         }
                     }
 
@@ -1528,7 +1564,8 @@ pub fn run() -> ExitCode {
                             "⚠".yellow(),
                             entry.file_path.display()
                         );
-                    } else {
+                    }
+                    if !has_conflict || interactive {
                         println!(
                             "{} Successfully merged skill '{}'.",
                             "✔".green(),
@@ -1548,19 +1585,16 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
 
-                    if !yes {
-                        let confirmed = inquire::Confirm::new(&format!(
-                            "Are you sure you want to completely purge skill '{}' and all its synced copies?",
-                            id
-                        ))
-                        .with_default(false)
-                        .prompt()
-                        .unwrap_or(false);
-
-                        if !confirmed {
-                            println!("Purge cancelled.");
-                            return ExitCode::SUCCESS;
-                        }
+                    let confirmed = yes || inquire::Confirm::new(&format!(
+                        "Are you sure you want to completely purge skill '{}' and all its synced copies?",
+                        id
+                    ))
+                    .with_default(false)
+                    .prompt()
+                    .unwrap_or(false);
+                    if !confirmed {
+                        println!("Purge cancelled.");
+                        return ExitCode::SUCCESS;
                     }
 
                     let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
@@ -1587,16 +1621,17 @@ pub fn run() -> ExitCode {
                         &scope,
                     ) {
                         Ok(rep) => {
+                            #[allow(clippy::match_bool)] // avoid `else` branch; empty list prints "none"
+                            let agents_cleaned = match rep.agents_cleaned.is_empty() {
+                                true => "none".to_string(),
+                                false => rep.agents_cleaned.join(", "),
+                            };
                             println!(
                                 "{} Purged skill '{}': workspace removed: {}, synced agents cleaned: {}",
                                 "✔".green(),
                                 id,
                                 rep.workspace_removed,
-                                if rep.agents_cleaned.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    rep.agents_cleaned.join(", ")
-                                }
+                                agents_cleaned
                             );
                             ExitCode::SUCCESS
                         }
