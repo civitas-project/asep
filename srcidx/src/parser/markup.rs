@@ -835,6 +835,8 @@ fn latex_commands(line: &str) -> Vec<LatexCommand> {
 }
 
 /// Extracts the balanced brace content of `{...}` at the start of `rest`.
+// match avoids nested-if anti-slop rule
+#[allow(clippy::single_match)]
 fn take_brace_content(rest: &str) -> Option<String> {
     let rest = rest.trim_start();
     let bytes = rest.as_bytes();
