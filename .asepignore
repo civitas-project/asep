@@ -7,4 +7,5 @@ spec-engine/tests/
 # Exclude integration test fixtures and benches whose tags are illustrative data (not real declarations)
 srcidx/tests/
 **/benches/**
+vendor/
 
