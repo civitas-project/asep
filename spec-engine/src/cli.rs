@@ -1,5 +1,5 @@
 // Clap derives generate `from_arg_matches`, which builds every enum variant on the stack in debug builds.
-#![allow(clippy::large_unopt_stack_frames)]
+#![allow(clippy::large_stack_frames)]
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
