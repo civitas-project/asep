@@ -134,10 +134,10 @@ message = 'Box-drawing decoration'
 [[antislop_rules]]
 id = 'AS-CODE-NESTING'
 domain = 'code'
-severity = 'Warning'
+severity = 'Error'
 pattern = ''
-max_nesting = 3
-message = 'Excessive if nesting'
+max_nesting = 0
+message = 'Nested if forbidden; use early return (guard clause)'
 
 [[antislop_rules]]
 id = 'AS-COPY-BUZZWORD'
@@ -145,3 +145,10 @@ domain = 'copy'
 severity = 'Error'
 pattern = '(?i)\b(delve|elevate|seamless|robust|unlock|pivotal|tapestry|testament)\b'
 message = 'AI buzzword in prose'
+
+[[antislop_rules]]
+id = 'AS-CODE-ELSE'
+domain = 'code'
+severity = 'Error'
+pattern = '\belse\b'
+message = 'Else branch forbidden; use early return (guard clause)'

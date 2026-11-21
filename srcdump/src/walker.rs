@@ -56,59 +56,21 @@ pub fn walk_files(config: &Config) -> Result<Vec<PathBuf>> {
         }
 
         // Check symlink safety (cross-platform)
-        if config.follow_symlinks {
-            if let Ok(metadata) = fs::metadata(path) {
-                if metadata.file_type().is_symlink() {
-                    // Check circular symlinks via canonical path tracking
-                    if let Ok(canonical) = path.canonicalize() {
-                        let canonical_str = canonical.to_string_lossy().to_string();
-                        if !visited_paths.insert(canonical_str) {
-                            eprintln!("Warning: Circular symlink detected, skipping: {}", path.display());
-                            continue;
-                        }
-                    }
-
-                    // Check if symlink target escapes root
-                    if let Ok(target) = fs::read_link(path) {
-                        let target_path = if target.is_absolute() {
-                            target
-                        } else {
-                            path.parent().unwrap_or(Path::new("")).join(target)
-                        };
-                        if let Ok(canonical_target) = target_path.canonicalize() {
-                            if let Ok(canonical_root) = config.root.canonicalize() {
-                                if !canonical_target.starts_with(&canonical_root) {
-                                    eprintln!("Warning: Symlink escapes root, skipping: {}", path.display());
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if symlink_should_skip(path, config, &mut visited_paths) {
+            continue;
         }
 
         // Check extension
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if !config.is_extension_included(ext) {
-                continue;
-            }
-        } else {
-            // No extension - check if it's in include patterns
-            if !config.include_patterns.is_empty() {
-                let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
-                if !include_patterns.iter().any(|p| p.matches(&path_str)) {
-                    continue;
-                }
-            }
+        if extension_should_skip(path, config, &include_patterns) {
+            continue;
         }
 
         // Check include patterns
-        if !config.include_patterns.is_empty() {
-            let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
-            if !include_patterns.iter().any(|p| p.matches(&path_str)) {
-                continue;
-            }
+        let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
+        if !config.include_patterns.is_empty()
+            && !include_patterns.iter().any(|p| p.matches(&path_str))
+        {
+            continue;
         }
 
         // Check exclude patterns (glob) - post-filter
@@ -128,4 +90,64 @@ pub fn walk_files(config: &Config) -> Result<Vec<PathBuf>> {
     // Sort for deterministic output
     files.sort();
     Ok(files)
+}
+
+/// Returns true when the symlink at `path` must be skipped.
+fn symlink_should_skip(path: &Path, config: &Config, visited_paths: &mut HashSet<String>) -> bool {
+    if !config.follow_symlinks {
+        return false;
+    }
+    let metadata = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if !metadata.file_type().is_symlink() {
+        return false;
+    }
+
+    // Check circular symlinks via canonical path tracking
+    let mut circular = false;
+    if let Ok(canonical) = path.canonicalize() {
+        let canonical_str = canonical.to_string_lossy().to_string();
+        circular = !visited_paths.insert(canonical_str);
+    }
+    if circular {
+        eprintln!("Warning: Circular symlink detected, skipping: {}", path.display());
+        return true;
+    }
+
+    // Check if symlink target escapes root
+    let target = match fs::read_link(path) {
+        Ok(t) => t,
+        Err(_) => return false,
+    };
+    let target_path = path.parent().unwrap_or(Path::new("")).join(target);
+    let canonical_target = match target_path.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let canonical_root = match config.root.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    if !canonical_target.starts_with(&canonical_root) {
+        eprintln!("Warning: Symlink escapes root, skipping: {}", path.display());
+        return true;
+    }
+    false
+}
+
+/// Returns true when `path` must be skipped due to extension/include rules.
+fn extension_should_skip(path: &Path, config: &Config, include_patterns: &[Pattern]) -> bool {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some(ext) => !config.is_extension_included(ext),
+        None => {
+            // No extension - check if it's in include patterns
+            if config.include_patterns.is_empty() {
+                return false;
+            }
+            let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
+            !include_patterns.iter().any(|p| p.matches(&path_str))
+        }
+    }
 }

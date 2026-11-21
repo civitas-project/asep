@@ -53,26 +53,32 @@ pub fn scan_project_tags(root: &Path) -> Result<Vec<ScannedTag>, AsepError> {
         );
 
         // Open and read file line-by-line
-        if let Ok(file) = File::open(path) {
-            let reader = BufReader::new(file);
-            for (idx, line_res) in reader.lines().enumerate() {
-                if let Ok(line) = line_res {
-                    let occurrences = parse_tags_from_line(&line, idx + 1);
-                    for occ in occurrences {
-                        // Code files implement (@impl) and test (@test); they do not declare requirements (@req).
-                        if is_code_file && matches!(occ.kind, TagKind::Req { .. }) {
-                            continue;
-                        }
+        match File::open(path) {
+            Ok(file) => {
+                let reader = BufReader::new(file);
+                for (idx, line_res) in reader.lines().enumerate() {
+                    match line_res {
+                        Ok(line) => {
+                            let occurrences = parse_tags_from_line(&line, idx + 1);
+                            for occ in occurrences {
+                                // Code files implement (@impl) and test (@test); they do not declare requirements (@req).
+                                if is_code_file && matches!(occ.kind, TagKind::Req { .. }) {
+                                    continue;
+                                }
 
-                        tags.push(ScannedTag {
-                            file_path: rel_path.clone(),
-                            kind: occ.kind,
-                            line_number: occ.line_number,
-                            raw_line: occ.raw_line,
-                        });
+                                tags.push(ScannedTag {
+                                    file_path: rel_path.clone(),
+                                    kind: occ.kind,
+                                    line_number: occ.line_number,
+                                    raw_line: occ.raw_line,
+                                });
+                            }
+                        }
+                        Err(_) => continue,
                     }
                 }
             }
+            Err(_) => continue,
         }
     }
 

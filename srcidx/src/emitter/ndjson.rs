@@ -34,28 +34,31 @@ impl IndexEmitter for NdjsonEmitter {
         let mut buf = BufWriter::new(writer);
 
         // Line 1: Header with embedded field schemas
-        let header_json = if self.include_schema {
-            // Include full field schemas in header for self-describing output
-            json!({
-                "version": index.header.version,
-                "schema": index.header.schema,
-                "root": index.header.root,
-                "symbols": index.header.symbols,
-                "files": index.header.files,
-                "skipped": index.header.skipped,
-                "generated": index.header.generated,
-                "fields": index.header.fields,
-            })
-        } else {
-            json!({
-                "version": index.header.version,
-                "schema": index.header.schema,
-                "root": index.header.root,
-                "symbols": index.header.symbols,
-                "files": index.header.files,
-                "skipped": index.header.skipped,
-                "generated": index.header.generated,
-            })
+        let header_json = match self.include_schema {
+            true => {
+                // Include full field schemas in header for self-describing output
+                json!({
+                    "version": index.header.version,
+                    "schema": index.header.schema,
+                    "root": index.header.root,
+                    "symbols": index.header.symbols,
+                    "files": index.header.files,
+                    "skipped": index.header.skipped,
+                    "generated": index.header.generated,
+                    "fields": index.header.fields,
+                })
+            }
+            false => {
+                json!({
+                    "version": index.header.version,
+                    "schema": index.header.schema,
+                    "root": index.header.root,
+                    "symbols": index.header.symbols,
+                    "files": index.header.files,
+                    "skipped": index.header.skipped,
+                    "generated": index.header.generated,
+                })
+            }
         };
         writeln!(buf, "{}", serde_json::to_string(&header_json)?)?;
 

@@ -18,12 +18,12 @@ pub fn list_backups(skills_dir: &Path, id: &str) -> Vec<String> {
     }
     let mut out = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
-        for e in entries.flatten() {
-            if e.path().is_dir() {
-                if let Some(name) = e.file_name().to_str() {
-                    out.push(name.to_string());
-                }
-            }
+        for name in entries
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
+        {
+            out.push(name);
         }
     }
     out.sort();
@@ -48,25 +48,29 @@ pub fn backup_skill(skills_dir: &Path, id: &str) -> Result<String, String> {
     Ok(ts)
 }
 
+#[allow(clippy::single_match)]
 pub fn rollback_skill(skills_dir: &Path, id: &str, to: Option<&str>) -> Result<String, String> {
     let backups = list_backups(skills_dir, id);
 
     // If no backups and no explicit target, try embedded original
     if backups.is_empty() && to.is_none() {
         let embedded = get_embedded_skills();
-        if let Some(orig) = embedded.iter().find(|e| e.id == id) {
-            let entries = inspect_skills(skills_dir);
-            let entry = entries.iter().find(|e| e.id == id);
-            let file_path = entry
-                .map(|e| e.file_path.clone())
-                .unwrap_or_else(|| skills_dir.join(id).join("SKILL.md"));
-            if let Some(parent) = file_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        match embedded.iter().find(|e| e.id == id) {
+            Some(orig) => {
+                let entries = inspect_skills(skills_dir);
+                let entry = entries.iter().find(|e| e.id == id);
+                let file_path = entry
+                    .map(|e| e.file_path.clone())
+                    .unwrap_or_else(|| skills_dir.join(id).join("SKILL.md"));
+                match file_path.parent() {
+                    Some(parent) => fs::create_dir_all(parent).map_err(|e| e.to_string())?,
+                    None => {}
+                }
+                fs::write(&file_path, orig.content).map_err(|e| e.to_string())?;
+                return Ok(format!("restored '{}' from embedded original", id));
             }
-            fs::write(&file_path, orig.content).map_err(|e| e.to_string())?;
-            return Ok(format!("restored '{}' from embedded original", id));
+            None => return Err(format!("no backups and no embedded original for '{}'", id)),
         }
-        return Err(format!("no backups and no embedded original for '{}'", id));
     }
 
     let target_ts = match to {

@@ -36,11 +36,17 @@ pub fn validate_formal_specs(dir: &Path) -> Vec<FormalCheckResult> {
 
         if ext == "als" {
             results.push(validate_alloy(path, &file_str));
-        } else if ext == "tla" {
+            continue;
+        }
+        if ext == "tla" {
             results.push(validate_tla(path, &file_str));
-        } else if file_name == "api.yaml" || file_name == "api.json" || file_name == "openapi.yaml" || file_name == "openapi.json" {
+            continue;
+        }
+        if file_name == "api.yaml" || file_name == "api.json" || file_name == "openapi.yaml" || file_name == "openapi.json" {
             results.push(validate_openapi(path, &file_str));
-        } else if ext == "dbml" || file_name == "schema.dbml" {
+            continue;
+        }
+        if ext == "dbml" || file_name == "schema.dbml" {
             results.push(validate_dbml(path, &file_str));
         }
     }
@@ -63,11 +69,10 @@ fn validate_alloy(path: &Path, file_str: &str) -> FormalCheckResult {
     match Command::new("alloy").arg("--solve").arg(path).output() {
         Ok(out) => {
             let passed = out.status.success();
-            let msg = if passed {
-                "Alloy model solved cleanly".to_string()
-            } else {
-                String::from_utf8_lossy(&out.stderr).trim().to_string()
-            };
+            let mut msg = "Alloy model solved cleanly".to_string();
+            if !passed {
+                msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            }
             FormalCheckResult {
                 tool: "alloy".to_string(),
                 file: file_str.to_string(),
@@ -105,11 +110,10 @@ fn validate_tla(path: &Path, file_str: &str) -> FormalCheckResult {
     {
         Ok(out) => {
             let passed = out.status.success();
-            let msg = if passed {
-                "TLA+ model checked cleanly".to_string()
-            } else {
-                String::from_utf8_lossy(&out.stdout).trim().to_string()
-            };
+            let mut msg = "TLA+ model checked cleanly".to_string();
+            if !passed {
+                msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
             FormalCheckResult {
                 tool: "tlc".to_string(),
                 file: file_str.to_string(),
@@ -143,11 +147,10 @@ fn validate_openapi(path: &Path, file_str: &str) -> FormalCheckResult {
     match Command::new("spectral").arg("lint").arg(path).output() {
         Ok(out) => {
             let passed = out.status.success();
-            let msg = if passed {
-                "OpenAPI spec validated cleanly".to_string()
-            } else {
-                String::from_utf8_lossy(&out.stdout).trim().to_string()
-            };
+            let mut msg = "OpenAPI spec validated cleanly".to_string();
+            if !passed {
+                msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            }
             FormalCheckResult {
                 tool: "spectral".to_string(),
                 file: file_str.to_string(),
@@ -184,11 +187,10 @@ fn validate_dbml(path: &Path, file_str: &str) -> FormalCheckResult {
     {
         Ok(out) => {
             let passed = out.status.success();
-            let msg = if passed {
-                "DBML schema converted cleanly".to_string()
-            } else {
-                String::from_utf8_lossy(&out.stderr).trim().to_string()
-            };
+            let mut msg = "DBML schema converted cleanly".to_string();
+            if !passed {
+                msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            }
             FormalCheckResult {
                 tool: "dbml2sql".to_string(),
                 file: file_str.to_string(),

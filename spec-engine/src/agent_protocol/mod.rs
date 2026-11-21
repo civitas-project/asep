@@ -147,12 +147,15 @@ impl MessageStore {
         let mut errors: Vec<String> = Vec::new();
         let mut ids: HashSet<String> = HashSet::new();
         let mut envelopes: Vec<Envelope> = Vec::new();
-        let Ok(entries) = fs::read_dir(messages_dir) else {
-            errors.push(format!(
-                "messages directory missing or unreadable: {}",
-                messages_dir.display()
-            ));
-            return Err(errors);
+        let entries = match fs::read_dir(messages_dir) {
+            Ok(e) => e,
+            Err(_) => {
+                errors.push(format!(
+                    "messages directory missing or unreadable: {}",
+                    messages_dir.display()
+                ));
+                return Err(errors);
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -177,11 +180,10 @@ impl MessageStore {
         for envelope in envelopes {
             validate_envelope(&self.run_dir, &envelope, &ids, &mut errors);
         }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors)
+        if !errors.is_empty() {
+            return Err(errors);
         }
+        Ok(())
     }
 
     pub fn send(
@@ -232,8 +234,9 @@ impl MessageStore {
 
     pub fn recv(&self, agent: Role) -> Vec<Envelope> {
         let mut msgs: Vec<Envelope> = Vec::new();
-        let Ok(entries) = fs::read_dir(&self.messages_dir) else {
-            return msgs;
+        let entries = match fs::read_dir(&self.messages_dir) {
+            Ok(e) => e,
+            Err(_) => return msgs,
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -247,8 +250,9 @@ impl MessageStore {
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-            let Ok(envelope) = read_envelope_file(&path) else {
-                continue;
+            let envelope = match read_envelope_file(&path) {
+                Ok(e) => e,
+                Err(_) => continue,
             };
             if envelope.to == agent && envelope.status == STATUS_SENT {
                 msgs.push(envelope);
@@ -298,8 +302,9 @@ impl MessageStore {
             return true;
         }
         let schema = protocol_schema();
-        let Some(role) = schema.roles.iter().find(|r| r.name == from.as_str()) else {
-            return false;
+        let role = match schema.roles.iter().find(|r| r.name == from.as_str()) {
+            Some(r) => r,
+            None => return false,
         };
         role.kinds.iter().any(|k| k == kind_as_str(kind))
     }
@@ -372,12 +377,13 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
     let obj = body
         .as_object()
         .ok_or_else(|| "body must be a JSON object".to_string())?;
-    let Some(kind_schema) = schema
+    let kind_schema = match schema
         .kinds
         .iter()
         .find(|k| k.name == kind_as_str(kind))
-    else {
-        return Err(format!("unknown kind: {}", kind_as_str(kind)));
+    {
+        Some(k) => k,
+        None => return Err(format!("unknown kind: {}", kind_as_str(kind))),
     };
     require_keys(obj, &kind_schema.required)?;
     for field in &kind_schema.array_fields {
@@ -392,14 +398,7 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
             .ok_or_else(|| format!("{} must be an object", nested.field))?;
         require_keys(parent, &nested.required)?;
         if nested.numeric {
-            for key in &nested.required {
-                let value = parent
-                    .get(key)
-                    .ok_or_else(|| format!("{}.{} missing", nested.field, key))?;
-                if !matches!(value, Value::Number(_)) {
-                    return Err(format!("{}.{} must be numeric", nested.field, key));
-                }
-            }
+            validate_nested_numeric(parent, nested)?;
         }
     }
     if kind_schema.requires_schema_id {
@@ -407,6 +406,22 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "CUSTOM requires a non-empty schema_id".to_string())?;
+    }
+    Ok(())
+}
+
+/// Validates that the required numeric fields of a nested object are numbers.
+fn validate_nested_numeric(
+    parent: &Map<String, Value>,
+    nested: &NestedField,
+) -> Result<(), String> {
+    for key in &nested.required {
+        let value = parent
+            .get(key)
+            .ok_or_else(|| format!("{}.{} missing", nested.field, key))?;
+        if !matches!(value, Value::Number(_)) {
+            return Err(format!("{}.{} must be numeric", nested.field, key));
+        }
     }
     Ok(())
 }
@@ -435,10 +450,11 @@ fn validate_envelope(
             kind_as_str(&envelope.kind)
         ));
     }
-    if let Some(reply_to) = &envelope.reply_to {
-        if !ids.contains(reply_to) {
+    match &envelope.reply_to {
+        Some(reply_to) if !ids.contains(reply_to) => {
             errors.push(format!("{prefix}: orphan reply_to {reply_to}"));
         }
+        _ => {}
     }
     if let Some(ref_) = &envelope.ref_ {
         match validate_ref(dir, ref_) {
@@ -473,11 +489,13 @@ fn validate_ref(dir: &Path, ref_: &str) -> Result<(), String> {
         return Err(format!("hash must be 64 lowercase hex chars: {hash}"));
     }
     let full = dir.join(rel);
-    let Ok(full_canon) = full.canonicalize() else {
-        return Err(format!("ref file not found: {rel}"));
+    let full_canon = match full.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return Err(format!("ref file not found: {rel}")),
     };
-    let Ok(dir_canon) = dir.canonicalize() else {
-        return Err(format!("run dir not accessible: {}", dir.display()));
+    let dir_canon = match dir.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return Err(format!("run dir not accessible: {}", dir.display())),
     };
     if !full_canon.starts_with(&dir_canon) {
         return Err(format!("cross-run ref: {rel}"));
@@ -522,15 +540,24 @@ fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), String> 
 // Days since 1970-01-01 -> (year, month, day), civil calendar algorithm.
 fn civil_from_days(mut z: i64) -> (i64, u32, u32) {
     z += 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let era = match z >= 0 {
+        true => z,
+        false => z - 146_096,
+    } / 146_097;
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe + era * 400;
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
+    let m = match mp < 10 {
+        true => mp + 3,
+        false => mp - 9,
+    };
+    let y = match m <= 2 {
+        true => y + 1,
+        false => y,
+    };
     (y, m as u32, d as u32)
 }
 

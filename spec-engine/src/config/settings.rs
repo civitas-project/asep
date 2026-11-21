@@ -111,11 +111,10 @@ pub struct EngineConfig {
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).
 pub fn get_config_path(target_dir: &Path) -> PathBuf {
-    if target_dir.ends_with(".spec-engine") {
-        target_dir.join("config.toml")
-    } else {
-        target_dir.join(".spec-engine").join("config.toml")
+    if !target_dir.ends_with(".spec-engine") {
+        return target_dir.join(".spec-engine").join("config.toml");
     }
+    target_dir.join("config.toml")
 }
 
 /// Loads the persistent configuration from disk or returns defaults if missing/corrupt.

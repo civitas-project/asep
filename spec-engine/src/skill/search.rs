@@ -43,21 +43,22 @@ pub fn search_skills(skills_dir: &Path, query: &str) -> Vec<SkillEntry> {
         let desc_match = desc.to_lowercase().contains(&q);
         let deps_match = depends.iter().any(|d| d.to_lowercase().contains(&q));
 
-        if id_match || name_match || desc_match || deps_match {
-            matches.push(SkillEntry {
-                id: orig.id.to_string(),
-                name: if !name.is_empty() {
-                    name
-                } else {
-                    orig.id.to_string()
-                },
-                description: desc,
-                file_path: skills_dir.join(orig.directory).join("SKILL.md"),
-                status: crate::skill::model::SkillStatus::Missing,
-                version,
-                depends,
-            });
+        if !(id_match || name_match || desc_match || deps_match) {
+            continue;
         }
+        let mut skill_name = name;
+        if skill_name.is_empty() {
+            skill_name = orig.id.to_string();
+        }
+        matches.push(SkillEntry {
+            id: orig.id.to_string(),
+            name: skill_name,
+            description: desc,
+            file_path: skills_dir.join(orig.directory).join("SKILL.md"),
+            status: crate::skill::model::SkillStatus::Missing,
+            version,
+            depends,
+        });
     }
 
     matches.sort_by(|a, b| a.id.cmp(&b.id));

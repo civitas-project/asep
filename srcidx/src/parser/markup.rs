@@ -110,10 +110,9 @@ impl SourceParser for MarkupParser {
         for (i, line) in lines.iter().enumerate() {
             let line_num = i + 1;
             let trimmed = line.trim();
-            let visible = if matches!(self.flavor, MarkupFlavor::Html) {
-                strip_script_style(trimmed, &mut skip_state)
-            } else {
-                trimmed.to_string()
+            let visible = match self.flavor {
+                MarkupFlavor::Html => strip_script_style(trimmed, &mut skip_state),
+                _ => trimmed.to_string(),
             };
 
             // Headings / structural elements.
@@ -124,12 +123,8 @@ impl SourceParser for MarkupParser {
                     }
                 }
                 MarkupFlavor::Rst => {
-                    if i > 0 && is_underline(&visible) {
-                        let title = lines[i - 1].trim();
-                        if !title.is_empty() {
-                            // Previous line (1-based line number == i).
-                            symbols.push(mk_symbol("heading", title.to_string(), i, title));
-                        }
+                    if let Some(title) = rst_title(i, &visible, &lines) {
+                        symbols.push(mk_symbol("heading", title.clone(), i, &title));
                     }
                 }
                 MarkupFlavor::Html => {
@@ -188,11 +183,12 @@ impl SourceParser for MarkupParser {
                 if tags.is_empty() {
                     continue;
                 }
-                if let Some(idx) = closest_symbol(&symbols, line_num) {
-                    symbols[idx].tags.extend(tags);
-                } else {
-                    for tag in tags {
-                        symbols.push(mk_symbol("trace-comment", tag.clone(), line_num, &comment));
+                match closest_symbol(&symbols, line_num) {
+                    Some(idx) => symbols[idx].tags.extend(tags),
+                    None => {
+                        for tag in tags {
+                            symbols.push(mk_symbol("trace-comment", tag.clone(), line_num, &comment));
+                        }
                     }
                 }
             }
@@ -233,10 +229,9 @@ fn mk_symbol(kind: &str, name: String, line: usize, signature: &str) -> Symbol {
 /// Atx heading: `^#{1,6}\s+(.+)$` for Markdown, `^={1,6}\s+(.+)$` for AsciiDoc.
 /// Trailing marker runs (e.g. `Title ##`) are trimmed from the name.
 fn atx_heading(trimmed: &str, flavor: MarkupFlavor) -> Option<String> {
-    let marker = if flavor == MarkupFlavor::Asciidoc {
-        b'='
-    } else {
-        b'#'
+    let marker = match flavor == MarkupFlavor::Asciidoc {
+        true => b'=',
+        false => b'#',
     };
     let bytes = trimmed.as_bytes();
     let mut n = 0;
@@ -260,8 +255,9 @@ fn atx_heading(trimmed: &str, flavor: MarkupFlavor) -> Option<String> {
 /// RST title underline: a line of 3+ identical chars from `= - ~ ^`.
 fn is_underline(trimmed: &str) -> bool {
     let mut chars = trimmed.chars();
-    let Some(first) = chars.next() else {
-        return false;
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
     };
     if !matches!(first, '=' | '-' | '~' | '^') {
         return false;
@@ -276,6 +272,20 @@ fn is_underline(trimmed: &str) -> bool {
     len >= 3
 }
 
+/// RST section title: the line under a 3+ char underline, when non-empty.
+/// Returns `None` when there is no previous line, the underline is invalid,
+/// or the title text is empty.
+fn rst_title(i: usize, visible: &str, lines: &[&str]) -> Option<String> {
+    if i == 0 || !is_underline(visible) {
+        return None;
+    }
+    let title = lines[i - 1].trim();
+    if title.is_empty() {
+        return None;
+    }
+    Some(title.to_string())
+}
+
 /// Extract anchor names from a line, flavor-dependent.
 fn extract_anchors(flavor: MarkupFlavor, trimmed: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -285,28 +295,30 @@ fn extract_anchors(flavor: MarkupFlavor, trimmed: &str) -> Vec<String> {
             let mut rest = trimmed;
             while let Some(start) = rest.find("{#") {
                 let after = &rest[start + 2..];
-                if let Some(end) = after.find('}') {
-                    let id = after[..end].trim();
-                    if !id.is_empty() {
-                        out.push(id.to_string());
+                match after.find('}') {
+                    Some(end) => {
+                        let id = after[..end].trim();
+                        if !id.is_empty() {
+                            out.push(id.to_string());
+                        }
+                        rest = &after[end + 1..];
                     }
-                    rest = &after[end + 1..];
-                } else {
-                    break;
+                    None => break,
                 }
             }
             // <a id="...">
             let mut rest = trimmed;
             while let Some(pos) = rest.find("id=\"") {
                 let after = &rest[pos + 4..];
-                if let Some(end) = after.find('"') {
-                    let id = after[..end].trim();
-                    if !id.is_empty() {
-                        out.push(id.to_string());
+                match after.find('"') {
+                    Some(end) => {
+                        let id = after[..end].trim();
+                        if !id.is_empty() {
+                            out.push(id.to_string());
+                        }
+                        rest = &after[end + 1..];
                     }
-                    rest = &after[end + 1..];
-                } else {
-                    break;
+                    None => break,
                 }
             }
         }
@@ -322,10 +334,9 @@ fn extract_anchors(flavor: MarkupFlavor, trimmed: &str) -> Vec<String> {
                 if len > 0 && after.as_bytes().get(len) == Some(&b':') {
                     out.push(after[..len].to_string());
                 }
-                rest = if len == 0 {
-                    &rest[pos + 4..]
-                } else {
-                    &after[len..]
+                rest = match len {
+                    0 => &rest[pos + 4..],
+                    _ => &after[len..],
                 };
             }
         }
@@ -334,28 +345,30 @@ fn extract_anchors(flavor: MarkupFlavor, trimmed: &str) -> Vec<String> {
             let mut rest = trimmed;
             while let Some(pos) = rest.find("[[") {
                 let after = &rest[pos + 2..];
-                if let Some(end) = after.find("]]") {
-                    let id = after[..end].trim();
-                    if !id.is_empty() {
-                        out.push(id.to_string());
+                match after.find("]]") {
+                    Some(end) => {
+                        let id = after[..end].trim();
+                        if !id.is_empty() {
+                            out.push(id.to_string());
+                        }
+                        rest = &after[end + 2..];
                     }
-                    rest = &after[end + 2..];
-                } else {
-                    break;
+                    None => break,
                 }
             }
             // [#id]
             let mut rest = trimmed;
             while let Some(pos) = rest.find("[#") {
                 let after = &rest[pos + 2..];
-                if let Some(end) = after.find(']') {
-                    let id = after[..end].trim();
-                    if !id.is_empty() {
-                        out.push(id.to_string());
+                match after.find(']') {
+                    Some(end) => {
+                        let id = after[..end].trim();
+                        if !id.is_empty() {
+                            out.push(id.to_string());
+                        }
+                        rest = &after[end + 1..];
                     }
-                    rest = &after[end + 1..];
-                } else {
-                    break;
+                    None => break,
                 }
             }
         }
@@ -403,36 +416,43 @@ fn extract_html_comments(line: &str, state: &mut HtmlCommentState) -> Vec<String
     let mut out = Vec::new();
     let mut s = line;
     loop {
-        if state.open {
-            match s.find("-->") {
-                Some(end) => {
-                    state.acc.push_str(&s[..end]);
-                    out.push(std::mem::take(&mut state.acc));
-                    s = &s[end + 3..];
-                    state.open = false;
-                }
-                None => {
-                    state.acc.push_str(s);
-                    state.acc.push('\n');
-                    break;
-                }
-            }
-        } else if let Some(start) = s.find("<!--") {
-            let after = &s[start + 4..];
-            match after.find("-->") {
-                Some(end) => {
-                    out.push(after[..end].to_string());
-                    s = &after[end + 3..];
-                }
-                None => {
-                    state.open = true;
-                    state.acc.push_str(after);
-                    state.acc.push('\n');
-                    break;
+        match state.open {
+            true => {
+                match s.find("-->") {
+                    Some(end) => {
+                        state.acc.push_str(&s[..end]);
+                        out.push(std::mem::take(&mut state.acc));
+                        s = &s[end + 3..];
+                        state.open = false;
+                        continue;
+                    }
+                    None => {
+                        state.acc.push_str(s);
+                        state.acc.push('\n');
+                        break;
+                    }
                 }
             }
-        } else {
-            break;
+            false => {
+                match s.find("<!--") {
+                    Some(start) => {
+                        let after = &s[start + 4..];
+                        match after.find("-->") {
+                            Some(end) => {
+                                out.push(after[..end].to_string());
+                                s = &after[end + 3..];
+                            }
+                            None => {
+                                state.open = true;
+                                state.acc.push_str(after);
+                                state.acc.push('\n');
+                                break;
+                            }
+                        }
+                    }
+                    None => break,
+                }
+            }
         }
     }
     out
@@ -453,15 +473,17 @@ fn scan_tags(text: &str) -> Vec<String> {
         for kw in keywords {
             let kb = kw.as_bytes();
             let end = i + 1 + kb.len();
-            if bytes.get(end) == Some(&b':') && &bytes[i + 1..end] == kb {
-                let mut j = end + 1;
-                let start = j;
-                while j < bytes.len() && is_tag_char(bytes[j]) {
-                    j += 1;
-                }
-                if j > start {
-                    tags.push(text[i..j].to_string());
-                }
+            let keyword_ok = bytes.get(end) == Some(&b':') && &bytes[i + 1..end] == kb;
+            let mut j = end + 1;
+            let start = j;
+            while keyword_ok && j < bytes.len() && is_tag_char(bytes[j]) {
+                j += 1;
+            }
+            let should_push = keyword_ok && j > start;
+            if should_push {
+                tags.push(text[i..j].to_string());
+            }
+            if keyword_ok {
                 i = j;
                 matched = true;
                 break;
@@ -527,43 +549,50 @@ fn strip_script_style(line: &str, state: &mut ScriptStyleState) -> String {
     let mut rest = line;
     loop {
         if state.in_script || state.in_style {
-            let close_tag = if state.in_script { "</script>" } else { "</style>" };
+            let close_tag = match state.in_script {
+                true => "</script>",
+                false => "</style>",
+            };
             match rest.find(close_tag) {
                 Some(end) => {
                     rest = &rest[end + close_tag.len()..];
                     state.in_script = false;
                     state.in_style = false;
+                    continue;
                 }
                 None => break,
             }
-        } else {
-            let open_script = rest.find("<script");
-            let open_style = rest.find("<style");
-            match (open_script, open_style) {
-                (Some(s), Some(t)) if s <= t => {
-                    visible.push_str(&rest[..s]);
-                    state.in_script = true;
-                    rest = &rest[s + "<script".len()..];
+        }
+        let open_script = rest.find("<script");
+        let open_style = rest.find("<style");
+        match (open_script, open_style) {
+            (Some(s), Some(t)) => {
+                match s <= t {
+                    true => {
+                        visible.push_str(&rest[..s]);
+                        state.in_script = true;
+                        rest = &rest[s + "<script".len()..];
+                    }
+                    false => {
+                        visible.push_str(&rest[..t]);
+                        state.in_style = true;
+                        rest = &rest[t + "<style".len()..];
+                    }
                 }
-                (Some(_), Some(t)) => {
-                    visible.push_str(&rest[..t]);
-                    state.in_style = true;
-                    rest = &rest[t + "<style".len()..];
-                }
-                (Some(s), None) => {
-                    visible.push_str(&rest[..s]);
-                    state.in_script = true;
-                    rest = &rest[s + "<script".len()..];
-                }
-                (None, Some(t)) => {
-                    visible.push_str(&rest[..t]);
-                    state.in_style = true;
-                    rest = &rest[t + "<style".len()..];
-                }
-                (None, None) => {
-                    visible.push_str(rest);
-                    break;
-                }
+            }
+            (Some(s), None) => {
+                visible.push_str(&rest[..s]);
+                state.in_script = true;
+                rest = &rest[s + "<script".len()..];
+            }
+            (None, Some(t)) => {
+                visible.push_str(&rest[..t]);
+                state.in_style = true;
+                rest = &rest[t + "<style".len()..];
+            }
+            (None, None) => {
+                visible.push_str(rest);
+                break;
             }
         }
     }
@@ -575,43 +604,50 @@ fn html_title(line: &str, state: &mut HtmlTitleState) -> Option<String> {
     let mut s = line;
     let mut found = None;
     loop {
-        if state.open {
-            match s.find("</title>") {
-                Some(end) => {
-                    state.acc.push_str(&s[..end]);
-                    let text = state.acc.trim();
-                    if !text.is_empty() {
-                        found = Some(text.to_string());
+        match state.open {
+            true => {
+                match s.find("</title>") {
+                    Some(end) => {
+                        state.acc.push_str(&s[..end]);
+                        let text = state.acc.trim();
+                        if !text.is_empty() {
+                            found = Some(text.to_string());
+                        }
+                        state.open = false;
+                        state.acc.clear();
+                        s = &s[end + 8..];
+                        continue;
                     }
-                    state.open = false;
-                    state.acc.clear();
-                    s = &s[end + 8..];
-                }
-                None => {
-                    state.acc.push_str(s);
-                    state.acc.push('\n');
-                    break;
+                    None => {
+                        state.acc.push_str(s);
+                        state.acc.push('\n');
+                        break;
+                    }
                 }
             }
-        } else if let Some(start) = s.find("<title>") {
-            let after = &s[start + 7..];
-            match after.find("</title>") {
-                Some(end) => {
-                    let text = after[..end].trim();
-                    if !text.is_empty() {
-                        found = Some(text.to_string());
+            false => {
+                match s.find("<title>") {
+                    Some(start) => {
+                        let after = &s[start + 7..];
+                        match after.find("</title>") {
+                            Some(end) => {
+                                let text = after[..end].trim();
+                                if !text.is_empty() {
+                                    found = Some(text.to_string());
+                                }
+                                s = &after[end + 8..];
+                            }
+                            None => {
+                                state.open = true;
+                                state.acc.push_str(after);
+                                state.acc.push('\n');
+                                break;
+                            }
+                        }
                     }
-                    s = &after[end + 8..];
-                }
-                None => {
-                    state.open = true;
-                    state.acc.push_str(after);
-                    state.acc.push('\n');
-                    break;
+                    None => break,
                 }
             }
-        } else {
-            break;
         }
     }
     found
@@ -621,27 +657,34 @@ fn html_title(line: &str, state: &mut HtmlTitleState) -> Option<String> {
 fn html_heading(line: &str) -> Option<String> {
     for n in 1..=6u8 {
         let open = format!("<h{n}");
-        if let Some(pos) = line.find(&open) {
-            let after_open = &line[pos + open.len()..];
-            let first = after_open.as_bytes().first().copied();
-            if !matches!(
-                first,
-                Some(b'>') | Some(b'/') | Some(b' ') | Some(b'\t')
-            ) {
-                continue;
-            }
-            let close_open = match after_open.find('>') {
-                Some(g) => g,
-                None => continue,
-            };
-            let content = &after_open[close_open + 1..];
-            let close = format!("</h{n}>");
-            if let Some(end) = content.find(&close) {
-                let text = content[..end].trim();
-                if !text.is_empty() {
-                    return Some(text.to_string());
+        match line.find(&open) {
+            Some(pos) => {
+                let after_open = &line[pos + open.len()..];
+                let first = after_open.as_bytes().first().copied();
+                if !matches!(
+                    first,
+                    Some(b'>') | Some(b'/') | Some(b' ') | Some(b'\t')
+                ) {
+                    continue;
+                }
+                let close_open = match after_open.find('>') {
+                    Some(g) => g,
+                    None => continue,
+                };
+                let content = &after_open[close_open + 1..];
+                let close = format!("</h{n}>");
+                match content.find(&close) {
+                    Some(end) => {
+                        let text = content[..end].trim();
+                        if text.is_empty() {
+                            continue;
+                        }
+                        return Some(text.to_string());
+                    }
+                    None => continue,
                 }
             }
+            None => continue,
         }
     }
     None
@@ -655,14 +698,15 @@ fn html_anchors(line: &str) -> Vec<String> {
         let mut rest = line;
         while let Some(pos) = rest.find(&pat) {
             let after = &rest[pos + pat.len()..];
-            if let Some(end) = after.find('"') {
-                let value = after[..end].trim();
-                if !value.is_empty() {
-                    out.push(value.to_string());
+            match after.find('"') {
+                Some(end) => {
+                    let value = after[..end].trim();
+                    if !value.is_empty() {
+                        out.push(value.to_string());
+                    }
+                    rest = &after[end + 1..];
                 }
-                rest = &after[end + 1..];
-            } else {
-                break;
+                None => break,
             }
         }
     }
@@ -703,15 +747,24 @@ fn xml_events(line: &str, state: &mut XmlState) -> Vec<XmlEvent> {
         let tag_part = &after[..gt];
         rest = &after[gt + 1..];
 
-        if is_xsd_element(name) {
-            if let Some(value) = xml_attribute(tag_part, "name") {
-                out.push(XmlEvent::Schema(value));
+        match (is_xsd_element(name), state.root_seen) {
+            (true, _) => {
+                if let Some(value) = xml_attribute(tag_part, "name") {
+                    out.push(XmlEvent::Schema(value));
+                }
+                continue;
             }
-        } else if !state.root_seen {
-            state.root_seen = true;
-            out.push(XmlEvent::Root(name.to_string()));
-        } else if let Some(value) = xml_id_name_key(tag_part) {
-            out.push(XmlEvent::Element(value));
+            (false, false) => {
+                state.root_seen = true;
+                out.push(XmlEvent::Root(name.to_string()));
+                continue;
+            }
+            (false, true) => {
+                if let Some(value) = xml_id_name_key(tag_part) {
+                    out.push(XmlEvent::Element(value));
+                }
+                continue;
+            }
         }
     }
     out
@@ -734,10 +787,9 @@ fn xml_attribute(tag: &str, attr: &str) -> Option<String> {
     let end = after.find('"')?;
     let value = after[..end].trim();
     if value.is_empty() {
-        None
-    } else {
-        Some(value.to_string())
+        return None;
     }
+    Some(value.to_string())
 }
 
 /// First of `id`, `name`, `key` attribute values on an XML element tag.
@@ -783,6 +835,8 @@ fn latex_commands(line: &str) -> Vec<LatexCommand> {
 }
 
 /// Extracts the balanced brace content of `{...}` at the start of `rest`.
+// match avoids nested-if anti-slop rule
+#[allow(clippy::single_match)]
 fn take_brace_content(rest: &str) -> Option<String> {
     let rest = rest.trim_start();
     let bytes = rest.as_bytes();
@@ -795,8 +849,9 @@ fn take_brace_content(rest: &str) -> Option<String> {
             b'{' => depth += 1,
             b'}' => {
                 depth -= 1;
-                if depth == 0 {
-                    return Some(rest[1..i].to_string());
+                match depth == 0 {
+                    true => return Some(rest[1..i].to_string()),
+                    false => {}
                 }
             }
             _ => {}

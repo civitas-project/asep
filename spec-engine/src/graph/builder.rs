@@ -62,9 +62,7 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
 
         match req.priority {
             Priority::Must => {
-                if is_complete {
-                    must_satisfied += 1;
-                } else {
+                if !is_complete {
                     must_broken.push(BrokenTrace {
                         id: req.id.clone(),
                         file_path: req.file_path.clone(),
@@ -73,7 +71,9 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
                         missing_impl: !req.has_impl,
                         missing_test: !req.has_test,
                     });
+                    continue;
                 }
+                must_satisfied += 1;
             }
             Priority::Should => {
                 if !is_complete {

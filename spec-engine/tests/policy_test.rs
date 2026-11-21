@@ -54,7 +54,13 @@ fn tier_t0_does_not_require_semantic_evidence() {
 fn test_policy_loads_antislop_rules_for_four_domains() {
     let policy = load_policy();
     let rules = policy.antislop_rules();
-    assert_eq!(rules.len(), 12);
+    assert_eq!(rules.len(), 13);
+
+    let else_rule = rules
+        .iter()
+        .find(|r| r.id == "AS-CODE-ELSE")
+        .expect("AS-CODE-ELSE present in policy");
+    assert_eq!(else_rule.severity, Severity::Error);
 
     let mut domains: Vec<&str> = rules.iter().map(|r| r.domain.as_str()).collect();
     domains.sort_unstable();
@@ -77,8 +83,8 @@ fn test_policy_loads_antislop_rules_for_four_domains() {
         .iter()
         .find(|r| r.id == "AS-CODE-NESTING")
         .expect("AS-CODE-NESTING present in policy");
-    assert_eq!(nesting.severity, Severity::Warning);
-    assert_eq!(nesting.max_nesting, Some(3));
+    assert_eq!(nesting.severity, Severity::Error);
+    assert_eq!(nesting.max_nesting, Some(0));
 
     let hype = rules
         .iter()

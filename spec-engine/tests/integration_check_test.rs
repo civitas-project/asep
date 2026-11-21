@@ -392,3 +392,39 @@ fn test_broken_coverage_is_fail() {
     cmd.arg("check").arg(root);
     cmd.assert().failure().code(1);
 }
+
+// @test:FR-ANTISLOP-05 @test:FR-ANTISLOP-06
+#[test]
+fn check_fails_on_guard_clause_violations() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project so the exit code reflects anti-slop only.
+    write_t2_closed_project(root, "FR-GUARD-GATE");
+    // Violation of AS-CODE-ELSE (`else` branch) and AS-CODE-NESTING (nested `if`).
+    fs::write(
+        root.join("guard.rs"),
+        "fn f(a: bool, b: bool) { if a { return; } else { } if b { if true { } } }\n",
+    )
+    .expect("write guard.rs");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("Else branch forbidden"))
+        .stdout(predicate::str::contains("Excessive if nesting depth"));
+
+    // Guard-clause style: sequential top-level `if`s + early returns,
+    // no `else`, no nested `if`.
+    fs::write(
+        root.join("guard.rs"),
+        "fn f(a: bool, b: bool) { if a { return; } if b { return; } }\n",
+    )
+    .expect("rewrite guard.rs");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert().success().code(0);
+}
