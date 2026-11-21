@@ -4,6 +4,7 @@
 pub mod asymptotic;
 pub mod alloc_tracker;
 pub mod process;
+pub mod e2e;
 
 pub use asymptotic::AsymptoticAnalyzer;
 pub use alloc_tracker::{ScopedAllocationReport, TrackingAllocator};
