@@ -1,5 +1,5 @@
 // Clap derives generate `from_arg_matches`, which builds every enum variant on the stack in debug builds.
-#![allow(clippy::large_stack_frames)]
+#![allow(clippy::large_unopt_stack_frames)]
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -565,5 +565,14 @@ pub enum HarnessCommands {
         /// Run root (default: /tmp/opencode/asep-e2e, env RUN_ROOT overrides)
         #[arg(long)]
         root: Option<PathBuf>,
+    },
+    /// Vendor loom = "=0.7.3" into an E2E run directory and prove it works offline
+    VendorLoom {
+        /// E2E run directory
+        run_dir: PathBuf,
+
+        /// Accepted for compatibility; cargo is always invoked `--offline`
+        #[arg(long)]
+        offline: bool,
     },
 }

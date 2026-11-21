@@ -1,5 +1,6 @@
-use asep::harness::e2e::{new_run, seed_from_run_id};
+use asep::harness::e2e::{new_run, prepare_vendor_dir, repo_root, seed_from_run_id};
 use serde_json::Value;
+use std::fs;
 use std::path::Path;
 
 fn parse_manifest(path: &Path) -> Value {
@@ -77,4 +78,32 @@ fn test_seed_written_to_manifest() {
     )
     .expect("manifest.json should be valid JSON");
     assert_eq!(manifest.get("seed").and_then(Value::as_u64), Some(883735528));
+}
+
+#[test]
+fn test_prepare_vendor_dir_creates_config_and_vendor() {
+    let run_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let repo_root = repo_root();
+    prepare_vendor_dir(run_dir.path(), &repo_root).expect("prepare_vendor_dir should succeed");
+
+    assert!(
+        run_dir.path().join("vendor").join("loom").is_dir(),
+        "vendored loom source should exist under run_dir/vendor/"
+    );
+
+    let config_path = run_dir.path().join(".cargo").join("config.toml");
+    let config_text = fs::read_to_string(&config_path).expect("config.toml should exist");
+    assert!(
+        config_text.contains("vendored-sources"),
+        "config.toml should name the vendored source"
+    );
+}
+
+#[test]
+fn test_prepare_vendor_dir_refuses_existing() {
+    let run_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let repo_root = repo_root();
+    prepare_vendor_dir(run_dir.path(), &repo_root).expect("first call should succeed");
+    let err = prepare_vendor_dir(run_dir.path(), &repo_root).unwrap_err();
+    assert!(!err.is_empty(), "second call should refuse to overwrite");
 }

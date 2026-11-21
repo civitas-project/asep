@@ -1736,7 +1736,19 @@ pub fn run() -> ExitCode {
                         ExitCode::from(1)
                     }
                 }
-            },
+            }
+            HarnessCommands::VendorLoom { run_dir, offline: _ } => {
+                match crate::harness::e2e::vendor_loom(&run_dir, &crate::harness::e2e::repo_root()) {
+                    Ok(()) => {
+                        println!("VENDOR_OK");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
         },
 
         None => {

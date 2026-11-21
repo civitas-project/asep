@@ -3,9 +3,11 @@
 
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Default run root; overridden by the `RUN_ROOT` environment variable.
 pub const DEFAULT_RUN_ROOT: &str = "/tmp/opencode/asep-e2e";
@@ -14,7 +16,7 @@ const ASEP_BINARY_REL: &str = "target/debug/asep";
 const SECS_PER_DAY: u64 = 86_400;
 
 /// Repo root: parent of this crate's manifest dir at compile time.
-fn repo_root() -> PathBuf {
+pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("CARGO_MANIFEST_DIR has a parent directory")
@@ -126,4 +128,177 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
     let y = if m <= 2 { y + 1 } else { y };
     (y, m as u32, d as u32)
+}
+
+/// Copy `src` recursively into `dst` using only the standard library.
+fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
+    fs::create_dir_all(dst)
+        .map_err(|e| format!("failed to create directory '{}': {e}", dst.display()))?;
+    for entry in fs::read_dir(src)
+        .map_err(|e| format!("failed to read directory '{}': {e}", src.display()))?
+    {
+        let entry = entry.map_err(|e| format!("failed to read directory entry: {e}"))?;
+        let file_type = entry.file_type().map_err(|e| format!("failed to get file type: {e}"))?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path).map_err(|e| {
+                format!(
+                    "failed to copy '{}' to '{}': {e}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Proof crate manifest: sole dependency is vendored `loom = "=0.7.3"`.
+const LOOM_PROOF_CARGO_TOML: &str = r#"[package]
+name = "loom-proof"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+loom = { version = "=0.7.3", path = "../vendor/loom" }
+
+[features]
+loom-test = []
+"#;
+
+/// Proof crate source: exercises `loom::model` with two threads and an
+/// `AtomicUsize` under feature `loom-test`.
+const LOOM_PROOF_LIB_RS: &str = r#"//! Proof that vendored loom builds and runs with feature `loom-test` offline.
+
+#[cfg(feature = "loom-test")]
+use loom::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(feature = "loom-test")]
+use std::sync::Arc;
+
+#[cfg(feature = "loom-test")]
+#[test]
+fn vendored_loom_explores_schedules() {
+    loom::model(|| {
+        let flag = Arc::new(AtomicUsize::new(0));
+        let t = loom::thread::spawn({
+            let flag = Arc::clone(&flag);
+            move || {
+                flag.store(1, Ordering::Release);
+            }
+        });
+        let _ = t.join();
+        assert_eq!(flag.load(Ordering::Acquire), 1);
+    });
+}
+"#;
+
+/// Vendor `loom = "=0.7.3"` into `<run_dir>/vendor/` and write the cargo
+/// source replacement at `<run_dir>/.cargo/config.toml`.
+///
+/// Refuses to overwrite if `<run_dir>/vendor/` or
+/// `<run_dir>/.cargo/config.toml` already exists.
+pub fn prepare_vendor_dir(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
+    let vendor_dir = run_dir.join("vendor");
+    let config_dir = run_dir.join(".cargo");
+    let config_toml = config_dir.join("config.toml");
+
+    if vendor_dir.exists() || config_toml.exists() {
+        return Err(format!(
+            "refusing to overwrite existing '{}' or '{}'",
+            vendor_dir.display(),
+            config_toml.display()
+        ));
+    }
+
+    let source = repo_root.join("harness").join("e2e").join("vendor-loom");
+    copy_dir_all(&source, &vendor_dir)?;
+
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("failed to create directory '{}': {e}", config_dir.display()))?;
+
+    // The source replacement's `directory = "vendor"` is relative to this
+    // config file, i.e. `<run_dir>/.cargo/vendor`, so alias it at the
+    // vendored tree copied into `<run_dir>/vendor/`.
+    let vendor_link = config_dir.join("vendor");
+    if !vendor_link.exists() {
+        std::os::unix::fs::symlink("../vendor", &vendor_link)
+            .map_err(|e| format!("failed to symlink vendor directory: {e}"))?;
+    }
+
+    fs::write(
+        &config_toml,
+        "[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.vendored-sources]\ndirectory = \"vendor\"\n",
+    )
+    .map_err(|e| format!("failed to write '{}': {e}", config_toml.display()))?;
+
+    Ok(())
+}
+
+/// End-to-end proof that vendored `loom = "=0.7.3"` builds and passes its
+/// test suite fully offline. Removes the temporary proof crate on success;
+/// on failure returns `Err` carrying cargo's stderr.
+pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
+    prepare_vendor_dir(run_dir, repo_root)?;
+
+    let proof_dir = run_dir.join(".loom-proof");
+    let src_dir = proof_dir.join("src");
+    fs::create_dir_all(&src_dir)
+        .map_err(|e| format!("failed to create directory '{}': {e}", src_dir.display()))?;
+
+    fs::write(proof_dir.join("Cargo.toml"), LOOM_PROOF_CARGO_TOML)
+        .map_err(|e| format!("failed to write proof Cargo.toml: {e}"))?;
+    fs::write(src_dir.join("lib.rs"), LOOM_PROOF_LIB_RS)
+        .map_err(|e| format!("failed to write proof lib.rs: {e}"))?;
+
+    let mut child = Command::new("cargo")
+        .args(["test", "--features", "loom-test", "--offline"])
+        .env("LOOM_MAX_BRANCHES", "4096")
+        .current_dir(&proof_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn 'cargo test': {e}"))?;
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stderr = child
+                    .stderr
+                    .take()
+                    .map(|mut pipe| {
+                        let mut buffer = String::new();
+                        pipe.read_to_string(&mut buffer).ok();
+                        buffer
+                    })
+                    .unwrap_or_default();
+                if status.success() {
+                    fs::remove_dir_all(&proof_dir)
+                        .map_err(|e| format!("failed to remove proof directory: {e}"))?;
+                    return Ok(());
+                }
+                return Err(format!(
+                    "'cargo test --features loom-test --offline' failed (exit {}): {stderr}",
+                    status
+                        .code()
+                        .map_or_else(|| "-".to_string(), |code| code.to_string())
+                ));
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(
+                        "'cargo test --features loom-test --offline' timed out after 60 seconds"
+                            .to_string(),
+                    );
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(format!("failed to wait for 'cargo test': {e}")),
+        }
+    }
 }
