@@ -79,36 +79,44 @@ impl TreeSitterParser {
         }
 
         if matches!(kind, SymbolKind::Other(_)) {
-            if let Some(ref pattern_kind_map) = self.config.pattern_kind_map {
-                if pattern_index < pattern_kind_map.len() {
-                    kind = pattern_kind_map[pattern_index].clone();
-                }
-            }
+            kind = self
+                .config
+                .pattern_kind_map
+                .as_ref()
+                .and_then(|map| map.get(pattern_index))
+                .cloned()
+                .unwrap_or(kind);
         }
 
         for (capture_node, capture_name) in captures {
             let capture_name_str = *capture_name;
             if capture_name_str == self.config.name_capture {
                 name = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-            } else if self.config.signature_capture == Some(capture_name_str) {
+                continue;
+            }
+            if self.config.signature_capture == Some(capture_name_str) {
                 signature = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-            } else if self.config.return_type_capture == Some(capture_name_str) {
+                continue;
+            }
+            if self.config.return_type_capture == Some(capture_name_str) {
                 return_type = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
-            } else if self.config.doc_capture == Some(capture_name_str) {
+                continue;
+            }
+            if self.config.doc_capture == Some(capture_name_str) {
                 doc = Some(capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string());
-            } else if self.config.visibility_capture == Some(capture_name_str) {
+                continue;
+            }
+            if self.config.visibility_capture == Some(capture_name_str) {
                 visibility_node = Some(*capture_node);
-            } else if self.config.attrs_capture == Some(capture_name_str) {
+                continue;
+            }
+            if self.config.attrs_capture == Some(capture_name_str) {
                 attrs.push(capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string());
             }
         }
 
-        if !return_type.is_empty() && !signature.is_empty() {
-            let clean_return_type = return_type.trim_start_matches(':').trim();
-            signature = format!("{} -> {}", signature, clean_return_type);
-        } else if !return_type.is_empty() {
-            let clean_return_type = return_type.trim_start_matches(':').trim();
-            signature = format!(" -> {}", clean_return_type);
+        if !return_type.is_empty() {
+            signature = append_return_type(&signature, &return_type);
         }
 
         if matches!(kind, SymbolKind::Fn) && !name.is_empty() && !signature.starts_with(&name) {
@@ -116,19 +124,11 @@ impl TreeSitterParser {
         }
 
         if matches!(kind, SymbolKind::Class) && !name.is_empty() {
-            if signature.is_empty() {
-                signature = format!("class {}", name);
-            } else if !signature.starts_with("class ") {
-                signature = format!("class {} {}", name, signature);
-            }
+            signature = prefixed_signature("class", &name, signature);
         }
 
         if matches!(kind, SymbolKind::Interface) && !name.is_empty() {
-            if signature.is_empty() {
-                signature = format!("interface {}", name);
-            } else if !signature.starts_with("interface ") {
-                signature = format!("interface {} {}", name, signature);
-            }
+            signature = prefixed_signature("interface", &name, signature);
         }
 
         if name.is_empty() {
@@ -138,38 +138,24 @@ impl TreeSitterParser {
         let line = (position_node.start_position().row as u32 + 1) as usize;
         let end_line = (position_node.end_position().row as u32 + 1) as usize;
 
-        let visibility = if let Some(vis_node) = visibility_node {
+        let visibility = (|| {
+            match (visibility_node.is_some(), name.is_empty()) {
+                (false, true) => return self.parse_visibility(position_node, source),
+                (false, false) => return visibility_by_convention(self.config.language_id, &name),
+                (true, _) => {}
+            }
+            let vis_node = visibility_node.unwrap();
             let vis = self.parse_visibility(vis_node, source);
-            if !name.is_empty() && vis_node.utf8_text(source.as_bytes()).unwrap_or("").trim().is_empty() {
-                if self.config.language_id == "go" {
-                    if name.chars().next().is_some_and(|c| c.is_uppercase()) {
-                        Visibility::Pub
-                    } else {
-                        Visibility::Private
-                    }
-                } else if name.starts_with('_') {
-                    Visibility::Private
-                } else {
-                    Visibility::Pub
-                }
-            } else {
-                vis
+            let vis_text_empty = vis_node
+                .utf8_text(source.as_bytes())
+                .unwrap_or("")
+                .trim()
+                .is_empty();
+            if !name.is_empty() && vis_text_empty {
+                return visibility_by_convention(self.config.language_id, &name);
             }
-        } else if !name.is_empty() {
-            if self.config.language_id == "go" {
-                if name.chars().next().is_some_and(|c| c.is_uppercase()) {
-                    Visibility::Pub
-                } else {
-                    Visibility::Private
-                }
-            } else if name.starts_with('_') {
-                Visibility::Private
-            } else {
-                Visibility::Pub
-            }
-        } else {
-            self.parse_visibility(position_node, source)
-        };
+            vis
+        })();
 
         let qualified_name = self.qualified_name(&name);
         let tags = self.extract_tags(&doc);
@@ -220,19 +206,11 @@ impl TreeSitterParser {
             "protected" | "private" => Visibility::Private,
             _ => {
                 // If node text is empty or unknown, check if name starts with `_` for Python/Dart private convention.
-                if let Some(name) = self.extract_node_name(node, source) {
-                    if name.starts_with('_') {
-                        Visibility::Private
-                    } else {
-                        Visibility::Pub
-                    }
-                } else if text.starts_with('_') {
-                    Visibility::Private
-                } else if !text.is_empty() {
-                    Visibility::Pub
-                } else {
-                    Visibility::Private
-                }
+                let is_private = match self.extract_node_name(node, source) {
+                    Some(name) => name.starts_with('_'),
+                    None => text.starts_with('_') || text.is_empty(),
+                };
+                private_or_pub(is_private)
             }
         }
     }
@@ -241,10 +219,11 @@ impl TreeSitterParser {
         if let Some(name_node) = node.child_by_field_name("name") {
             return name_node.utf8_text(source.as_bytes()).ok();
         }
-        if let Some(parent) = node.parent() {
-            if let Some(name_node) = parent.child_by_field_name("name") {
-                return name_node.utf8_text(source.as_bytes()).ok();
-            }
+        if let Some(name_node) = node
+            .parent()
+            .and_then(|parent| parent.child_by_field_name("name"))
+        {
+            return name_node.utf8_text(source.as_bytes()).ok();
         }
         let kind = node.kind();
         if kind == "identifier" || kind == "type_identifier" || kind == "field_identifier" {
@@ -262,12 +241,14 @@ impl TreeSitterParser {
 
     fn extract_tags(&self, doc: &Option<String>) -> Vec<String> {
         let mut tags = Vec::new();
-        if let Some(doc) = doc {
-            for line in doc.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
-                    tags.push(trimmed.to_string());
-                }
+        let doc = match doc {
+            Some(d) => d,
+            None => return tags,
+        };
+        for line in doc.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
+                tags.push(trimmed.to_string());
             }
         }
         tags
@@ -280,28 +261,66 @@ impl TreeSitterParser {
 
         let mut parts = Vec::new();
         if let Some(parent) = path.parent() {
-            for comp in parent.components() {
-                if let std::path::Component::Normal(c) = comp {
-                    if let Some(s) = c.to_str() {
-                        if !s.is_empty() {
-                            parts.push(s);
-                        }
-                    }
-                }
+            for s in parent.components().filter_map(|comp| match comp {
+                std::path::Component::Normal(c) => c.to_str().filter(|s| !s.is_empty()),
+                _ => None,
+            }) {
+                parts.push(s);
             }
         }
-        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-            if !stem.is_empty() {
-                parts.push(stem);
-            }
+        if let Some(stem) = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.is_empty())
+        {
+            parts.push(stem);
         }
 
         if parts.is_empty() {
-            name.to_string()
-        } else {
-            format!("{}::{}", parts.join("::"), name)
+            return name.to_string();
         }
+        format!("{}::{}", parts.join("::"), name)
     }
+}
+
+fn append_return_type(signature: &str, return_type: &str) -> String {
+    let clean_return_type = return_type.trim_start_matches(':').trim();
+    if signature.is_empty() {
+        return format!(" -> {}", clean_return_type);
+    }
+    format!("{} -> {}", signature, clean_return_type)
+}
+
+fn prefixed_signature(prefix: &str, name: &str, signature: String) -> String {
+    if signature.is_empty() {
+        return format!("{prefix} {name}");
+    }
+    let marked = format!("{prefix} ");
+    if signature.starts_with(&marked) {
+        return signature;
+    }
+    format!("{prefix} {name} {signature}")
+}
+
+fn visibility_by_convention(language_id: &str, name: &str) -> Visibility {
+    if language_id == "go" {
+        let is_uppercase = name.chars().next().is_some_and(|c| c.is_uppercase());
+        return match is_uppercase {
+            true => Visibility::Pub,
+            false => Visibility::Private,
+        };
+    }
+    if name.starts_with('_') {
+        return Visibility::Private;
+    }
+    Visibility::Pub
+}
+
+fn private_or_pub(is_private: bool) -> Visibility {
+    if is_private {
+        return Visibility::Private;
+    }
+    Visibility::Pub
 }
 
 impl SourceParser for TreeSitterParser {

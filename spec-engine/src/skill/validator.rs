@@ -72,7 +72,8 @@ pub fn validate_skill_content(content: &str) -> Vec<ValidationError> {
             message: "missing or empty 'description' field".to_string(),
             level: ValidationLevel::Error,
         });
-    } else if description.trim().len() < 20 {
+    }
+    if !description.trim().is_empty() && description.trim().len() < 20 {
         errors.push(ValidationError {
             code: "V005".to_string(),
             message: format!(
@@ -84,20 +85,22 @@ pub fn validate_skill_content(content: &str) -> Vec<ValidationError> {
     }
 
     // 4. version valid semver
-    if let Some(v) = &version {
-        if !is_semver(v) {
+    match &version {
+        None => {
+            errors.push(ValidationError {
+                code: "V007".to_string(),
+                message: "missing 'version' field (recommended)".to_string(),
+                level: ValidationLevel::Warning,
+            });
+        }
+        Some(v) if !is_semver(v) => {
             errors.push(ValidationError {
                 code: "V006".to_string(),
                 message: format!("invalid version format '{}', expected X.Y.Z", v),
                 level: ValidationLevel::Error,
             });
         }
-    } else {
-        errors.push(ValidationError {
-            code: "V007".to_string(),
-            message: "missing 'version' field (recommended)".to_string(),
-            level: ValidationLevel::Warning,
-        });
+        Some(_) => {}
     }
 
     // 5. depends references must exist in embedded skills

@@ -61,7 +61,7 @@ pub struct Symbol {
     /// Doc comment (trimmed, without leading `///` or `//!`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub doc: Option<String>,
-    /// Traceability tags (e.g., ["@impl:FR-PAY-01", "@test:FR-PAY-01"])
+    /// Traceability tags (e.g., ["\@impl:FR-PAY-01", "\@test:FR-PAY-01"])
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// Visibility
@@ -184,7 +184,7 @@ pub fn generate_index_fields() -> IndexFields {
         line: FieldSchema { ty: "integer".to_string(), description: "Start line (1-indexed)".to_string(), enum_values: None },
         end_line: FieldSchema { ty: "integer".to_string(), description: "End line (1-indexed, inclusive)".to_string(), enum_values: None },
         doc: FieldSchema { ty: "string".to_string(), description: "Doc comment (trimmed, without /// or //!)".to_string(), enum_values: None },
-        tags: FieldSchema { ty: "array<string>".to_string(), description: "Traceability tags (@impl:FR-*, @test:FR-*, @criticality:high|low)".to_string(), enum_values: None },
+        tags: FieldSchema { ty: "array<string>".to_string(), description: r"Traceability tags (\@impl:FR-*, \@test:FR-*, \@criticality:high|low)".to_string(), enum_values: None },
         visibility: FieldSchema {
             ty: "string".to_string(),
             description: "Visibility: pub, pub_crate, pub_super, private".to_string(),

@@ -1,25 +1,27 @@
 //! Tool definitions and execution dispatch for MCP.
 
 use crate::adr::create_new_adr;
+use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
 use crate::scanner::scan_project_tags;
+use serde_json::json;
 use srcdump::config::{Config as DumpConfig, OutputFormat, OutputMode};
 use srcdump::formatter::Formatter;
 use srcdump::walker::walk_files;
 use srcidx::parser::ParserRegistry;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-MCP-PROTO-02
-// @impl:FR-MCP-PROTO-03
+// @impl:FR-MCP-PROTO-02-B @impl:FR-MCP-02
+// @impl:FR-MCP-PROTO-03-A
 
 pub fn get_tools_list() -> serde_json::Value {
     serde_json::json!({
         "tools": [
             {
                 "name": "asep_check",
-                "description": "Deterministic SDLC validator: scans workspace for 1:1 traceability tags (@req <-> @impl <-> @test) and audits docstring contracts.",
+                "description": "Validates @req/@impl/@test tags; audits docstring contracts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -31,9 +33,9 @@ pub fn get_tools_list() -> serde_json::Value {
                             "type": "boolean",
                             "description": "Treat pending SHOULD requirements as errors"
                         },
-                        "mode": {
+                        "rigor": {
                             "type": "string",
-                            "description": "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+                            "description": "Rigor tier: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
                         },
                         "deny_drafts": {
                             "type": "boolean",
@@ -44,7 +46,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "spec_check",
-                "description": "Deterministic SDLC validator (legacy alias for asep_check): scans workspace for 1:1 traceability tags (@req <-> @impl <-> @test) and audits docstring contracts.",
+                "description": "Legacy alias for asep_check; validates traceability tags.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -56,9 +58,9 @@ pub fn get_tools_list() -> serde_json::Value {
                             "type": "boolean",
                             "description": "Treat pending SHOULD requirements as errors"
                         },
-                        "mode": {
+                        "rigor": {
                             "type": "string",
-                            "description": "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+                            "description": "Rigor tier: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
                         },
                         "deny_drafts": {
                             "type": "boolean",
@@ -69,7 +71,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "adr_new",
-                "description": "Scaffolds a newly numbered Rich Architecture Decision Record (ADR).",
+                "description": "Creates a numbered Architecture Decision Record (ADR).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -100,7 +102,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "srcidx",
-                "description": "Semantic source indexer: extracts symbols (functions, structs, traits, etc.) from source files and emits NDJSON with self-describing header. Supports Rust, TypeScript, Python, Dart, Go, PHP, Java, Typst.",
+                "description": "Source symbol indexer emitting NDJSON (Rust, TS, Go, etc.).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -148,7 +150,7 @@ pub fn get_tools_list() -> serde_json::Value {
             },
             {
                 "name": "srcdump",
-                "description": "Source code dumper for LLM consumption: streams source files as token-efficient NDJSON with configurable formatting modes.",
+                "description": "Dumps source as token-efficient NDJSON for LLM consumption.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -213,6 +215,106 @@ pub fn get_tools_list() -> serde_json::Value {
                         }
                     }
                 }
+            },
+            {
+                "name": "asep_agent_send",
+                "description": "Sends an agent message envelope; returns id and path only.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_dir": {
+                            "type": "string",
+                            "description": "Run directory (required; ASEP_RUN_DIR env fallback)"
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": "Caller role: lead, executor, judge, explorer"
+                        },
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient role: lead, executor, judge, explorer"
+                        },
+                        "kind": {
+                            "type": "string",
+                            "description": "Message kind: TASK_DISPATCH, RULING, TASK_REPORT, VERDICT, MAP_REPORT, CUSTOM"
+                        },
+                        "body": {
+                            "type": "object",
+                            "description": "Message body payload (kept in a sidecar file, not in the response)"
+                        },
+                        "ref": {
+                            "type": "string",
+                            "description": "Optional ref to a file under the run dir"
+                        },
+                        "reply_to": {
+                            "type": "string",
+                            "description": "Optional id of the message this is a reply to"
+                        }
+                    },
+                    "required": ["run_dir", "agent", "to", "kind", "body"]
+                }
+            },
+            {
+                "name": "asep_agent_recv",
+                "description": "Lists message ids/paths for a role; only 'sent' messages.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_dir": {
+                            "type": "string",
+                            "description": "Run directory (required; ASEP_RUN_DIR env fallback)"
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": "Recipient role: lead, executor, judge, explorer"
+                        }
+                    },
+                    "required": ["run_dir", "agent"]
+                }
+            },
+            {
+                "name": "asep_agent_read",
+                "description": "Return the body payload of a message by id.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_dir": {
+                            "type": "string",
+                            "description": "Run directory (required; ASEP_RUN_DIR env fallback)"
+                        },
+                        "id": {
+                            "type": "string",
+                            "description": "Message id"
+                        }
+                    },
+                    "required": ["run_dir", "id"]
+                }
+            },
+            {
+                "name": "asep_agent_ack",
+                "description": "Acks a message by id with status accepted/rejected/done.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "run_dir": {
+                            "type": "string",
+                            "description": "Run directory (required; ASEP_RUN_DIR env fallback)"
+                        },
+                        "agent": {
+                            "type": "string",
+                            "description": "Caller role: lead, executor, judge, explorer"
+                        },
+                        "id": {
+                            "type": "string",
+                            "description": "Message id"
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "Ack status: accepted, rejected, done"
+                        }
+                    },
+                    "required": ["run_dir", "agent", "id", "status"]
+                }
             }
         ]
     })
@@ -236,17 +338,17 @@ pub fn execute_tool(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let mode = arguments
-                .get("mode")
+            let rigor = arguments
+                .get("rigor")
                 .and_then(|v| v.as_str())
-                .unwrap_or("axiomatic");
+                .unwrap_or("T1");
 
             let deny_drafts = arguments
                 .get("deny_drafts")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let is_velocity = mode.eq_ignore_ascii_case("velocity");
+            let is_relaxed = rigor == "T0";
 
             let tags = scan_project_tags(&target)
                 .map_err(|e| format!("Failed to scan project tags: {e}"))?;
@@ -256,16 +358,23 @@ pub fn execute_tool(
                 .map_err(|e| format!("Failed to audit docstrings: {e}"))?;
 
             let has_must_failure = !report.is_closed;
-            let has_doc_contract_failure = !is_velocity && !violations.is_empty();
+            let has_doc_contract_failure = !is_relaxed && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
             let passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
 
             let mut summary = String::new();
+            let mut gate = "FAILED";
+            if passed {
+                gate = "PASSED";
+            }
+            let mut rigor_label = "T1+";
+            if is_relaxed {
+                rigor_label = "T0";
+            }
             summary.push_str(&format!(
-                "Traceability Gate: {} (mode: {})\n",
-                if passed { "PASSED" } else { "FAILED" },
-                if is_velocity { "velocity" } else { "axiomatic" }
+                "Traceability Gate: {} (rigor: {})\n",
+                gate, rigor_label
             ));
             summary.push_str(&format!(
                 "Requirements: {} total | {} closed | {} broken MUST | {} pending SHOULD | {} DRAFT\n",
@@ -583,6 +692,121 @@ pub fn execute_tool(
             }))
         }
 
+        "asep_agent_send" => {
+            let run_dir = mcp_run_dir(arguments)?;
+            let from = mcp_role(mcp_require_str(arguments, "agent")?)?;
+            let to = mcp_role(mcp_require_str(arguments, "to")?)?;
+            let kind = mcp_kind(arguments, "kind")?;
+            let body = arguments
+                .get("body")
+                .ok_or_else(|| "Missing required parameter 'body'".to_string())?
+                .clone();
+            let ref_path = arguments
+                .get("ref")
+                .and_then(|v| v.as_str())
+                .map(Path::new);
+            let reply_to = arguments.get("reply_to").and_then(|v| v.as_str());
+            let store = MessageStore::new(&run_dir);
+            let envelope = store.send(from, to, kind, body, ref_path, reply_to)?;
+            mcp_text(json!({
+                "id": envelope.id,
+                "path": mcp_msg_path(&envelope.id),
+            }))
+        }
+
+        "asep_agent_recv" => {
+            let run_dir = mcp_run_dir(arguments)?;
+            let agent = mcp_role(mcp_require_str(arguments, "agent")?)?;
+            let store = MessageStore::new(&run_dir);
+            let list: Vec<serde_json::Value> = store
+                .recv(agent)
+                .iter()
+                .map(|envelope| {
+                    json!({
+                        "id": envelope.id,
+                        "kind": envelope.kind,
+                        "from": envelope.from.as_str(),
+                        "path": mcp_msg_path(&envelope.id),
+                    })
+                })
+                .collect();
+            mcp_text(json!(list))
+        }
+
+        "asep_agent_read" => {
+            let run_dir = mcp_run_dir(arguments)?;
+            let id = mcp_require_str(arguments, "id")?;
+            let store = MessageStore::new(&run_dir);
+            let body = store.read(id)?;
+            mcp_text(body)
+        }
+
+        "asep_agent_ack" => {
+            let run_dir = mcp_run_dir(arguments)?;
+            let agent = mcp_role(mcp_require_str(arguments, "agent")?)?;
+            let id = mcp_require_str(arguments, "id")?;
+            let status = mcp_require_str(arguments, "status")?;
+            let store = MessageStore::new(&run_dir);
+            store.ack(agent, id, status)?;
+            mcp_text(json!({
+                "id": id,
+                "path": mcp_msg_path(id),
+            }))
+        }
+
         other => Err(format!("Unknown tool: {other}")),
     }
+}
+
+/// Run directory for agent tools: explicit `run_dir` argument, `ASEP_RUN_DIR` env fallback only.
+fn mcp_run_dir(arguments: &serde_json::Value) -> Result<PathBuf, String> {
+    arguments
+        .get("run_dir")
+        .and_then(|v| v.as_str())
+        .map(PathBuf::from)
+        .or_else(|| std::env::var("ASEP_RUN_DIR").ok().map(PathBuf::from))
+        .ok_or_else(|| "Missing required parameter 'run_dir'".to_string())
+}
+
+fn mcp_require_str<'a>(arguments: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
+    arguments
+        .get(key)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("Missing required parameter '{key}'"))
+}
+
+fn mcp_role(value: &str) -> Result<Role, String> {
+    match value {
+        "lead" => Ok(Role::Lead),
+        "executor" => Ok(Role::Executor),
+        "judge" => Ok(Role::Judge),
+        "explorer" => Ok(Role::Explorer),
+        other => Err(format!("invalid role '{other}'")),
+    }
+}
+
+fn mcp_kind(arguments: &serde_json::Value, key: &str) -> Result<Kind, String> {
+    serde_json::from_value::<Kind>(
+        arguments
+            .get(key)
+            .ok_or_else(|| format!("Missing required parameter '{key}'"))?
+            .clone(),
+    )
+    .map_err(|e| format!("invalid {key}: {e}"))
+}
+
+fn mcp_msg_path(id: &str) -> String {
+    format!("messages/{id}.json")
+}
+
+fn mcp_text(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "content": [
+            {
+                "type": "text",
+                "text": value.to_string()
+            }
+        ],
+        "isError": false
+    }))
 }

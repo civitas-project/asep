@@ -1,0 +1,341 @@
+use std::{borrow::Cow, iter::Peekable, str::CharIndices};
+
+#[must_use]
+enum AnsiMatchResult {
+    Matched { start: usize, end: usize },
+    NotMatched,
+}
+
+fn matched(start: usize, end: usize) -> AnsiMatchResult {
+    AnsiMatchResult::Matched { start, end }
+}
+
+/// Matches an ANSI escape code according to a simplified version of
+/// [this description](https://vt100.net/emu/dec_ansi_parser). As we only want to know when the
+/// automaton gets out of/reaches the "ground" state, we only keep track of transitions leading
+/// out of it/into it.
+///
+/// The only way to get out of the ground is to read the escape character ('\x1b'). Transitions
+/// like "anywhere -- \x9b -> csi_entry" are not supported, as few terminals implement them.
+struct AnsiMatcher<'a> {
+    input: &'a str,
+    chars: Peekable<CharIndices<'a>>,
+}
+
+impl<'a> AnsiMatcher<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            chars: input.char_indices().peekable(),
+        }
+    }
+
+    #[inline]
+    fn run(mut self) -> AnsiMatchResult {
+        match self.chars.next() {
+            Some((start_index, '\x1b')) => self.escape(start_index),
+            _ => AnsiMatchResult::NotMatched,
+        }
+    }
+
+    #[inline]
+    fn next(&mut self) -> Option<u32> {
+        self.chars.next().map(|(_, c)| c as u32)
+    }
+
+    #[inline]
+    fn peek(&mut self) -> Option<(usize, u32)> {
+        self.chars.peek().map(|(idx, c)| (*idx, *c as u32))
+    }
+
+    fn next_char_boundary(&mut self) -> usize {
+        self.peek().map(|(idx, _)| idx).unwrap_or(self.input.len())
+    }
+
+    fn escape(mut self, start_index: usize) -> AnsiMatchResult {
+        match self.next() {
+            None => matched(start_index, self.input.len()),
+            Some(0x5B) => self.csi_entry(start_index),
+            Some(
+                0x5D // osc_string
+                | 0x50 // dcs_entry
+                | 0x58 | 0x5E | 0x5F) => self.string(start_index), // sos/pm/apc_string
+            Some(0x20..=0x2F) => self.escape_intermediate(start_index),
+            Some(0x30..=0x4F | 0x51..=0x57 | 0x59 | 0x5A | 0x5C | 0x60..=0x7E) => {
+                matched(start_index, self.next_char_boundary())
+            }
+            Some(0x1B | 0x7F | _) => self.escape(start_index),
+        }
+    }
+
+    fn csi_entry(mut self, start_index: usize) -> AnsiMatchResult {
+        match self.next() {
+            Some(0x1B) => self.escape(start_index),
+            Some(0x40..=0x7E) => matched(start_index, self.next_char_boundary()),
+            None => matched(start_index, self.input.len()),
+            _ => self.csi_entry(start_index), // loop until match
+        }
+    }
+
+    fn escape_intermediate(mut self, start_index: usize) -> AnsiMatchResult {
+        match self.next() {
+            Some(0x1B) => self.escape(start_index),
+            Some(0x30..=0x7E) => matched(start_index, self.next_char_boundary()),
+            None => matched(start_index, self.input.len()),
+            _ => self.escape_intermediate(start_index), // loop until match
+        }
+    }
+
+    /// Matches until the end of sos/pm/apc strings, dcs entries and osc strings.
+    fn string(mut self, start_index: usize) -> AnsiMatchResult {
+        match self.next() {
+            Some(0x1B) => self.escape(start_index),
+            Some(0x07 | 0x9C) => matched(start_index, self.next_char_boundary()),
+            None => matched(start_index, self.input.len()),
+            _ => self.string(start_index), // loop until match
+        }
+    }
+}
+
+/// An iterator over the runs of text and the ANSI escape codes of a string.
+///
+/// Text between escape codes is returned as a single slice, so it can be
+/// segmented into grapheme clusters.
+pub struct AnsiAwareSegments<'a> {
+    pub input: &'a str,
+}
+
+#[must_use]
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum AnsiAwareSegment<'a> {
+    AnsiEscapeSequence(&'a str),
+    /// Text without escape codes. Never empty.
+    Text(&'a str),
+}
+
+impl<'a> Iterator for AnsiAwareSegments<'a> {
+    type Item = AnsiAwareSegment<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.input.is_empty() {
+            return None;
+        }
+
+        // Every escape code starts with ESC, and an ESC always starts one.
+        match self.input.find('\x1b') {
+            Some(0) => match AnsiMatcher::new(self.input).run() {
+                AnsiMatchResult::Matched { start, end } => {
+                    let matched_slice = &self.input[start..end];
+                    self.input = &self.input[end..];
+                    Some(AnsiAwareSegment::AnsiEscapeSequence(matched_slice))
+                }
+                AnsiMatchResult::NotMatched => unreachable!("ESC always starts an escape code"),
+            },
+            Some(idx) => {
+                let (text, rest) = self.input.split_at(idx);
+                self.input = rest;
+                Some(AnsiAwareSegment::Text(text))
+            }
+            None => {
+                let text = self.input;
+                self.input = "";
+                Some(AnsiAwareSegment::Text(text))
+            }
+        }
+    }
+}
+
+/// An iterator that strips ANSI escape codes from a string.
+///
+/// Often constructed by calling [`ansi_stripped_chars`].
+pub struct AnsiStrippedChars<'a> {
+    pub input: &'a str,
+}
+
+impl<'a> Iterator for AnsiStrippedChars<'a> {
+    type Item = char;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match AnsiMatcher::new(self.input).run() {
+            AnsiMatchResult::Matched { end, .. } => {
+                self.input = &self.input[end..];
+                self.next()
+            }
+            AnsiMatchResult::NotMatched => {
+                let mut chars = self.input.char_indices();
+                match chars.next() {
+                    Some((idx, c)) => {
+                        self.input = &self.input[idx + c.len_utf8()..];
+                        Some(c)
+                    }
+                    None => None,
+                }
+            }
+        }
+    }
+}
+
+/// Constructs an iterator over the chars of the input string, stripping away ANSI escape codes.
+pub trait AnsiStrippable {
+    #[allow(unused)]
+    fn ansi_stripped_chars(&self) -> AnsiStrippedChars<'_>;
+
+    /// Returns the input without ANSI escape codes, borrowing it when there are none.
+    #[allow(unused)]
+    fn ansi_stripped(&self) -> Cow<'_, str>;
+}
+
+impl<T> AnsiStrippable for T
+where
+    T: AsRef<str>,
+{
+    fn ansi_stripped_chars(&self) -> AnsiStrippedChars<'_> {
+        AnsiStrippedChars {
+            input: self.as_ref(),
+        }
+    }
+
+    fn ansi_stripped(&self) -> Cow<'_, str> {
+        let input = self.as_ref();
+        // Every escape code starts with ESC, so without one there is nothing to strip.
+        if input.contains('\x1b') {
+            Cow::Owned(input.ansi_stripped_chars().collect())
+        } else {
+            Cow::Borrowed(input)
+        }
+    }
+}
+
+pub trait AnsiAware {
+    fn ansi_aware_segments(&self) -> AnsiAwareSegments<'_>;
+}
+
+impl<T> AnsiAware for T
+where
+    T: AsRef<str>,
+{
+    fn ansi_aware_segments(&self) -> AnsiAwareSegments<'_> {
+        AnsiAwareSegments {
+            input: self.as_ref(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ansi_stripped_borrows_input_without_escape_codes() {
+        assert!(matches!(
+            "plain text".ansi_stripped(),
+            Cow::Borrowed("plain text")
+        ));
+    }
+
+    #[test]
+    fn ansi_stripped_removes_escape_codes() {
+        let stripped = "\x1b[32mApple\x1b[0m".ansi_stripped();
+        assert!(matches!(stripped, Cow::Owned(_)));
+        assert_eq!("Apple", stripped);
+    }
+
+    macro_rules! assert_stripped_eq {
+        ($input:expr, $expected:expr) => {
+            let stripped: String = $input.ansi_stripped_chars().collect();
+            assert_eq!(&stripped, $expected);
+        };
+    }
+
+    #[test]
+    fn test_normal_ansi_escapes() {
+        assert_stripped_eq!("1\x1b[0m2", "12");
+        assert_stripped_eq!("\x1b[92mHello, \x1b[91mWorld!\x1b[0m", "Hello, World!");
+        assert_stripped_eq!("\x1b[7@Hi", "Hi");
+        assert_stripped_eq!(
+            "\x1b]0;Set The Terminal Title To This\u{9c}Print This",
+            "Print This"
+        );
+        assert_stripped_eq!("\x1b[96", "");
+    }
+
+    #[test]
+    // Please don't use ansi escapes like these!
+    fn test_inconsistencies() {
+        // Some terminals will print "String\u{9c}Hello World", others will print nothing.
+        assert_stripped_eq!("\x1b[\x1b]String\u{9c}Hello World", "Hello World");
+
+        // Kitty will print "[38;5;43mABCD", but most will print "ABCD"
+        assert_stripped_eq!("\x1b[\x1b[38;5;43mAB\x1b[48;5;10mCD\x1b[0m", "ABCD");
+
+        // Kitty will print "[96mCat\n", but most will print "Cat\n"
+        assert_stripped_eq!("\x1b\x19[96mCat\x1b[0m\n", "Cat\n");
+    }
+
+    fn segments(input: &str) -> Vec<AnsiAwareSegment<'_>> {
+        AnsiAwareSegments { input }.collect()
+    }
+
+    #[test]
+    fn ansi_aware_segments_split_text_and_escapes() {
+        assert_eq!(
+            segments("\x1b[92mHello, \x1b[91mWorld!\x1b[0m"),
+            vec![
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b[92m"),
+                AnsiAwareSegment::Text("Hello, "),
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b[91m"),
+                AnsiAwareSegment::Text("World!"),
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b[0m"),
+            ]
+        );
+
+        assert_eq!(
+            segments("\x1b]0;Set The Terminal Title To This\u{9c}Print This"),
+            vec![
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b]0;Set The Terminal Title To This\u{9c}"),
+                AnsiAwareSegment::Text("Print This"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ansi_aware_segments_keep_text_runs_whole() {
+        assert_eq!(segments(""), vec![]);
+        assert_eq!(
+            segments("✏️ edit 👩‍💻"),
+            vec![AnsiAwareSegment::Text("✏️ edit 👩‍💻")]
+        );
+        assert_eq!(
+            segments("a\x1b[1m\x1b[0mb"),
+            vec![
+                AnsiAwareSegment::Text("a"),
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b[1m"),
+                AnsiAwareSegment::AnsiEscapeSequence("\x1b[0m"),
+                AnsiAwareSegment::Text("b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn ansi_aware_segments_strip_like_ansi_stripped() {
+        let inputs = [
+            "1\x1b[0m2",
+            "\x1b[7@Hi",
+            "\x1b[96",
+            "\x1b[\x1b]String\u{9c}Hello World",
+            "\x1b[\x1b[38;5;43mAB\x1b[48;5;10mCD\x1b[0m",
+            "\x1b\x19[96mCat\x1b[0m\n",
+        ];
+
+        for input in inputs {
+            let text: String = input
+                .ansi_aware_segments()
+                .filter_map(|segment| match segment {
+                    AnsiAwareSegment::Text(text) => Some(text),
+                    AnsiAwareSegment::AnsiEscapeSequence(_) => None,
+                })
+                .collect();
+            assert_eq!(input.ansi_stripped(), text, "{:?}", input);
+        }
+    }
+}

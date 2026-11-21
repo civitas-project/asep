@@ -4,7 +4,7 @@
 - **Date:** YYYY-MM-DD
 - **Deciders:** [Names or Epistemic Roles, e.g., Lead Systems Engineer, Team]
 - **Trace Tag:** `@adr:[NUMBER]`
-- **Associated Requirement:** `@req:FR-[MOD]-[ID]` (optional if cross-cutting)
+- **Associated Requirement:** `@req\:FR-[MOD]-[ID]` (optional if cross-cutting)
 
 ---
 

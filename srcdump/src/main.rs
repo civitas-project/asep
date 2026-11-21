@@ -141,18 +141,20 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Setup logging
-    let level = if cli.verbose { Level::DEBUG } else { Level::INFO };
+    let level = match cli.verbose {
+        true => Level::DEBUG,
+        false => Level::INFO,
+    };
     tracing_subscriber::fmt()
         .with_max_level(level)
         .with_target(false)
         .init();
 
     // Load config from file if provided
-    let mut config = if let Some(config_path) = &cli.config {
-        Config::from_file(config_path)?
-    } else {
-        Config::default()
-    };
+    let mut config = Config::default();
+    if let Some(config_path) = &cli.config {
+        config = Config::from_file(config_path)?;
+    }
 
     // Override with CLI args
     config.root = cli.root.canonicalize()?;
@@ -214,10 +216,9 @@ fn main() -> anyhow::Result<()> {
         let mut writer = BufWriter::new(file);
         formatter.format_files(files, &mut writer)?;
         info!("Written to: {}", output_path.display());
-    } else {
-        let mut writer = std::io::stdout();
-        formatter.format_files(files, &mut writer)?;
+        return Ok(());
     }
-
+    let mut writer = std::io::stdout();
+    formatter.format_files(files, &mut writer)?;
     Ok(())
 }

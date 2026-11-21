@@ -20,45 +20,49 @@ pub fn render_plantuml_diagrams(root: &Path) -> Result<usize, AsepError> {
     for entry in fs::read_dir(&diagrams_dir)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("puml") {
-            let output = Command::new("plantuml")
-                .arg("-tsvg")
-                .arg("-o")
-                .arg(&rendered_dir)
-                .arg(&path)
-                .output();
+        if !path.is_file() {
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some("puml") {
+            continue;
+        }
 
-            match output {
-                Ok(out) if out.status.success() => {
-                    count += 1;
-                }
-                _ => {
-                    // Fallback to plantuml runner with output flag
-                    let fallback = Command::new("plantuml")
-                        .arg("-o")
-                        .arg(&rendered_dir)
-                        .arg(&path)
-                        .output();
+        let output = Command::new("plantuml")
+            .arg("-tsvg")
+            .arg("-o")
+            .arg(&rendered_dir)
+            .arg(&path)
+            .output();
 
-                    match fallback {
-                        Ok(out) if out.status.success() => {
-                            count += 1;
-                        }
-                        Ok(out) => {
-                            let err_msg = String::from_utf8_lossy(&out.stderr);
-                            return Err(AsepError::Diagram(format!(
-                                "plantuml exited with code {:?}: {}",
-                                out.status.code(),
-                                err_msg.trim()
-                            )));
-                        }
-                        Err(e) => {
-                            return Err(AsepError::Diagram(format!(
-                                "failed to execute plantuml: {e}"
-                            )));
-                        }
-                    }
-                }
+        let first_ok = match output {
+            Ok(out) => out.status.success(),
+            Err(_) => false,
+        };
+        if first_ok {
+            count += 1;
+            continue;
+        }
+
+        // only reached when the first command failed or could not be spawned
+        let fallback = Command::new("plantuml")
+            .arg("-o")
+            .arg(&rendered_dir)
+            .arg(&path)
+            .output();
+        match fallback {
+            Ok(out) if out.status.success() => {
+                count += 1;
+            }
+            Ok(out) => {
+                let err_msg = String::from_utf8_lossy(&out.stderr);
+                return Err(AsepError::Diagram(format!(
+                    "plantuml exited with code {:?}: {}",
+                    out.status.code(),
+                    err_msg.trim()
+                )));
+            }
+            Err(e) => {
+                return Err(AsepError::Diagram(format!("failed to execute plantuml: {e}")));
             }
         }
     }

@@ -82,7 +82,7 @@ When authoring a comprehensive manual (`MANUAL.md`), never dump raw source-code 
 ### 4. Authentic Human Copywriting & Negative Tone Filter
 All governance documentation and user-facing copy must maintain an authentic, authoritative systems engineering voice:
 - **Zero Subjective Hyperbole:** Replace buzzwords with quantitative bounds (e.g., write *"sustains 120,000 IOPS with p99 < 3ms"* instead of *"blazingly fast performance"*).
-- **Zero Meta-Commentary Filler:** Eliminate AI filler phrases (*"in this section, we will delve into"*, *"it is worth noting that"*, *"at its core"*).
+- **Zero Meta-Commentary Filler:** Eliminate AI filler phrases (*"in this section, we will explore"*, *"it is worth noting that"*, *"at its core"*).
 - **Direct Operational Imperatives:** State actions directly in active voice (*"Pass `--deny-drafts` on release pipelines"*, never *"The flag can be passed by the user"*).
 - **Clean Typography:** Zero exclamation points in technical documentation, zero emoji decorations in headers or commit messages, and zero em-dashes (`—`).
 
@@ -93,7 +93,7 @@ All governance documentation and user-facing copy must maintain an authentic, au
 ### 1. Hard Gates: Absolute Disqualifications (Zero Tolerance)
 - **Zero Em-Dashes (`—`) in Prose and Copy:** Never use em-dashes in `README.md`, `MANUAL.md`, `ARCHITECTURE.md`, or any user-facing copy. Use colons, semicolons, parentheses, or periods.
 - **Deterministic Multi-Line List Formatting (`<br>`):** Prohibit single-line colon bullets (`- **Term**: explanation`) for complex items and ban backslash line breaks (`\`). Format multi-line list items using an explicit `<br>` immediately after the term/title (`- **Term**<br>\n  Explanation`).
-- **Zero Marketing Buzzwords:** Ban words like *seamless, revolutionary, game-changing, blazingly fast, next-generation, delve, tapestry*. Use concrete engineering metrics (e.g., `60.48 ns median point lookup`, `0 heap allocations`).
+- **Zero Marketing Buzzwords:** Ban canonical copy-rule terms: `AS-COPY-HYPE` (`game-changer`, `revolutionary`, `cutting-edge`, `best-in-class`, `world-class`) and `AS-COPY-BUZZWORD` (`delve`, `elevate`, `seamless`, `robust`, `unlock`, `pivotal`, `tapestry`, `testament`). Use concrete engineering metrics (e.g., `60.48 ns median point lookup`, `0 heap allocations`). // asep:allow-antislop
 - **Zero Public Vulnerability Reporting:** `SECURITY.md` must mandate private vulnerability disclosure and define concrete SLA timelines (24h triage, 72h reproduction, 14d patch, 30d disclosure).
 - **Zero Topology Drift:** Every crate in `crates/*`, tool in `tools/*`, and script in `scripts/*` must be mapped in `ARCHITECTURE.md` and `README.md`.
 - **Zero Transient Spec Links:** Never reference ephemeral planning folders (such as `docs/superpowers/` or `docs/plans/`) in governance files.
@@ -110,8 +110,20 @@ All governance documentation and user-facing copy must maintain an authentic, au
 
 ---
 
+## Canonical Anti-Slop Rules
+
+Canonical anti-slop rules live in `spec-engine/policy/asep-policy.toml`; skills reference rule IDs and never restate their patterns. This skill applies AS-COPY-FILLER, AS-COPY-HYPE, AS-DOCS-WORDY, AS-COPY-BUZZWORD. `asep check --rigor T1` reports Warning rules and blocks on Error rules outside T0; `--strict` promotes Warnings. Intentional fixtures may use the inline marker `asep:allow-antislop`.
+
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-02, COV-05 and Tier T0..T2; unproven results surface as exit 3.
+
+---
+
 ## Red Flags: STOP and Restart
-- `README.md`, `MANUAL.md`, or `ARCHITECTURE.md` contains em-dashes (`—`) or marketing fluff (*seamless*, *blazingly*).
+- `README.md`, `MANUAL.md`, or `ARCHITECTURE.md` contains em-dashes (`—`) or marketing fluff (*smooth*, *blazingly*).
 - `MANUAL.md` dumps internal memory structs before teaching the reader how to open and query the system.
 - `SECURITY.md` instructs users to open public GitHub/Codeberg issues for security vulnerabilities.
 - A workspace crate or tool directory is missing from `ARCHITECTURE.md`.

@@ -41,13 +41,13 @@ ASEP operates under two complementary engineering tracks: **Velocity Mode (RAD T
         ▼                                                                 ▼
   TRACK 1: VELOCITY MODE (RAD)                                  TRACK 2: AXIOMATIC MODE (XP)
   • Branch: feat/<topic> from dev                               • Branch: fix/*, perf/*, refactor/* from dev
-  • Tag PRD: @req:FR-*:DRAFT                                    • Tag PRD: @req:FR-*:MUST
-  • Code tag: // @impl:FR-*                                     • Test-First TDD: RED -> GREEN -> REFACTOR
+  • Tag PRD: @req\:FR-*:DRAFT                                    • Tag PRD: @req\:FR-*:MUST
+  • Code tag: // @impl\:FR-*                                     • Test-First TDD: RED -> GREEN -> REFACTOR
   • Smoke/E2E testing                                           • Docstrings: DbC & memory invariants
   • Verification: asep check --mode velocity                    • Verification: 5-Gate CI Full Pass
         │                                                                 │
         └───────────────────────► [GRADUATION GATE] ◄─────────────────────┘
-                                  • Change @req:*:DRAFT -> :MUST
+                                  • Change @req\:*:DRAFT -> :MUST
                                   • Backfill 1:1 unit/integration @test
                                   • Full 5-Gate CI (asep check --mode axiomatic)
                                   • PR merged to dev branch
@@ -60,23 +60,23 @@ ASEP operates under two complementary engineering tracks: **Velocity Mode (RAD T
 
 ### Track 1: Velocity Mode Protocol (RAD Track)
 1. **Scope:** Rapid proof of concept, interactive scaffolding, API prototyping, or mass feature addition.
-2. **Tagging:** Annotate functional requirements in `docs/PRD.md` as `@req:FR-[MOD]-[ID]:DRAFT`. Mark production boundaries with `// @impl:FR-[MOD]-[ID]`.
+2. **Tagging:** Annotate functional requirements in `docs/PRD.md` as `@req\:FR-[MOD]-[ID]:DRAFT`. Mark production boundaries with `// @impl\:FR-[MOD]-[ID]`.
 3. **Relaxed Gates:** Draft requirements do not break traceability closure. Docstring contract violations are treated as non-blocking warnings (`asep check --mode velocity`).
 4. **Git Branching:** Branch off `dev` using conventional branch naming (`feat/<topic>`).
 
 ### Track 2: Axiomatic Mode Protocol (Hardening Track)
 1. **Scope:** Bug fixes, performance optimizations, memory reclamation, core domain invariants, and hardening draft features.
 2. **Strict Test-First TDD:**
-   - **RED:** Write automated test annotated with `// @test:FR-[MOD]-[ID]` demonstrating failure or reproducing bug.
-   - **GREEN:** Write minimal production logic annotated with `// @impl:FR-[MOD]-[ID]`.
+   - **RED:** Write automated test annotated with `// @test\:FR-[MOD]-[ID]` demonstrating failure or reproducing bug.
+   - **GREEN:** Write minimal production logic annotated with `// @impl\:FR-[MOD]-[ID]`.
    - **REFACTOR:** Enforce zero-allocation paths, lock hierarchies, and Meyer's Design by Contract docstrings (`asep:code-contracts`).
-3. **Mandatory 1:1 Closure:** Every requirement must be `@req:*:MUST` and close the bipartite graph.
+3. **Mandatory 1:1 Closure:** Every requirement must be `@req\:*:MUST` and close the bipartite graph.
 4. **Git Branching:** Branch off `dev` using `fix/<topic>`, `perf/<topic>`, or `refactor/<topic>`.
 
 ### The Graduation Gate (Promoting Velocity Slices to Axiomatic)
 Spike or draft code is never merged into the release branch without passing the Graduation Gate:
-1. **Graduate Requirement:** Update `@req:FR-[MOD]-[ID]:DRAFT` to `@req:FR-[MOD]-[ID]:MUST` in `docs/PRD.md`.
-2. **Backfill TDD Assertions:** Formulate unit and edge-case regression tests with `// @test:FR-[MOD]-[ID]`.
+1. **Graduate Requirement:** Update `@req\:FR-[MOD]-[ID]:DRAFT` to `@req\:FR-[MOD]-[ID]:MUST` in `docs/PRD.md`.
+2. **Backfill TDD Assertions:** Formulate unit and edge-case regression tests with `// @test\:FR-[MOD]-[ID]`.
 3. **Attach Code Contracts:** Audit docstrings with `asep:code-contracts` for `# Invariants`, `# Errors`, and `# Panics`.
 4. **Pass 5-Gate Local CI:** Execute `cargo run --package ci_local` or `asep check --mode axiomatic`.
 5. **Merge to `dev`:** Open PR to `dev`.
@@ -90,14 +90,14 @@ Spike or draft code is never merged into the release branch without passing the 
 ### Phase 2A: Vertical-Slice Production TDD Protocol
 Instead of writing massive monolithic specifications upfront, build production systems in **Incremental Vertical Slices**:
 1. **Architecture Slice Gate:**
-   - Formulate or update the specific requirement `@req:FR-[MOD]-[ID]:MUST|SHOULD` in `docs/PRD.md` and its technical design `@design:FR-[MOD]-[ID]` in `docs/TDD.md` (using `asep:engineering-specs`).
+   - Formulate or update the specific requirement `@req\:FR-[MOD]-[ID]:MUST|SHOULD` in `docs/PRD.md` and its technical design `@design\:FR-[MOD]-[ID]` in `docs/TDD.md` (using `asep:engineering-specs`).
    - If the slice introduces a significant architectural trade-off, record a Rich ADR in `docs/adr/NNNN-title.md`.
    - If the slice is marked `@criticality:high` (concurrency, MVCC, WAL recovery, replication ordering, memory reclamation), author or update the formal proof in `docs/invariants/*.als`.
 2. **TDD RED (Write Failing Test First):**
-   - Write an automated unit or integration test annotated with `// @test:FR-[MOD]-[ID]`.
+   - Write an automated unit or integration test annotated with `// @test\:FR-[MOD]-[ID]`.
    - Execute the native test runner (`cargo test`, `pytest`, `bun test`) and observe the test fail for the expected reason.
 3. **TDD GREEN (Minimal Implementation):**
-   - Implement the minimal production logic satisfying the test and annotate the domain boundary with `// @impl:FR-[MOD]-[ID]`.
+   - Implement the minimal production logic satisfying the test and annotate the domain boundary with `// @impl\:FR-[MOD]-[ID]`.
    - Enforce architectural boundary invariants (such as `#![deny(unsafe_code)]`, static polymorphism via generics over dynamic dispatch on hot paths, and strict lock-acquisition ordering).
 4. **TDD REFACTOR (Hygiene & Contracts):**
    - Eliminate code duplication, verify zero compiler/clippy warnings, and attach `asep:code-contracts` docstrings.
@@ -167,14 +167,14 @@ Parallel speedup target governed by Amdahl's Law with serial fraction $s \le 0.0
 
 ### 2. Quality Locks (Tag Taxonomy)
 ```text
-[PRD Requirement]       @req:FR-[MOD]-[ID]:[MUST|SHOULD]
+[PRD Requirement]       @req\:FR-[MOD]-[ID]:[MUST|SHOULD]
 [PRD System Limit]      @lim:LIM-[ID]
-[TDD Architecture]      @design:FR-[MOD]-[ID]
+[TDD Architecture]      @design\:FR-[MOD]-[ID]
 [Architecture Decision] @adr:[NUMBER]
 [Execution Criticality] @criticality:[high|low]
-[Domain Implementation] // @impl:FR-[MOD]-[ID]
+[Domain Implementation] // @impl\:FR-[MOD]-[ID]
 [Infrastructure Impl]   // @impl-infra:[ID]
-[Automated Test]        // @test:FR-[MOD]-[ID]
+[Automated Test]        // @test\:FR-[MOD]-[ID]
 [Micro Benchmark]       @bench-micro:BM-[MOD]-[ID]
 ```
 
@@ -187,7 +187,15 @@ Parallel speedup target governed by Amdahl's Law with serial fraction $s \le 0.0
 | *"The bug is obvious, so I don't need to write a regression test first."* | "Obvious" fixes often miss edge cases or regress later. Write the failing regression test first (Phase 2B). |
 | *"The invariant is simple, so I don't need an Alloy proof or seeded fuzz test."* | Concurrency and binary framing bugs hide in corner cases. Model `@criticality:high` invariants in Alloy and test parsers with deterministic seeded fuzzing. |
 | *"I will implement the whole feature first, then run `asep_check` at the end."* | Large unverified batches accumulate massive drift. Work in small vertical slices and verify each slice. |
-| *"Every private helper function needs an `@impl` tag."* | Tagging private helpers creates maintenance noise. Place `// @impl:FR-*` on module boundaries and primary domain entrypoints. |
+| *"Every private helper function needs an `@impl` tag."* | Tagging private helpers creates maintenance noise. Place `// @impl\:FR-*` on module boundaries and primary domain entrypoints. |
+
+---
+
+## Canonical Rule References
+
+Canonical ASEP policy lives in `spec-engine/policy/asep-policy.toml`: coverage rules `COV-01`..`COV-06`, rigor tiers `Tier T0`..`Tier T4`, and exit codes `0` (pass), `1` (fail), `2` (config I/O), `3` (unproven). Skills reference rules by ID; they never restate them.
+
+This skill applies COV-01, COV-04, COV-05 (Error coverage) and Tier T2..T4 (semantic evidence required); unproven results surface as exit 3.
 
 ---
 

@@ -1,0 +1,50 @@
+version = 1
+statuses = ["sent", "accepted", "rejected", "done"]
+
+[[roles]]
+name = "lead"
+kinds = ["TASK_DISPATCH", "RULING"]
+
+[[roles]]
+name = "executor"
+kinds = ["TASK_REPORT"]
+
+[[roles]]
+name = "judge"
+kinds = ["VERDICT"]
+
+[[roles]]
+name = "explorer"
+kinds = ["MAP_REPORT"]
+
+[[kinds]]
+name = "TASK_DISPATCH"
+required = ["task", "files", "acceptance", "verification_command"]
+
+[[kinds]]
+name = "RULING"
+required = ["finding", "decision", "cost_if_wrong"]
+
+[[kinds]]
+name = "TASK_REPORT"
+required = ["status", "commits", "tests", "concerns"]
+array_fields = ["concerns"]
+[[kinds.nested]]
+field = "tests"
+required = ["exit_code", "ref"]
+
+[[kinds]]
+name = "VERDICT"
+required = ["verdict", "blocking", "non_blocking", "missing_evidence", "next_action", "rerun"]
+[[kinds.nested]]
+field = "rerun"
+required = ["test", "check"]
+numeric = true
+
+[[kinds]]
+name = "MAP_REPORT"
+required = ["modules", "read_only"]
+
+[[kinds]]
+name = "CUSTOM"
+requires_schema_id = true

@@ -39,11 +39,10 @@ pub fn generate_lock(skills_dir: &Path) -> Result<SkillLockFile, std::io::Error>
     let entries = inspect_skills(skills_dir);
     let mut lock_entries = Vec::new();
     for e in &entries {
-        let hash = if e.file_path.exists() {
-            sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string())
-        } else {
-            "missing".to_string()
-        };
+        let mut hash = "missing".to_string();
+        if e.file_path.exists() {
+            hash = sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string());
+        }
         lock_entries.push(SkillLockEntry {
             id: e.id.clone(),
             version: e.version.clone(),
@@ -88,20 +87,19 @@ pub fn verify_lock(skills_dir: &Path) -> Result<Vec<LockDrift>, std::io::Error> 
     for le in &lock.skills {
         match entries.iter().find(|e| e.id == le.id) {
             Some(e) => {
-                if e.file_path.exists() {
-                    let current_hash = sha256_file(&e.file_path).unwrap_or_default();
-                    if current_hash != le.hash {
-                        drifts.push(LockDrift {
-                            id: le.id.clone(),
-                            kind: "modified".to_string(),
-                            detail: format!("hash changed: {} -> {}", le.hash, current_hash),
-                        });
-                    }
-                } else {
+                if !e.file_path.exists() {
                     drifts.push(LockDrift {
                         id: le.id.clone(),
                         kind: "missing".to_string(),
                         detail: "file missing on disk".to_string(),
+                    });
+                }
+                let current_hash = sha256_file(&e.file_path).unwrap_or_default();
+                if current_hash != le.hash && e.file_path.exists() {
+                    drifts.push(LockDrift {
+                        id: le.id.clone(),
+                        kind: "modified".to_string(),
+                        detail: format!("hash changed: {} -> {}", le.hash, current_hash),
                     });
                 }
                 if e.version != le.version {

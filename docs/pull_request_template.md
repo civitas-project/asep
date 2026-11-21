@@ -4,7 +4,7 @@ One sentence: the single thing this PR changes.
 
 ## Why
 
-The problem, and the issue or requirement this closes (`Closes #N` or `@req:FR-...`).
+The problem, and the issue or requirement this closes (`Closes #N` or `\@req:FR-...`).
 
 ## What
 

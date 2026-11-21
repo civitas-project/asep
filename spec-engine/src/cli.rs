@@ -1,10 +1,10 @@
 // Clap derives generate `from_arg_matches`, which builds every enum variant on the stack in debug builds.
-#![allow(clippy::large_unopt_stack_frames)]
+#![allow(clippy::large_stack_frames)]
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-// @design:FR-CLI-SCAN-01
+// @design:FR-CLI-SCAN-01-B
 #[derive(Debug, Parser)]
 #[command(
     name = "asep",
@@ -44,10 +44,18 @@ pub enum Commands {
 
         #[arg(
             long,
-            default_value = "axiomatic",
-            help = "SDLC mode: 'velocity' (RAD/fast exploration) or 'axiomatic' (hardening/TDD)"
+            help = "Run directory containing a messages/ subdirectory with agent envelopes to validate"
         )]
-        mode: String,
+        messages: Option<PathBuf>,
+
+        #[arg(
+            long,
+            help = "Rigor tier override: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
+        )]
+        rigor: Option<String>,
+
+        #[arg(long, help = "Path to write `.spec-engine/behavioral.json` (Gate 3 behavioral report)")]
+        behavioral_report: Option<PathBuf>,
 
         #[arg(long, help = "Deny all @req:*:DRAFT tags (enforced on main production branch)")]
         deny_drafts: bool,
@@ -57,6 +65,12 @@ pub enum Commands {
 
         #[arg(long, help = "Path to LCOV or coverage file to correlate with requirements")]
         coverage: Option<PathBuf>,
+
+        #[arg(
+            long,
+            help = "Print only the detailed skill drift report for installed skill copies"
+        )]
+        skills: bool,
     },
 
     /// Manage Architecture Decision Records (ADRs)
@@ -81,10 +95,10 @@ pub enum Commands {
 
         #[arg(
             long,
-            default_value = "axiomatic",
-            help = "SDLC mode: 'velocity' or 'axiomatic'"
+            default_value = "T1",
+            help = "Rigor tier: 'T0'..'T4' (default: T1)"
         )]
-        mode: String,
+        rigor: Option<String>,
     },
 
     /// Compile PlantUML diagrams into SVG assets
@@ -170,6 +184,43 @@ pub enum Commands {
 
         #[arg(short, long, help = "Target project directory")]
         path: Option<PathBuf>,
+    },
+
+    /// List tests impacted by changed files using the traceability graph
+    Affected {
+        /// Changed file or directory paths
+        paths: Vec<PathBuf>,
+
+        /// Read changed paths from stdin, one per line
+        #[arg(long)]
+        stdin: bool,
+
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+    },
+
+    /// Measure or clean Rust target artifacts by size threshold
+    Clean {
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+
+        /// Explicit threshold in GiB (overrides measured baseline)
+        #[arg(long)]
+        max_gb: Option<f64>,
+
+        /// Target directory to measure/clean (default: <root>/target)
+        #[arg(long)]
+        target: Option<PathBuf>,
+
+        /// Write the current target size as baseline and exit
+        #[arg(long)]
+        measure: bool,
+
+        /// Report the plan without deleting anything
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 

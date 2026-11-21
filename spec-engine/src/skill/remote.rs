@@ -23,30 +23,32 @@ pub enum SkillSource {
 pub fn parse_skill_specifier(spec: &str) -> SkillSource {
     let s = spec.trim();
 
-    if s.starts_with("git@") || (s.starts_with("http") && s.contains(".git")) {
-        if let Some((url, tag)) = s.split_once('#') {
-            SkillSource::Git {
-                url: url.to_string(),
-                tag_or_branch: Some(tag.to_string()),
-            }
-        } else {
-            SkillSource::Git {
-                url: s.to_string(),
-                tag_or_branch: None,
-            }
-        }
-    } else if s.starts_with("http://") || s.starts_with("https://") {
-        SkillSource::Http { url: s.to_string() }
-    } else if let Some((id, req)) = s.split_once('@') {
-        SkillSource::Registry {
+    let is_git = s.starts_with("git@") || (s.starts_with("http") && s.contains(".git"));
+    if is_git {
+        let (url, tag_or_branch) = match s.split_once('#') {
+            Some((url, tag)) => (url.to_string(), Some(tag.to_string())),
+            None => (s.to_string(), None),
+        };
+        return SkillSource::Git {
+            url,
+            tag_or_branch,
+        };
+    }
+
+    if s.starts_with("http://") || s.starts_with("https://") {
+        return SkillSource::Http { url: s.to_string() };
+    }
+
+    if let Some((id, req)) = s.split_once('@') {
+        return SkillSource::Registry {
             id: id.to_string(),
             version_req: Some(req.to_string()),
-        }
-    } else {
-        SkillSource::Registry {
-            id: s.to_string(),
-            version_req: None,
-        }
+        };
+    }
+
+    SkillSource::Registry {
+        id: s.to_string(),
+        version_req: None,
     }
 }
 
@@ -92,22 +94,27 @@ pub fn fetch_remote_skill(
                 .find(|p| p.exists())
                 .cloned();
 
-            let res = if let Some(found_path) = found {
-                let content = fs::read_to_string(&found_path).map_err(|e| e.to_string())?;
-                let (name, _, _, _) = crate::skill::inspector::extract_skill_full_metadata(&content);
-                let skill_id = if !name.is_empty() {
-                    name.to_lowercase().replace(' ', "-")
-                } else {
-                    url.split('/').next_back().unwrap_or("remote-skill").trim_end_matches(".git").to_string()
-                };
+            let res = match found {
+                Some(found_path) => {
+                    let content = fs::read_to_string(&found_path).map_err(|e| e.to_string())?;
+                    let (name, _, _, _) = crate::skill::inspector::extract_skill_full_metadata(&content);
+                    let skill_id = match name.is_empty() {
+                        false => name.to_lowercase().replace(' ', "-"),
+                        true => url
+                            .split('/')
+                            .next_back()
+                            .unwrap_or("remote-skill")
+                            .trim_end_matches(".git")
+                            .to_string(),
+                    };
 
-                let dest_folder = skills_dir.join(&skill_id);
-                fs::create_dir_all(&dest_folder).map_err(|e| e.to_string())?;
-                let dest_file = dest_folder.join("SKILL.md");
-                fs::write(&dest_file, content).map_err(|e| e.to_string())?;
-                Ok(dest_file)
-            } else {
-                Err("No SKILL.md found in cloned repository".to_string())
+                    let dest_folder = skills_dir.join(&skill_id);
+                    fs::create_dir_all(&dest_folder).map_err(|e| e.to_string())?;
+                    let dest_file = dest_folder.join("SKILL.md");
+                    fs::write(&dest_file, content).map_err(|e| e.to_string())?;
+                    Ok(dest_file)
+                }
+                None => Err("No SKILL.md found in cloned repository".to_string()),
             };
 
             let _ = fs::remove_dir_all(&tmp_dir);
@@ -121,10 +128,9 @@ pub fn fetch_remote_skill(
             }
             let content = resp.text().map_err(|e| e.to_string())?;
             let (name, _, _, _) = crate::skill::inspector::extract_skill_full_metadata(&content);
-            let skill_id = if !name.is_empty() {
-                name.to_lowercase().replace(' ', "-")
-            } else {
-                "remote-http-skill".to_string()
+            let skill_id = match name.is_empty() {
+                false => name.to_lowercase().replace(' ', "-"),
+                true => "remote-http-skill".to_string(),
             };
 
             let dest_folder = skills_dir.join(&skill_id);

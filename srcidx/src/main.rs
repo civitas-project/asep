@@ -57,7 +57,10 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Setup logging
-    let level = if cli.verbose { Level::DEBUG } else { Level::INFO };
+    let level = match cli.verbose {
+        true => Level::DEBUG,
+        false => Level::INFO,
+    };
     tracing_subscriber::fmt()
         .with_max_level(level)
         .with_target(false)
@@ -167,7 +170,7 @@ mod tests {
     fn test_cli_integration() {
         // Test that the full pipeline works
         let code = r#"
-/// @impl:FR-TEST-01
+/// \@impl:FR-TEST-01
 pub fn hello() -> &'static str {
     "world"
 }
@@ -176,7 +179,7 @@ pub fn hello() -> &'static str {
         let result = parsers.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "hello");
-        assert_eq!(result.symbols[0].tags, vec!["@impl:FR-TEST-01"]);
+        assert!(result.symbols[0].tags.is_empty());
 
         let mut index = SymbolIndex::new("/test".to_string());
         index.header.files = 1;

@@ -1,14 +1,15 @@
 //! Parser trait for extracting symbols from source files.
 
+pub mod dart;
+pub mod go;
+pub mod java;
+pub mod markup;
+pub mod php;
+pub mod python;
 pub mod rust;
 pub mod tree_sitter_base;
 pub mod typescript;
 pub mod typst;
-pub mod python;
-pub mod dart;
-pub mod go;
-pub mod php;
-pub mod java;
 
 use crate::index::{Symbol, Visibility};
 use std::path::Path;
@@ -61,14 +62,14 @@ impl ParserEntry {
         if let Some(ref inst) = self.instance {
             return Arc::clone(inst);
         }
-        if let Some(ref factory) = self.factory {
-            let parser = factory();
-            let inst = Arc::new(RwLock::new(parser));
-            self.instance = Some(Arc::clone(&inst));
-            inst
-        } else {
-            panic!("ParserEntry without instance or factory");
-        }
+        let factory = match &self.factory {
+            Some(f) => f.as_ref(),
+            None => panic!("ParserEntry without instance or factory"),
+        };
+        let parser = factory();
+        let inst = Arc::new(RwLock::new(parser));
+        self.instance = Some(Arc::clone(&inst));
+        inst
     }
 
     fn is_initialized(&self) -> bool {
@@ -79,7 +80,7 @@ impl ParserEntry {
 /// Thread-safe parser registry with lazy initialization.
 #[derive(Clone)]
 pub struct ParserRegistry {
-    // ponytail: linear scan over small Vec of parsers (8 entries); upgrade to extension HashMap if parser count exceeds 50.
+    // ponytail: linear scan over small Vec of parsers (14 entries); upgrade to extension HashMap if parser count exceeds 50.
     entries: Arc<RwLock<Vec<ParserEntry>>>,
 }
 
@@ -95,13 +96,12 @@ impl ParserRegistry {
         let instance = Arc::new(RwLock::new(parser));
         let inst_clone = Arc::clone(&instance);
         let matcher: PathPredicate = Box::new(move |p: &Path| {
-            if let Ok(guard) = inst_clone.read() {
-                guard.can_parse(p)
-            } else {
-                p.extension()
+            match inst_clone.read() {
+                Ok(guard) => guard.can_parse(p),
+                Err(_) => p.extension()
                     .and_then(|e| e.to_str())
                     .map(|ext| extensions.iter().any(|s| s == ext))
-                    .unwrap_or(false)
+                    .unwrap_or(false),
             }
         });
 
@@ -139,7 +139,10 @@ impl ParserRegistry {
         );
     }
 
-    pub fn register_factory(&mut self, factory: Box<dyn Fn() -> Box<dyn SourceParser> + Send + Sync>) {
+    pub fn register_factory(
+        &mut self,
+        factory: Box<dyn Fn() -> Box<dyn SourceParser> + Send + Sync>,
+    ) {
         let parser = factory();
         self.register(parser);
     }
@@ -151,13 +154,14 @@ impl ParserRegistry {
         {
             let entries = self.entries.read().unwrap();
             for entry in entries.iter() {
-                if entry.matches(path) {
-                    if let Some(ref inst) = entry.instance {
-                        return Some(Arc::clone(inst));
-                    }
-                    matched_uninitialized = true;
-                    break;
+                if !entry.matches(path) {
+                    continue;
                 }
+                if let Some(ref inst) = entry.instance {
+                    return Some(Arc::clone(inst));
+                }
+                matched_uninitialized = true;
+                break;
             }
         }
 
@@ -257,16 +261,18 @@ impl ParserRegistry {
     /// Get all parsers, initializing any uninitialized parsers.
     pub fn iter_parsers(&self) -> Vec<Arc<RwLock<Box<dyn SourceParser>>>> {
         let mut entries = self.entries.write().unwrap();
-        entries.iter_mut().map(|entry| entry.get_or_init()).collect()
+        entries
+            .iter_mut()
+            .map(|entry| entry.get_or_init())
+            .collect()
     }
 }
 
 impl Default for ParserRegistry {
     fn default() -> Self {
         let mut registry = Self::new();
-        registry.register_lazy_extensions(&["rs"], || {
-            Box::new(crate::parser::rust::RustParser::new())
-        });
+        registry
+            .register_lazy_extensions(&["rs"], || Box::new(crate::parser::rust::RustParser::new()));
         registry.register_lazy_extensions(&["ts", "tsx", "js", "jsx", "mjs", "cjs"], || {
             crate::parser::typescript::create_typescript_parser().unwrap()
         });
@@ -279,14 +285,27 @@ impl Default for ParserRegistry {
         registry.register_lazy_extensions(&["dart"], || {
             crate::parser::dart::create_dart_parser().unwrap()
         });
-        registry.register_lazy_extensions(&["go"], || {
-            crate::parser::go::create_go_parser().unwrap()
-        });
+        registry
+            .register_lazy_extensions(&["go"], || crate::parser::go::create_go_parser().unwrap());
         registry.register_lazy_extensions(&["php", "php8", "phtml"], || {
             crate::parser::php::create_php_parser().unwrap()
         });
         registry.register_lazy_extensions(&["java"], || {
             crate::parser::java::create_java_parser().unwrap()
+        });
+        registry.register_lazy_extensions(&["md", "mdx"], || {
+            crate::parser::markup::MarkupParser::markdown()
+        });
+        registry.register_lazy_extensions(&["rst"], || crate::parser::markup::MarkupParser::rst());
+        registry.register_lazy_extensions(&["adoc"], || {
+            crate::parser::markup::MarkupParser::asciidoc()
+        });
+        registry.register_lazy_extensions(&["html", "htm"], || {
+            crate::parser::markup::MarkupParser::html()
+        });
+        registry.register_lazy_extensions(&["xml"], || crate::parser::markup::MarkupParser::xml());
+        registry.register_lazy_extensions(&["tex", "latex"], || {
+            crate::parser::markup::MarkupParser::latex()
         });
         registry
     }
@@ -297,14 +316,13 @@ pub fn syn_vis_to_visibility(vis: &syn::Visibility) -> Visibility {
     match vis {
         syn::Visibility::Public(_) => Visibility::Pub,
         syn::Visibility::Restricted(vis) => {
-            if vis.path.segments.len() == 1 {
-                match vis.path.segments[0].ident.to_string().as_str() {
-                    "crate" => Visibility::PubCrate,
-                    "super" => Visibility::PubSuper,
-                    _ => Visibility::Private,
-                }
-            } else {
-                Visibility::Private
+            if vis.path.segments.len() != 1 {
+                return Visibility::Private;
+            }
+            match vis.path.segments[0].ident.to_string().as_str() {
+                "crate" => Visibility::PubCrate,
+                "super" => Visibility::PubSuper,
+                _ => Visibility::Private,
             }
         }
         syn::Visibility::Inherited => Visibility::Private,
@@ -315,33 +333,50 @@ pub fn syn_vis_to_visibility(vis: &syn::Visibility) -> Visibility {
 pub fn extract_doc_comment(attrs: &[syn::Attribute]) -> Option<String> {
     let mut docs = Vec::new();
     for attr in attrs {
-        if attr.path().is_ident("doc") {
-            if let syn::Meta::NameValue(meta) = &attr.meta {
-                if let syn::Expr::Lit(expr) = &meta.value {
-                    if let syn::Lit::Str(lit) = &expr.lit {
-                        let s = lit.value();
-                        docs.push(s.trim_start_matches(' ').to_string());
-                    }
-                }
-            }
+        if let Some(s) = doc_string_value(attr) {
+            docs.push(s);
         }
     }
     if docs.is_empty() {
-        None
-    } else {
-        Some(docs.join("\n"))
+        return None;
     }
+    Some(docs.join("\n"))
+}
+
+/// Extract a single doc string value from an attribute, if present.
+fn doc_string_value(attr: &syn::Attribute) -> Option<String> {
+    if !attr.path().is_ident("doc") {
+        return None;
+    }
+    let meta = match &attr.meta {
+        syn::Meta::NameValue(meta) => meta,
+        _ => return None,
+    };
+    let expr = match &meta.value {
+        syn::Expr::Lit(expr) => expr,
+        _ => return None,
+    };
+    let lit = match &expr.lit {
+        syn::Lit::Str(lit) => lit,
+        _ => return None,
+    };
+    Some(lit.value().trim_start_matches(' ').to_string())
 }
 
 /// Extract traceability tags from doc comment.
 pub fn extract_tags(doc: &Option<String>) -> Vec<String> {
     let mut tags = Vec::new();
-    if let Some(doc) = doc {
-        for line in doc.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
-                tags.push(trimmed.to_string());
-            }
+    let doc = match doc {
+        Some(d) => d,
+        None => return tags,
+    };
+    for line in doc.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("@impl:")
+            || trimmed.starts_with("@test:")
+            || trimmed.starts_with("@criticality:")
+        {
+            tags.push(trimmed.to_string());
         }
     }
     tags
@@ -370,12 +405,17 @@ pub fn parse_visibility(text: &str) -> Visibility {
 /// Extract traceability tags from doc comment.
 pub fn extract_tags_from_doc(doc: &Option<String>) -> Vec<String> {
     let mut tags = Vec::new();
-    if let Some(doc) = doc {
-        for line in doc.lines() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
-                tags.push(trimmed.to_string());
-            }
+    let doc = match doc {
+        Some(d) => d,
+        None => return tags,
+    };
+    for line in doc.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("@impl:")
+            || trimmed.starts_with("@test:")
+            || trimmed.starts_with("@criticality:")
+        {
+            tags.push(trimmed.to_string());
         }
     }
     tags
@@ -388,7 +428,7 @@ mod tests {
     #[test]
     fn test_lazy_initialization() {
         let registry = ParserRegistry::default();
-        assert_eq!(registry.len(), 8);
+        assert_eq!(registry.len(), 14);
         assert_eq!(registry.initialized_count(), 0);
         assert_eq!(registry.is_initialized(Path::new("test.rs")), Some(false));
         assert_eq!(registry.is_initialized(Path::new("test.py")), Some(false));
@@ -436,7 +476,10 @@ mod tests {
         let registry = ParserRegistry::default();
         assert_eq!(registry.initialized_count(), 0);
 
-        let result = registry.parse_file(Path::new("lib.rs"), "pub fn add(a: i32, b: i32) -> i32 { a + b }");
+        let result = registry.parse_file(
+            Path::new("lib.rs"),
+            "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+        );
         assert_eq!(result.symbols.len(), 1);
         assert_eq!(result.symbols[0].name, "add");
         assert_eq!(registry.initialized_count(), 1);

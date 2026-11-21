@@ -1,7 +1,14 @@
 //! Unified 5-Gate Local CI Pipeline Runner.
 
+use crate::auditor::audit_project_anti_slop;
 use crate::formal::validate_formal_specs;
+use crate::graph::builder::build_relation_graph;
+use crate::policy::{load_policy, Severity, TierId};
+use crate::scanner::scan_project_tags;
+use crate::verification::evaluate;
 use serde::{Deserialize, Serialize};
+use std::env;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
@@ -10,7 +17,7 @@ use std::time::Instant;
 pub struct CiOptions {
     pub gate: Option<u8>,
     pub skip: Vec<u8>,
-    pub mode: String,
+    pub rigor: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +35,7 @@ pub struct CiReport {
     pub all_passed: bool,
     pub total_duration_ms: u128,
     pub gates: Vec<GateResult>,
+    pub unproven: bool,
 }
 
 impl CiReport {
@@ -36,15 +44,23 @@ impl CiReport {
     }
 }
 
+/// `--strict` is active for PRs targeting `dev` or `main`; local/feature-branch
+/// runs leave it off.
+fn ci_strict() -> bool {
+    env::var("GITHUB_BASE_REF")
+        .map(|v| v == "dev" || v == "main")
+        .unwrap_or(false)
+}
+
 pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
     let start = Instant::now();
     let mut gates = Vec::new();
     let mut overall_success = true;
+    let mut unproven = false;
 
-    let target_gates: Vec<u8> = if let Some(g) = opts.gate {
-        vec![g]
-    } else {
-        vec![0, 1, 2, 3, 4]
+    let target_gates: Vec<u8> = match opts.gate {
+        Some(g) => vec![g],
+        None => vec![0, 1, 2, 3, 4],
     };
 
     for &g in &target_gates {
@@ -63,7 +79,7 @@ pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
         let g_start = Instant::now();
         let res = match g {
             0 => run_gate_0(dir),
-            1 => run_gate_1(dir, &opts.mode),
+            1 => run_gate_1(dir, &opts.rigor),
             2 => run_gate_2(dir),
             3 => run_gate_3(dir),
             4 => run_gate_4(dir),
@@ -76,6 +92,11 @@ pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
                 details: vec![format!("Gate {g} does not exist (valid: 0..4)")],
             },
         };
+
+        if g == 1 && !res.passed && !res.skipped {
+            // Gate 1 unproven (missing semantic evidence) propagates exit 3.
+            unproven = res.details.iter().any(|d| d.contains("unproven"));
+        }
 
         if !res.passed && !res.skipped {
             overall_success = false;
@@ -95,13 +116,14 @@ pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
         all_passed: overall_success,
         total_duration_ms: start.elapsed().as_millis(),
         gates,
+        unproven,
     }
 }
 
 fn gate_name(gate: u8) -> &'static str {
     match gate {
         0 => "Gate 0: Formal Specifications",
-        1 => "Gate 1: 1:1 Traceability, Docstring Contracts & Anti-Slop",
+        1 => "Gate 1: Structural Traceability, Contracts & Skill Drift",
         2 => "Gate 2: Static Analysis (Clippy/Linter)",
         3 => "Gate 3: Automated Test & Invariant Verification",
         4 => "Gate 4: Performance & Noise-Floor Budget Gate",
@@ -118,11 +140,13 @@ fn run_gate_0(dir: &Path) -> GateResult {
         if !check.passed && !check.skipped {
             passed = false;
             details.push(format!("[FAIL] {}: {} ({})", check.tool, check.file, check.message));
-        } else if check.skipped {
-            details.push(format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message));
-        } else {
-            details.push(format!("[PASS] {}: {}", check.tool, check.file));
+            continue;
         }
+        if check.skipped {
+            details.push(format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message));
+            continue;
+        }
+        details.push(format!("[PASS] {}: {}", check.tool, check.file));
     }
 
     if details.is_empty() {
@@ -139,45 +163,87 @@ fn run_gate_0(dir: &Path) -> GateResult {
     }
 }
 
-fn run_gate_1(dir: &Path, mode: &str) -> GateResult {
-    // Run traceability scanner + auditor in-process
-    let scanner_result = crate::scanner::scan_project_tags(dir);
+fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
+    let scanner_result = scan_project_tags(dir);
     let mut details = Vec::new();
 
     match scanner_result {
         Ok(tags) => {
-            let graph = crate::graph::builder::build_trace_graph(&tags);
-            let mut passed = graph.must_broken.is_empty();
+            let tier: TierId = rigor.parse().unwrap_or(TierId::T1);
+            let policy = load_policy();
+            let graph = build_relation_graph(&tags, &policy);
+            let strict = ci_strict();
 
-            if mode == "axiomatic" && !graph.should_pending.is_empty() {
-                // In axiomatic mode, check for pending SHOULD if strict
-                details.push(format!("Pending SHOULD gates: {}", graph.should_pending.len()));
+            // Anti-slop audit: Error violations block outside T0; Warning
+            // violations block only under --strict (ci_strict).
+            let anti_slop_violations = audit_project_anti_slop(dir).unwrap_or_default();
+            let anti_errors: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Error)
+                .collect();
+            let anti_warnings: Vec<_> = anti_slop_violations
+                .iter()
+                .filter(|v| v.severity == Severity::Warning)
+                .collect();
+            let has_antislop_failure =
+                tier != TierId::T0 && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
+
+            // COV-02 is a warning; `--strict` promotes it to failure.
+            let has_cov02 = graph
+                .violations
+                .iter()
+                .any(|v| v.rule_id == "COV-02");
+            let passed = graph.is_closed && !(strict && has_cov02) && !has_antislop_failure;
+
+            if !passed && strict && has_cov02 {
+                details.push("COV-02 coverage warnings promoted to failures by --strict".to_string());
             }
-
             if !passed {
-                details.push(format!("Broken MUST gates: {}", graph.must_broken.len()));
-            } else {
-                details.push(format!("Closed MUST gates: {}", graph.must_satisfied));
-            }
-
-            let audit_res = crate::auditor::audit_project_docstrings(dir);
-            if let Ok(violations) = audit_res {
-                if !violations.is_empty() {
-                    passed = false;
-                    details.push(format!("Docstring contract violations: {}", violations.len()));
+                for v in &graph.violations {
+                    details.push(format!(
+                        "[FAIL] {}: {} (found {}, required {})",
+                        v.rule_id, v.subject, v.found, v.required
+                    ));
                 }
             }
+            if passed {
+                details.push(format!("Closed MUST gates: structural closed, {} violations", graph.violations.len()));
+            }
 
-            let as_res = crate::auditor::audit_project_anti_slop(dir);
-            if let Ok(violations) = as_res {
-                if !violations.is_empty() {
-                    if mode == "velocity" {
-                        details.push(format!("Anti-slop warnings: {}", violations.len()));
-                    } else {
-                        passed = false;
-                        details.push(format!("Anti-slop violations: {}", violations.len()));
-                    }
-                }
+            for v in &anti_errors {
+                let blocked = tier != TierId::T0;
+                let status = match blocked {
+                    true => "FAIL",
+                    false => "WARN",
+                };
+                details.push(format!(
+                    "[{}] anti-slop {}:{} {}",
+                    status,
+                    v.file_path.display(),
+                    v.line_number,
+                    v.message
+                ));
+            }
+            for v in &anti_warnings {
+                let blocked = strict && tier != TierId::T0;
+                let status = match blocked {
+                    true => "FAIL",
+                    false => "WARN",
+                };
+                details.push(format!(
+                    "[{}] anti-slop warning {}:{} {}",
+                    status,
+                    v.file_path.display(),
+                    v.line_number,
+                    v.message
+                ));
+            }
+
+            let behavioral = dir.join(".spec-engine").join("behavioral.json");
+            let evidence_dir = dir.join("evidence");
+            let report = evaluate(&graph, &evidence_dir, tier, &behavioral);
+            if report.status == crate::verification::VerificationStatus::Unproven {
+                details.push("Gate 1 unproven: semantic evidence required but missing".to_string());
             }
 
             GateResult {
@@ -221,20 +287,20 @@ fn run_gate_2(dir: &Path) -> GateResult {
         .output();
 
     match out {
-        Ok(res) => GateResult {
-            gate_number: 2,
-            name: gate_name(2).to_string(),
-            passed: res.status.success(),
-            skipped: false,
-            duration_ms: 0,
-            details: vec![
-                if res.status.success() {
-                    "Clippy passed with zero warnings".to_string()
-                } else {
-                    String::from_utf8_lossy(&res.stderr).trim().to_string()
-                },
-            ],
-        },
+        Ok(res) => {
+            let passed = res.status.success();
+            GateResult {
+                gate_number: 2,
+                name: gate_name(2).to_string(),
+                passed,
+                skipped: false,
+                duration_ms: 0,
+                details: vec![match passed {
+                    true => "Clippy passed with zero warnings".to_string(),
+                    false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
+                }],
+            }
+        }
         Err(e) => GateResult {
             gate_number: 2,
             name: gate_name(2).to_string(),
@@ -263,29 +329,33 @@ fn run_gate_3(dir: &Path) -> GateResult {
         .current_dir(dir)
         .output();
 
-    match out {
-        Ok(res) => GateResult {
-            gate_number: 3,
-            name: gate_name(3).to_string(),
-            passed: res.status.success(),
-            skipped: false,
-            duration_ms: 0,
-            details: vec![
-                if res.status.success() {
-                    "Test suite passed completely".to_string()
-                } else {
-                    String::from_utf8_lossy(&res.stdout).lines().rev().take(10).collect::<Vec<_>>().join("\n")
-                },
-            ],
-        },
-        Err(e) => GateResult {
-            gate_number: 3,
-            name: gate_name(3).to_string(),
-            passed: false,
-            skipped: false,
-            duration_ms: 0,
-            details: vec![e.to_string()],
-        },
+    let passed = match out {
+        Ok(res) => res.status.success(),
+        Err(_) => false,
+    };
+
+    // Write `.spec-engine/behavioral.json` with `passed` and `skipped`.
+    let spec_engine_dir = dir.join(".spec-engine");
+    let _ = fs::create_dir_all(&spec_engine_dir).and_then(|_| {
+        fs::write(
+            spec_engine_dir.join("behavioral.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "passed": passed,
+                "skipped": Vec::<String>::new()
+            })).unwrap_or_default()
+        )
+    });
+
+    GateResult {
+        gate_number: 3,
+        name: gate_name(3).to_string(),
+        passed,
+        skipped: false,
+        duration_ms: 0,
+        details: vec![match passed {
+            true => "Test suite passed completely".to_string(),
+            false => "Test suite failed".to_string(),
+        }],
     }
 }
 
@@ -309,20 +379,20 @@ fn run_gate_4(dir: &Path) -> GateResult {
         .output();
 
     match out {
-        Ok(res) => GateResult {
-            gate_number: 4,
-            name: gate_name(4).to_string(),
-            passed: res.status.success(),
-            skipped: false,
-            duration_ms: 0,
-            details: vec![
-                if res.status.success() {
-                    "Benchmark harness compiled and verified against noise floor".to_string()
-                } else {
-                    String::from_utf8_lossy(&res.stderr).trim().to_string()
-                },
-            ],
-        },
+        Ok(res) => {
+            let passed = res.status.success();
+            GateResult {
+                gate_number: 4,
+                name: gate_name(4).to_string(),
+                passed,
+                skipped: false,
+                duration_ms: 0,
+                details: vec![match passed {
+                    true => "Benchmark harness compiled and verified against noise floor".to_string(),
+                    false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
+                }],
+            }
+        }
         Err(e) => GateResult {
             gate_number: 4,
             name: gate_name(4).to_string(),

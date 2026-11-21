@@ -4,7 +4,7 @@ use crate::skill::inspector::extract_skill_full_metadata;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-// @impl:FR-SKILL-CRUD-01
+// @impl:FR-SKILL-CRUD-01 @impl:FR-SKILL-02
 // @impl:FR-SKILL-PORT-01
 
 /// Adds a new skill directory with frontmatter and body.
@@ -35,18 +35,17 @@ pub fn add_skill_full(
     let version_line = version
         .map(|v| format!("version: {}\n", v.trim()))
         .unwrap_or_default();
-    let depends_line = if depends.is_empty() {
-        String::new()
-    } else {
-        format!(
+    let mut depends_line = String::new();
+    if !depends.is_empty() {
+        depends_line = format!(
             "depends: [{}]\n",
             depends
                 .iter()
                 .map(|d| d.trim())
                 .collect::<Vec<_>>()
                 .join(", ")
-        )
-    };
+        );
+    }
 
     let content = format!(
         "---\nname: {}\ndescription: {}\n{}{}---\n\n{}\n",

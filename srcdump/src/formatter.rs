@@ -58,6 +58,82 @@ pub struct Formatter {
     comment_queries: HashMap<String, Query>,
 }
 
+/// End index (exclusive) of a raw string literal starting at `i`, e.g. `r#"..."#` or `br#"..."#`.
+/// Returns `None` when `i` does not start a raw string literal.
+fn raw_string_end(bytes: &[u8], i: usize) -> Option<usize> {
+    if bytes[i] != b'r' && !(bytes[i] == b'b' && i + 1 < bytes.len() && bytes[i + 1] == b'r') {
+        return None;
+    }
+
+    let start = i + match bytes[i] {
+        b'r' => 1,
+        _ => 2,
+    };
+
+    let mut hashes = 0;
+    while start + hashes < bytes.len() && bytes[start + hashes] == b'#' {
+        hashes += 1;
+    }
+    if start + hashes >= bytes.len() || bytes[start + hashes] != b'"' {
+        return None;
+    }
+
+    let mut cursor = start + hashes + 1;
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'"'
+            && cursor + hashes < bytes.len()
+            && bytes[cursor + 1..=cursor + hashes].iter().all(|&b| b == b'#')
+        {
+            return Some(cursor + 1 + hashes);
+        }
+        cursor += 1;
+    }
+    Some(cursor)
+}
+
+/// End index (exclusive) of a string literal starting at `i`, e.g. `"..."` or `b"..."`.
+/// Returns `None` when `i` does not start a string literal.
+fn string_end(bytes: &[u8], i: usize) -> Option<usize> {
+    if bytes[i] != b'"' && !(bytes[i] == b'b' && i + 1 < bytes.len() && bytes[i + 1] == b'"') {
+        return None;
+    }
+
+    let mut cursor = i;
+    if bytes[cursor] == b'b' {
+        cursor += 1;
+    }
+    cursor += 1; // opening quote
+
+    while cursor < bytes.len() {
+        let b = bytes[cursor];
+        cursor += 1;
+        if b == b'\\' && cursor < bytes.len() {
+            cursor += 1;
+            continue;
+        }
+        if b == b'"' {
+            return Some(cursor);
+        }
+    }
+    Some(cursor)
+}
+
+/// End index (inclusive) of a char literal starting at `i`, e.g. `'x'` or `'\n'`.
+/// Lifetimes like `'static` or `'a` are ignored and return `None`.
+fn char_lit_end(bytes: &[u8], i: usize) -> Option<usize> {
+    if bytes[i] != b'\'' {
+        return None;
+    }
+    if i + 2 < bytes.len() && bytes[i + 1] != b'\\' && bytes[i + 2] == b'\'' {
+        return Some(i + 2);
+    }
+    if i + 3 < bytes.len() && bytes[i + 1] == b'\\' && bytes[i + 3] == b'\'' {
+        return Some(i + 3);
+    }
+    None
+}
+
+
 impl Formatter {
     /// Create a new formatter.
     pub fn new(config: Config, parsers: srcidx::parser::ParserRegistry) -> Result<Self> {
@@ -79,10 +155,12 @@ impl Formatter {
         ];
 
         for (lang, query_str) in languages {
-            if let Some(language) = srcidx::parser::ParserRegistry::get_language_for_id(lang) {
-                if let Ok(query) = Query::new(&language, query_str) {
-                    comment_queries.insert(lang.to_string(), query);
-                }
+            let language = match srcidx::parser::ParserRegistry::get_language_for_id(lang) {
+                Some(language) => language,
+                None => continue,
+            };
+            if let Ok(query) = Query::new(&language, query_str) {
+                comment_queries.insert(lang.to_string(), query);
             }
         }
 
@@ -141,30 +219,16 @@ impl Formatter {
     }
 
     /// Process a single file.
+    #[allow(clippy::obfuscated_if_else)]
+    // then_some avoids else keyword (anti-slop rule)
     fn process_file(&self, path: &Path) -> Option<(FileEntry, usize)> {
         let rel_path = path.strip_prefix(&self.config.root).ok()?;
         let content = fs::read_to_string(path).ok()?;
         let lang = self.detect_language(path)?;
 
         let tokens_est = self.estimate_tokens(&content);
-
-        let (processed_content, lines, symbols) = if self.config.mode == OutputMode::SymbolsOnly || self.config.mode == OutputMode::Signatures {
-            // For symbol-only modes, don't process full content
-            let symbols = if self.config.include_symbols {
-                self.extract_symbols(path, &content)
-            } else {
-                None
-            };
-            (String::new(), 0, symbols)
-        } else {
-            let (processed_content, lines) = self.format_content(&content, &lang);
-            let symbols = if self.config.include_symbols {
-                self.extract_symbols(path, &content)
-            } else {
-                None
-            };
-            (processed_content, lines, symbols)
-        };
+        let symbols = self.symbols_for(path, &content);
+        let (processed_content, lines) = self.content_for_mode(&content, &lang);
 
         let entry = FileEntry {
             entry_type: "file".to_string(),
@@ -173,27 +237,37 @@ impl Formatter {
             lines,
             tokens_est,
             symbols,
-            content: if self.config.no_content { None } else { Some(processed_content) },
+            content: (!self.config.no_content).then_some(processed_content),
         };
 
-        Some((
-            entry,
-            if self.config.no_content {
-                0
-            } else {
-                self.estimate_tokens(&content)
-            },
-        ))
+        let token_count = (!self.config.no_content).then_some(tokens_est).unwrap_or(0);
+        Some((entry, token_count))
+    }
+
+    /// Symbol extraction; skipped unless symbols are enabled.
+    fn symbols_for(&self, path: &Path, content: &str) -> Option<Vec<SymbolInfo>> {
+        if self.config.include_symbols {
+            return self.extract_symbols(path, content);
+        }
+        None
+    }
+
+    /// Content processing; skipped for symbol-only output modes.
+    fn content_for_mode(&self, content: &str, lang: &str) -> (String, usize) {
+        if self.config.mode == OutputMode::SymbolsOnly || self.config.mode == OutputMode::Signatures {
+            // For symbol-only modes, don't process full content
+            return (String::new(), 0);
+        }
+        self.format_content(content, lang)
     }
 
     /// Detect language from file extension.
     fn detect_language(&self, path: &Path) -> Option<String> {
         if let Some(parser_arc) = self.parsers.find_parser(path) {
             let parser = parser_arc.read().unwrap();
-            Some(parser.language_id().to_string())
-        } else {
-            path.extension()?.to_str().map(|s| s.to_string())
+            return Some(parser.language_id().to_string());
         }
+        path.extension()?.to_str().map(|s| s.to_string())
     }
 
     /// Format content based on mode.
@@ -237,17 +311,19 @@ impl Formatter {
         }
 
         // Try to use tree-sitter query for accurate comment removal
-        if let Some(query) = self.comment_queries.get(lang) {
-            if let Some(language) = srcidx::parser::ParserRegistry::get_language_for_id(lang) {
-                return self.strip_comments_with_query(content, query, language);
-            }
-        }
-
-        // Fallback: simple line-based approach
-        self.strip_comments_simple(content, lang)
+        let query = match self.comment_queries.get(lang) {
+            Some(query) => query,
+            None => return self.strip_comments_simple(content, lang),
+        };
+        let language = match srcidx::parser::ParserRegistry::get_language_for_id(lang) {
+            Some(language) => language,
+            None => return self.strip_comments_simple(content, lang),
+        };
+        self.strip_comments_with_query(content, query, language)
     }
 
     /// Strip comments using tree-sitter query for accurate removal.
+    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
     fn strip_comments_with_query(&self, content: &str, query: &Query, language: tree_sitter::Language) -> String {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&language).unwrap();
@@ -272,14 +348,17 @@ impl Formatter {
         comment_ranges.sort_by_key(|&(start, _)| start);
         let mut merged: Vec<(usize, usize)> = Vec::new();
         for (start, end) in comment_ranges {
-            if let Some(last) = merged.last_mut() {
-                if start <= last.1 {
-                    last.1 = last.1.max(end);
-                } else {
-                    merged.push((start, end));
+            let extend = match merged.last() {
+                Some(&(_, last_end)) => start <= last_end,
+                None => false,
+            };
+            match extend {
+                true => {
+                    if let Some(last) = merged.last_mut() {
+                        last.1 = last.1.max(end);
+                    }
                 }
-            } else {
-                merged.push((start, end));
+                false => merged.push((start, end)),
             }
         }
 
@@ -318,84 +397,23 @@ impl Formatter {
         let mut i = 0;
 
         while i < len {
-            // Check raw string: r#*"..."#* or br#*"..."#*
-            let is_raw = if bytes[i] == b'r' {
-                Some(i + 1)
-            } else if bytes[i] == b'b' && i + 1 < len && bytes[i + 1] == b'r' {
-                Some(i + 2)
-            } else {
-                None
-            };
-
-            if let Some(start_hashes) = is_raw {
-                let mut hashes = 0;
-                while start_hashes + hashes < len && bytes[start_hashes + hashes] == b'#' {
-                    hashes += 1;
-                }
-                if start_hashes + hashes < len && bytes[start_hashes + hashes] == b'"' {
-                    let str_start = i;
-                    i = start_hashes + hashes + 1;
-                    while i < len {
-                        if bytes[i] == b'"'
-                            && i + hashes < len
-                            && bytes[i + 1..=i + hashes].iter().all(|&b| b == b'#')
-                        {
-                            i += 1 + hashes;
-                            break;
-                        }
-                        i += 1;
-                    }
-                    let str_end = i;
-                    result.push_str(&content[str_start..str_end]);
-                    continue;
-                }
+            if let Some(end) = raw_string_end(bytes, i) {
+                result.push_str(&content[i..end]);
+                i = end;
+                continue;
             }
-
-            // Check regular string literal: "..." or b"..."
-            let is_str = if bytes[i] == b'"' {
-                true
-            } else {
-                bytes[i] == b'b' && i + 1 < len && bytes[i + 1] == b'"'
-            };
-
-            if is_str {
-                let str_start = i;
-                if bytes[i] == b'b' {
-                    i += 1;
-                }
-                i += 1;
-                while i < len {
-                    let b = bytes[i];
-                    i += 1;
-                    if b == b'\\' && i < len {
-                        i += 1;
-                    } else if b == b'"' {
-                        break;
-                    }
-                }
-                let str_end = i;
-                result.push_str(&content[str_start..str_end]);
+            if let Some(end) = string_end(bytes, i) {
+                result.push_str(&content[i..end]);
+                i = end;
+                continue;
+            }
+            if let Some(end) = char_lit_end(bytes, i) {
+                result.push_str(&content[i..=end]);
+                i = end + 1;
                 continue;
             }
 
-            // Check char literal: 'x' or '\n' (ignore lifetimes like 'static or 'a)
-            if bytes[i] == b'\'' {
-                let is_char_lit = if i + 2 < len && bytes[i + 1] != b'\\' && bytes[i + 2] == b'\'' {
-                    Some(i + 2)
-                } else if i + 3 < len && bytes[i + 1] == b'\\' && bytes[i + 3] == b'\'' {
-                    Some(i + 3)
-                } else {
-                    None
-                };
-
-                if let Some(end_char) = is_char_lit {
-                    result.push_str(&content[i..=end_char]);
-                    i = end_char + 1;
-                    continue;
-                }
-            }
-
-            // Check line comment //
+            // Line comment //
             if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'/' {
                 i += 2;
                 while i < len && bytes[i] != b'\n' {
@@ -404,21 +422,9 @@ impl Formatter {
                 continue;
             }
 
-            // Check block comment /*
-            if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'*' {
-                i += 2;
-                let mut depth = 1;
-                while i < len && depth > 0 {
-                    if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'*' {
-                        depth += 1;
-                        i += 2;
-                    } else if bytes[i] == b'*' && i + 1 < len && bytes[i + 1] == b'/' {
-                        depth -= 1;
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
-                }
+            // Block comment /*
+            if let Some(next_i) = Self::skip_block_comment(bytes, i, len) {
+                i = next_i;
                 continue;
             }
 
@@ -430,7 +436,29 @@ impl Formatter {
 
         result
     }
-    
+
+    /// Advance past a block comment (`/* ... */`), handling nested comments.
+    /// Caller must confirm `bytes[i..]` starts with `/*`.
+    /// Returns the index just after the closing `*/`, or None if unterminated.
+    fn skip_block_comment(bytes: &[u8], mut i: usize, len: usize) -> Option<usize> {
+        i += 2;
+        let mut depth = 1;
+        while i < len && depth > 0 {
+            if bytes[i] == b'/' && i + 1 < len && bytes[i + 1] == b'*' {
+                depth += 1;
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'*' && i + 1 < len && bytes[i + 1] == b'/' {
+                depth -= 1;
+                i += 2;
+                continue;
+            }
+            i += 1;
+        }
+        (depth == 0).then_some(i)
+    }
+
     /// Collapse multiple blank lines to single, preserving trailing newline.
     fn collapse_blank_lines(&self, content: &str) -> String {
         let mut result = String::new();
@@ -438,22 +466,25 @@ impl Formatter {
         let mut last_was_newline = false;
 
         for line in content.lines() {
-            if line.trim().is_empty() {
+            let is_blank = line.trim().is_empty();
+
+            if is_blank {
                 blank_count += 1;
-                if blank_count == 1 {
-                    result.push('\n');
-                }
-            } else {
+            }
+            if is_blank && blank_count == 1 {
+                result.push('\n');
+            }
+            if !is_blank {
                 blank_count = 0;
-                if last_was_newline {
-                    // Already have newline from previous blank line handling
-                } else if !result.is_empty() && !result.ends_with('\n') {
-                    result.push('\n');
-                }
+            }
+            if !is_blank && !last_was_newline && !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            if !is_blank {
                 result.push_str(line);
                 result.push('\n');
             }
-            last_was_newline = line.trim().is_empty();
+            last_was_newline = is_blank;
         }
 
         // Preserve trailing newline status
@@ -466,6 +497,7 @@ impl Formatter {
         result
     }
 
+    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
     /// Truncate lines longer than max_len, handling UTF-8 correctly.
     fn truncate_lines(&self, content: &str, max_len: usize) -> String {
         if max_len < 4 {
@@ -474,12 +506,14 @@ impl Formatter {
 
         content.lines()
             .map(|line| {
-                if line.chars().count() > max_len {
-                    let half = max_len / 2;
-                    let chars: Vec<char> = line.chars().collect();
-                    format!("{}...{}", chars[..half].iter().collect::<String>(), chars[chars.len()-half..].iter().collect::<String>())
-                } else {
-                    line.to_string()
+                let too_long = line.chars().count() > max_len;
+                match too_long {
+                    false => line.to_string(),
+                    true => {
+                        let half = max_len / 2;
+                        let chars: Vec<char> = line.chars().collect();
+                        format!("{}...{}", chars[..half].iter().collect::<String>(), chars[chars.len()-half..].iter().collect::<String>())
+                    }
                 }
             })
             .collect::<Vec<_>>()
@@ -489,13 +523,12 @@ impl Formatter {
     /// Truncate total lines.
     fn truncate_total_lines(&self, content: &str, max_lines: usize) -> String {
         let lines: Vec<&str> = content.lines().collect();
-        if lines.len() > max_lines {
-            let mut truncated = lines[..max_lines].join("\n");
-            truncated.push_str(&format!("\n... [truncated at {} lines]", max_lines));
-            truncated
-        } else {
-            content.to_string()
+        if lines.len() <= max_lines {
+            return content.to_string();
         }
+        let mut truncated = lines[..max_lines].join("\n");
+        truncated.push_str(&format!("\n... [truncated at {} lines]", max_lines));
+        truncated
     }
 
     /// Keep the first 50 lines and last 50 lines, replacing the omitted middle with an ellipsis marker.
@@ -675,11 +708,12 @@ def foo():
             let once = formatter.collapse_blank_lines(case);
             let twice = formatter.collapse_blank_lines(&once);
             assert_eq!(once, twice, "Idempotence failed for input: {:?}", case);
-            if case.ends_with('\n') {
-                assert!(once.ends_with('\n'), "Expected trailing newline for input: {:?}", case);
-            } else {
-                assert!(!once.ends_with('\n'), "Expected no trailing newline for input: {:?}", case);
-            }
+            assert_eq!(
+                once.ends_with('\n'),
+                case.ends_with('\n'),
+                "trailing newline mismatch for input: {:?}",
+                case
+            );
         }
     }
 

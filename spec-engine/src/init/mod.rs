@@ -2,7 +2,7 @@ use crate::error::AsepError;
 use std::fs;
 use std::path::Path;
 
-// @impl:FR-CLI-INIT-01
+// @impl:FR-CLI-INIT-01 @impl:FR-CLI-03 @impl:FR-INIT-01
 /// Initializes standard documentation directories and baseline PRD specification.
 pub fn init_asep_project(root: &Path) -> Result<(), AsepError> {
     let docs_dir = root.join("docs");

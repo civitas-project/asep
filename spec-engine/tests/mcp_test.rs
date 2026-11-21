@@ -1,5 +1,9 @@
+use asep::agent_protocol::Envelope;
 use asep::mcp::server::process_jsonrpc_request;
-use std::path::PathBuf;
+use asep::mcp::tools::{execute_tool, get_tools_list};
+use serde_json::json;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 // @test:FR-MCP-PROTO-01
 #[test]
@@ -31,6 +35,23 @@ fn test_mcp_tools_list() {
     assert!(names.contains(&"spec_check"));
     assert!(names.contains(&"adr_new"));
     assert!(names.contains(&"render_diagrams"));
+}
+
+// @test:FR-MCP-PROTO-COMPACT
+#[test]
+fn test_tool_descriptions_are_compact() {
+    let tools = get_tools_list();
+    let tool_list = tools["tools"].as_array().expect("tools array");
+    assert_eq!(tool_list.len(), 10, "expected exactly 10 tools");
+    for tool in tool_list {
+        let name = tool["name"].as_str().unwrap_or("<unnamed>");
+        let desc = tool["description"].as_str().expect("description string");
+        assert!(
+            desc.chars().count() <= 60,
+            "tool '{name}' description too long: {} chars",
+            desc.chars().count()
+        );
+    }
 }
 
 // @test:FR-MCP-PROTO-03
@@ -125,4 +146,146 @@ fn test_mcp_tools_call_srcdump() {
         assert!(entry["path"].is_string());
         assert!(entry["lang"].is_string());
     }
+}
+
+// @test:FR-MCP-PROTO-08
+#[test]
+fn test_agent_tools_do_not_return_payload() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let body = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir.to_str().unwrap(),
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": body,
+        }),
+        Path::new(""),
+    )
+    .expect("asep_agent_send must succeed");
+
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert!(val["id"].is_string(), "send response must include id");
+    assert!(val["path"].is_string(), "send response must include path");
+    let path = val["path"].as_str().unwrap();
+    assert!(path.starts_with("messages/") && path.ends_with(".json"));
+    assert!(
+        !val.as_object().unwrap().contains_key("body"),
+        "send must not return body payload"
+    );
+}
+
+// @test:FR-MCP-PROTO-09
+#[test]
+fn test_agent_recv_filters_by_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let run_dir_s = run_dir.to_str().unwrap().to_string();
+    let dispatch = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+    let ruling = json!({
+        "finding": "ok",
+        "decision": "approve",
+        "cost_if_wrong": 0
+    });
+
+    execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": dispatch,
+        }),
+        Path::new(""),
+    )
+    .expect("send to executor must succeed");
+    execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "judge",
+            "kind": "RULING",
+            "body": ruling,
+        }),
+        Path::new(""),
+    )
+    .expect("send to judge must succeed");
+
+    let res = execute_tool(
+        "asep_agent_recv",
+        &json!({"run_dir": run_dir_s, "agent": "executor"}),
+        Path::new(""),
+    )
+    .expect("recv must succeed");
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let list: Vec<serde_json::Value> = serde_json::from_str(text).expect("recv list is JSON");
+    assert_eq!(list.len(), 1, "executor inbox must exclude messages to other agents");
+    assert!(list[0]["id"].is_string());
+    assert!(list[0]["path"].is_string());
+    assert!(
+        !list[0].as_object().unwrap().contains_key("body"),
+        "recv must not return body payload"
+    );
+}
+
+// @test:FR-MCP-PROTO-10
+#[test]
+fn test_agent_send_sets_reply_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let run_dir_s = run_dir.to_str().unwrap().to_string();
+    let body = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": body,
+            "reply_to": "msg-prev",
+        }),
+        Path::new(""),
+    )
+    .expect("asep_agent_send must succeed");
+
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    let id = val["id"].as_str().expect("id is string");
+
+    // Raw envelope file must use semantic key "reply_to".
+    let raw = fs::read_to_string(
+        dir.path().join("messages").join(format!("{id}.json")),
+    )
+    .unwrap();
+    assert!(
+        raw.contains("\"reply_to\":\"msg-prev\""),
+        "raw envelope must contain reply_to key with msg-prev value"
+    );
+
+    // Deserialized envelope must expose reply_to.
+    let envelope: Envelope = serde_json::from_str(&raw).unwrap();
+    assert_eq!(envelope.reply_to.as_deref(), Some("msg-prev"));
 }

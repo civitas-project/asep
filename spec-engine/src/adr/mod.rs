@@ -19,17 +19,24 @@ pub fn create_new_adr(project_root: &Path, title: &str) -> Result<PathBuf, AsepE
     let mut max_num = 0;
     if let Ok(entries) = fs::read_dir(&adr_dir) {
         for entry in entries.flatten() {
-            if let Some(file_name) = entry.file_name().to_str() {
-                if let Some(caps) = ADR_FILENAME_REGEX.captures(file_name) {
-                    if let Some(num_str) = caps.get(1) {
-                        if let Ok(num) = num_str.as_str().parse::<u32>() {
-                            if num > max_num {
-                                max_num = num;
-                            }
-                        }
-                    }
-                }
-            }
+            let name = entry.file_name();
+            let file_name = match name.to_str() {
+                Some(f) => f,
+                None => continue,
+            };
+            let caps = match ADR_FILENAME_REGEX.captures(file_name) {
+                Some(c) => c,
+                None => continue,
+            };
+            let num_str = match caps.get(1) {
+                Some(s) => s,
+                None => continue,
+            };
+            let num = match num_str.as_str().parse::<u32>() {
+                Ok(n) => n,
+                Err(_) => continue,
+            };
+            max_num = max_num.max(num);
         }
     }
 
@@ -96,7 +103,9 @@ fn slugify(title: &str) -> String {
         if c.is_alphanumeric() {
             slug.push(c.to_ascii_lowercase());
             prev_dash = false;
-        } else if !prev_dash {
+            continue;
+        }
+        if !prev_dash {
             slug.push('-');
             prev_dash = true;
         }

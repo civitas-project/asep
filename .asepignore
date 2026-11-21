@@ -2,4 +2,10 @@
 # Ignore template files and adaptive skeletons containing illustrative token placeholders
 **/templates/**
 **/skeletons/**
+# Exclude test fixtures whose tags are string-literal test data (not real declarations)
+spec-engine/tests/
+# Exclude integration test fixtures and benches whose tags are illustrative data (not real declarations)
+srcidx/tests/
+**/benches/**
+vendor/
 

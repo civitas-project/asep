@@ -17,15 +17,22 @@ pub fn resolve_dependencies(skill_id: &str) -> Vec<String> {
     visited.insert(skill_id.to_string());
 
     while let Some(current) = queue.pop_front() {
-        if let Some(orig) = embedded.iter().find(|e| e.id == current || e.directory == current) {
-            let (_, _, _, deps) = extract_skill_full_metadata(orig.content);
-            for dep in deps {
-                if !visited.contains(&dep) {
-                    visited.insert(dep.clone());
-                    resolved.push(dep.clone());
-                    queue.push_back(dep);
-                }
+        let orig = match embedded
+            .iter()
+            .find(|e| e.id == current || e.directory == current)
+        {
+            Some(orig) => orig,
+            None => continue,
+        };
+
+        let (_, _, _, deps) = extract_skill_full_metadata(orig.content);
+        for dep in deps {
+            if visited.contains(&dep) {
+                continue;
             }
+            visited.insert(dep.clone());
+            resolved.push(dep.clone());
+            queue.push_back(dep);
         }
     }
 

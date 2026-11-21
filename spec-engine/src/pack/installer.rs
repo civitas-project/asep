@@ -1,5 +1,6 @@
 //! Interactive `inquire` TUI installer and headless packaging engine.
 
+use crate::config::settings::load_config;
 use crate::pack::embedded::{
     get_default_mcp_config_json, get_default_plugin_json, get_embedded_skills,
 };
@@ -10,7 +11,7 @@ use inquire::{Confirm, MultiSelect, Select};
 use std::fs;
 use std::path::PathBuf;
 
-// @impl:FR-PACK-INSTALL-01
+// @impl:FR-PACK-INSTALL-01 @impl:FR-PACK-02
 // @impl:FR-PACK-INSTALL-02
 
 #[derive(Debug, Clone, Default)]
@@ -53,11 +54,11 @@ pub struct TargetAgentChoice {
 
 impl std::fmt::Display for TargetAgentChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = self.agent.display_name().to_string();
         if self.detected {
-            write!(f, "{} [Detected]", self.agent.display_name())
-        } else {
-            write!(f, "{}", self.agent.display_name())
+            s.push_str(" [Detected]");
         }
+        write!(f, "{}", s)
     }
 }
 
@@ -69,90 +70,88 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
         .unwrap_or_else(|| PathBuf::from("."));
 
     // 1. Resolve Scope
-    let scope = if let Some(s) = opts.scope {
-        s
-    } else if opts.non_interactive {
-        InstallScope::Local(target_dir.clone())
-    } else {
-        println!(
-            "\n{}",
-            "============================================================"
-                .bold()
-                .cyan()
-        );
-        println!(
-            "{}",
-            "        Spec-Engine Universal Agent Plugin Packager         "
-                .bold()
-                .cyan()
-        );
-        println!(
-            "{}\n",
-            "============================================================"
-                .bold()
-                .cyan()
-        );
+    let scope = match (opts.scope.is_some(), opts.non_interactive) {
+        (true, _) => opts.scope.unwrap(),
+        (false, true) => InstallScope::Local(target_dir.clone()),
+        (false, false) => {
+            println!(
+                "\n{}",
+                "============================================================"
+                    .bold()
+                    .cyan()
+            );
+            println!(
+                "{}",
+                "        Spec-Engine Universal Agent Plugin Packager         "
+                    .bold()
+                    .cyan()
+            );
+            println!(
+                "{}\n",
+                "============================================================"
+                    .bold()
+                    .cyan()
+            );
 
-        let scope_choices = vec![ScopeChoice::Local, ScopeChoice::Global];
-        let chosen_scope = Select::new("Select installation scope:", scope_choices)
-            .with_help_message("Use arrow keys to navigate, Enter to select")
-            .prompt()?;
+            let scope_choices = vec![ScopeChoice::Local, ScopeChoice::Global];
+            let chosen_scope = Select::new("Select installation scope:", scope_choices)
+                .with_help_message("Use arrow keys to navigate, Enter to select")
+                .prompt()?;
 
-        match chosen_scope {
-            ScopeChoice::Local => InstallScope::Local(target_dir.clone()),
-            ScopeChoice::Global => InstallScope::Global(default_global_home()),
+            match chosen_scope {
+                ScopeChoice::Local => InstallScope::Local(target_dir.clone()),
+                ScopeChoice::Global => InstallScope::Global(default_global_home()),
+            }
         }
     };
 
     // 2. Resolve Target Agents
-    let agents = if !opts.agents.is_empty() {
-        opts.agents
-    } else if opts.non_interactive {
-        let detected: Vec<TargetAgent> = TargetAgent::ALL
-            .iter()
-            .copied()
-            .filter(|a| a.is_detected(&scope))
-            .collect();
-        if detected.is_empty() {
-            vec![TargetAgent::Antigravity, TargetAgent::OpenCode]
-        } else {
-            detected
+    let agents: Vec<TargetAgent> = match (!opts.agents.is_empty(), opts.non_interactive) {
+        (true, _) => opts.agents,
+        (false, true) => {
+            let mut agents: Vec<TargetAgent> = TargetAgent::ALL
+                .iter()
+                .copied()
+                .filter(|a| a.is_detected(&scope))
+                .collect();
+            if agents.is_empty() {
+                agents = vec![TargetAgent::Antigravity, TargetAgent::OpenCode];
+            }
+            agents
         }
-    } else {
-        let agent_choices: Vec<TargetAgentChoice> = TargetAgent::ALL
-            .iter()
-            .map(|&agent| TargetAgentChoice {
-                agent,
-                detected: agent.is_detected(&scope),
-            })
-            .collect();
+        (false, false) => {
+            let agent_choices: Vec<TargetAgentChoice> = TargetAgent::ALL
+                .iter()
+                .map(|&agent| TargetAgentChoice {
+                    agent,
+                    detected: agent.is_detected(&scope),
+                })
+                .collect();
 
-        let default_indices: Vec<usize> = agent_choices
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.detected)
-            .map(|(i, _)| i)
-            .collect();
+            let mut default_indices: Vec<usize> = agent_choices
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| c.detected)
+                .map(|(i, _)| i)
+                .collect();
+            if default_indices.is_empty() {
+                default_indices = vec![0, 1];
+            }
 
-        let default_indices = if default_indices.is_empty() {
-            vec![0, 1]
-        } else {
-            default_indices
-        };
+            let selected = MultiSelect::new(
+                "Select target software agents to install plugins into:",
+                agent_choices,
+            )
+            .with_default(&default_indices)
+            .with_help_message("Space to toggle, Enter to confirm selection")
+            .prompt()?;
 
-        let selected = MultiSelect::new(
-            "Select target software agents to install plugins into:",
-            agent_choices,
-        )
-        .with_default(&default_indices)
-        .with_help_message("Space to toggle, Enter to confirm selection")
-        .prompt()?;
-
-        if selected.is_empty() {
-            println!("{}", "No agents selected. Aborting installation.".yellow());
-            return Ok(());
+            if selected.is_empty() {
+                println!("{}", "No agents selected. Aborting installation.".yellow());
+                return Ok(());
+            }
+            selected.into_iter().map(|c| c.agent).collect()
         }
-        selected.into_iter().map(|c| c.agent).collect()
     };
 
     // 3. Confirm prompt if interactive
@@ -166,26 +165,32 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 path.display().to_string().cyan()
             );
         }
-
-        let confirmed = Confirm::new("Proceed with installation to these locations?")
+    }
+    let mut confirmed = true;
+    if !opts.non_interactive {
+        confirmed = Confirm::new("Proceed with installation to these locations?")
             .with_default(true)
             .prompt()?;
-
-        if !confirmed {
-            println!("{}", "Installation cancelled by user.".yellow());
-            return Ok(());
-        }
+    }
+    if !confirmed {
+        println!("{}", "Installation cancelled by user.".yellow());
+        return Ok(());
     }
 
     // 4. Resolve Skills to extract
     let all_embedded = get_embedded_skills();
-    let skills_to_install: Vec<&crate::pack::embedded::EmbeddedSkill> =
-        if let Some(ref filter) = opts.skills_filter {
+    let skills_to_install: Vec<&crate::pack::embedded::EmbeddedSkill> = match (
+        !opts.non_interactive,
+        opts.skills_filter.is_some(),
+    ) {
+        (_, true) => {
+            let filter = opts.skills_filter.as_ref().unwrap();
             all_embedded
                 .iter()
                 .filter(|s| filter.iter().any(|f| f == s.id || f == s.directory))
                 .collect()
-        } else if !opts.non_interactive {
+        }
+        (true, false) => {
             let skill_names: Vec<&str> = all_embedded.iter().map(|s| s.id).collect();
             let default_indices: Vec<usize> = (0..all_embedded.len()).collect();
             let selected_skills = MultiSelect::new("Select skills to unpack:", skill_names)
@@ -198,9 +203,9 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 .iter()
                 .filter(|s| selected_skills.contains(&s.id))
                 .collect()
-        } else {
-            all_embedded.iter().collect()
-        };
+        }
+        (false, false) => all_embedded.iter().collect(),
+    };
 
     let skills = skills_to_install;
 
@@ -254,7 +259,8 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 };
 
                 update_opencode_json(&config_file, "asep")?;
-                scaffold_opencode_agents(&config_file)?;
+                let profile = load_config(&target_dir).capabilities;
+                scaffold_opencode_agents(&config_file, &profile)?;
 
                 println!(
                     "{} Installed OpenCode with {} skills, MCP, and agent presets in {}",
