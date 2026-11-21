@@ -1749,6 +1749,48 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
+            HarnessCommands::Verify { run_dir } => {
+                match crate::harness::e2e::verify_artifacts(&run_dir, &crate::harness::e2e::repo_root())
+                {
+                    Ok(report) => {
+                        if args.json {
+                            match serde_json::to_string_pretty(&report) {
+                                Ok(json) => println!("{json}"),
+                                Err(e) => {
+                                    eprintln!(
+                                        "{} Failed to serialize verify report: {e}",
+                                        "✖".red()
+                                    );
+                                    return ExitCode::from(2);
+                                }
+                            }
+                        } else {
+                            println!(
+                                "{} verify: pass={} hash_lock_ok={} test_rerun exit={} passed={} check_rerun exit={} passed={}",
+                                if report.pass { "✔".green() } else { "✖".red() },
+                                report.pass,
+                                report.hash_lock_ok,
+                                report.test_rerun.exit_code,
+                                report.test_rerun.passed,
+                                report.check_rerun.exit_code,
+                                report.check_rerun.passed,
+                            );
+                            for reason in &report.reasons {
+                                println!("  - {reason}");
+                            }
+                        }
+                        if report.pass {
+                            ExitCode::SUCCESS
+                        } else {
+                            ExitCode::from(1)
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
         },
 
         None => {

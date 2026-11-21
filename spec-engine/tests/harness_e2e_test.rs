@@ -1,7 +1,41 @@
-use asep::harness::e2e::{new_run, prepare_vendor_dir, repo_root, seed_from_run_id};
+use asep::harness::e2e::{
+    new_run, prepare_vendor_dir, repo_root, seed_from_run_id, verify_preflight,
+};
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+const REQUIRED_ARTIFACT_NAMES: &[&str] = &[
+    "manifest.json",
+    "01-prd.md",
+    "01-judge.json",
+    "02-tdd.md",
+    "02-judge.json",
+    "03-tests.diff",
+    "03-red.log",
+    "03-hash.txt",
+    "04-impl.diff",
+    "05-findings.md",
+    "05-loom.log",
+    "06-optimization.md",
+    "07-judge.json",
+    "07-check.log",
+    "07-ci.log",
+];
+
+fn write_test_file(run_dir: &Path) -> PathBuf {
+    let test_file = run_dir.join("one_test.rs");
+    fs::write(&test_file, "fn one_test() {}\n").expect("test file should be written");
+    test_file
+}
+
+fn write_dummy_hash(run_dir: &Path) {
+    fs::write(
+        run_dir.join("03-hash.txt"),
+        "0000000000000000000000000000000000000000000000000000000000000000 dummy\n",
+    )
+    .expect("03-hash.txt should be written");
+}
 
 fn parse_manifest(path: &Path) -> Value {
     let content = std::fs::read_to_string(path).expect("manifest.json should exist");
@@ -113,4 +147,47 @@ fn test_prepare_vendor_dir_refuses_existing() {
     prepare_vendor_dir(run_dir.path(), &repo_root).expect("first call should succeed");
     let err = prepare_vendor_dir(run_dir.path(), &repo_root).unwrap_err();
     assert!(!err.is_empty(), "second call should refuse to overwrite");
+}
+
+#[test]
+fn test_verify_detects_missing_artifacts_and_hash() {
+    let run_dir = tempfile::tempdir().expect("failed to create temp dir");
+    write_test_file(run_dir.path());
+    write_dummy_hash(run_dir.path());
+
+    let (artifacts, hash_lock_ok, reasons) = verify_preflight(run_dir.path());
+
+    // Exactly the required artifact names, all missing except 03-hash.txt.
+    assert_eq!(artifacts.len(), REQUIRED_ARTIFACT_NAMES.len());
+    for name in REQUIRED_ARTIFACT_NAMES {
+        let present = artifacts.get(*name).copied().unwrap_or(false);
+        assert_eq!(
+            present,
+            *name == "03-hash.txt",
+            "artifact '{name}' presence mismatch"
+        );
+    }
+
+    // Dummy hash matches neither the aggregate nor any single test file.
+    assert!(!hash_lock_ok, "hash lock should be unsatisfiable: {reasons:?}");
+    assert!(
+        reasons.iter().any(|reason| reason.starts_with("missing artifacts:")),
+        "expected missing-artifacts reason, got {reasons:?}"
+    );
+    assert!(
+        reasons.iter().any(|reason| reason.starts_with("hash lock:")),
+        "expected hash-lock reason, got {reasons:?}"
+    );
+}
+
+#[test]
+fn test_verify_controller_ruling_overrides_hash() {
+    let run_dir = tempfile::tempdir().expect("failed to create temp dir");
+    write_test_file(run_dir.path());
+    write_dummy_hash(run_dir.path());
+    fs::write(run_dir.path().join("controller-ruling.json"), "{}\n")
+        .expect("controller-ruling.json should be written");
+
+    let (_artifacts, hash_lock_ok, _reasons) = verify_preflight(run_dir.path());
+    assert!(hash_lock_ok, "controller ruling should override hash lock");
 }

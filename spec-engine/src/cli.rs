@@ -575,4 +575,9 @@ pub enum HarnessCommands {
         #[arg(long)]
         offline: bool,
     },
+    /// Verify an ASEP E2E run directory (artifacts, hash lock, re-runs)
+    Verify {
+        /// E2E run directory
+        run_dir: PathBuf,
+    },
 }

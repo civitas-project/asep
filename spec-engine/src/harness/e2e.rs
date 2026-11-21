@@ -2,8 +2,10 @@
 //! Port of `harness/e2e/scripts/new-run.sh`.
 
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -303,4 +305,289 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
             }
         }
     }
+}
+
+/// Required E2E run artifacts (P0-P7), exactly as in the legacy
+/// `harness/e2e/scripts/verify-artifacts.sh`.
+const REQUIRED_ARTIFACTS: &[&str] = &[
+    "manifest.json",
+    "01-prd.md",
+    "01-judge.json",
+    "02-tdd.md",
+    "02-judge.json",
+    "03-tests.diff",
+    "03-red.log",
+    "03-hash.txt",
+    "04-impl.diff",
+    "05-findings.md",
+    "05-loom.log",
+    "06-optimization.md",
+    "07-judge.json",
+    "07-check.log",
+    "07-ci.log",
+];
+
+/// Result of a single re-run command executed during verification.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CommandResult {
+    pub command: Vec<String>,
+    pub cwd: PathBuf,
+    pub exit_code: i32,
+    pub passed: bool,
+    pub output: String,
+}
+
+/// Authoritative verdict for an E2E run directory (port of
+/// `harness/e2e/scripts/verify-artifacts.sh`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct VerifyReport {
+    pub pass: bool,
+    pub artifacts: BTreeMap<String, bool>,
+    pub hash_lock_ok: bool,
+    pub test_rerun: CommandResult,
+    pub check_rerun: CommandResult,
+    pub reasons: Vec<String>,
+}
+
+/// Artifact existence check + test hash lock, without spawning `cargo`/`asep`.
+///
+/// Safe to call in unit tests: it only inspects the run directory.
+pub fn verify_preflight(run_dir: &Path) -> (BTreeMap<String, bool>, bool, Vec<String>) {
+    let mut artifacts = BTreeMap::new();
+    let mut missing = Vec::new();
+    for name in REQUIRED_ARTIFACTS {
+        let present = run_dir.join(name).is_file();
+        artifacts.insert(name.to_string(), present);
+        if !present {
+            missing.push(name.to_string());
+        }
+    }
+
+    let mut reasons = Vec::new();
+    if !missing.is_empty() {
+        reasons.push(format!("missing artifacts: {}", missing.join(", ")));
+    }
+
+    let (hash_lock_ok, hash_reason) = test_hash_lock(run_dir);
+    if !hash_lock_ok {
+        reasons.push(format!("hash lock: {hash_reason}"));
+    }
+
+    (artifacts, hash_lock_ok, reasons)
+}
+
+/// Test hash lock: sha256 of every `*test*.rs` file under `run_dir`.
+///
+/// Returns `(ok, reason)`. A `controller-ruling.json` artifact overrides the
+/// lock. With no test files the lock is unsatisfiable (`false`).
+fn test_hash_lock(run_dir: &Path) -> (bool, String) {
+    if run_dir.join("controller-ruling.json").is_file() {
+        return (true, "controller ruling overrides hash lock".to_string());
+    }
+
+    let mut test_files = Vec::new();
+    if collect_test_files(run_dir, &mut test_files).is_err() {
+        return (false, "run directory unreadable".to_string());
+    }
+
+    if test_files.is_empty() {
+        return (false, "no dummy test files found to lock".to_string());
+    }
+
+    let stored = fs::read_to_string(run_dir.join("03-hash.txt"))
+        .ok()
+        .and_then(|content| content.split_whitespace().next().map(|s| s.to_string()));
+    let Some(stored) = stored.as_deref() else {
+        return (false, "03-hash.txt missing".to_string());
+    };
+
+    let mut lines: Vec<String> = test_files
+        .iter()
+        .map(|path| {
+            let hex = sha256_hex_file(path);
+            let rel = path
+                .strip_prefix(run_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+            format!("{hex}  {rel}")
+        })
+        .collect();
+    lines.sort();
+    let mut listing = lines.join("\n");
+    listing.push('\n');
+    let aggregate = sha256_hex(listing.as_bytes());
+
+    let mut single_ok = false;
+    for path in &test_files {
+        if sha256_hex_file(path) == stored {
+            single_ok = true;
+            break;
+        }
+    }
+
+    if stored == aggregate {
+        (true, "hash lock matches 03-hash.txt".to_string())
+    } else if single_ok {
+        (true, "hash lock matches a single test file in 03-hash.txt".to_string())
+    } else {
+        (
+            false,
+            "hash lock failed: 03-hash.txt matches neither aggregate nor any single test file"
+                .to_string(),
+        )
+    }
+}
+
+/// Recursively collect regular files matching `*test*.rs` under `dir`.
+fn collect_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_test_files(&path, out)?;
+        } else if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            if name.contains("test") && name.ends_with(".rs") {
+                out.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Hex-encoded sha256 of `path`'s contents.
+fn sha256_hex_file(path: &Path) -> String {
+    sha256_hex(&fs::read(path).unwrap_or_default())
+}
+
+/// Hex-encoded sha256 of `data`.
+fn sha256_hex(data: &[u8]) -> String {
+    use std::fmt::Write;
+    let digest = Sha256::digest(data);
+    digest
+        .iter()
+        .fold(String::with_capacity(64), |mut hex, byte| {
+            let _ = write!(hex, "{byte:02x}");
+            hex
+        })
+}
+
+/// Verify an E2E run directory: required artifacts, test hash lock, re-run
+/// `cargo test` in `<run_dir>/dummy` and re-run `asep check --rigor T4`.
+/// Writes `<run_dir>/verify.json` and returns the report.
+///
+/// Failure to spawn a command returns `Err(String)`.
+pub fn verify_artifacts(run_dir: &Path, repo_root: &Path) -> Result<VerifyReport, String> {
+    let (artifacts, hash_lock_ok, mut reasons) = verify_preflight(run_dir);
+
+    let asep_binary = resolve_asep_binary(run_dir, repo_root);
+    let dummy = run_dir.join("dummy");
+
+    let test_rerun = run_command(&["cargo".to_string(), "test".to_string()], &dummy)?;
+    let check_rerun = run_command(
+        &[
+            asep_binary.to_string_lossy().to_string(),
+            "check".to_string(),
+            dummy.to_string_lossy().to_string(),
+            "--rigor".to_string(),
+            "T4".to_string(),
+        ],
+        &dummy,
+    )?;
+
+    let all_artifacts = artifacts.values().all(|present| *present);
+    let passed = all_artifacts && hash_lock_ok && test_rerun.passed && check_rerun.passed;
+
+    if !test_rerun.passed {
+        reasons.push(format!(
+            "cargo test re-run failed (exit {})",
+            test_rerun.exit_code
+        ));
+    }
+    if !check_rerun.passed {
+        reasons.push(format!(
+            "asep check re-run failed (exit {})",
+            check_rerun.exit_code
+        ));
+    }
+
+    let report = VerifyReport {
+        pass: passed,
+        artifacts,
+        hash_lock_ok,
+        test_rerun,
+        check_rerun,
+        reasons,
+    };
+
+    let json = serde_json::to_string_pretty(&report)
+        .map_err(|e| format!("failed to serialize verify report: {e}"))?;
+    fs::write(run_dir.join("verify.json"), format!("{json}\n"))
+        .map_err(|e| format!("failed to write verify.json: {e}"))?;
+
+    Ok(report)
+}
+
+/// `asep_binary` from `manifest.json` when it names an executable file,
+/// otherwise `<repo_root>/target/debug/asep`.
+fn resolve_asep_binary(run_dir: &Path, repo_root: &Path) -> PathBuf {
+    let default = repo_root.join("target/debug/asep");
+    let Ok(content) = fs::read_to_string(run_dir.join("manifest.json")) else {
+        return default;
+    };
+    let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return default;
+    };
+    let Some(binary) = manifest.get("asep_binary").and_then(serde_json::Value::as_str) else {
+        return default;
+    };
+    if binary.is_empty() {
+        return default;
+    }
+    let path = PathBuf::from(binary);
+    if is_executable_file(&path) {
+        return path;
+    }
+    default
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.permissions())
+        .map(|permissions| permissions.mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+/// Spawn `command` with `cwd`, capture combined output.
+///
+/// Returns `Err` if the command cannot be spawned.
+fn run_command(command: &[String], cwd: &Path) -> Result<CommandResult, String> {
+    let display = command.join(" ");
+    let child = Command::new(&command[0])
+        .args(&command[1..])
+        .current_dir(cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to spawn '{display}': {e}"))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("failed to wait for '{display}': {e}"))?;
+    let exit_code = output.status.code().unwrap_or(-1);
+    let passed = output.status.success();
+    let mut out = String::from_utf8_lossy(&output.stdout).to_string();
+    if !output.stderr.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    Ok(CommandResult {
+        command: command.to_vec(),
+        cwd: cwd.to_path_buf(),
+        exit_code,
+        passed,
+        output: out,
+    })
 }
