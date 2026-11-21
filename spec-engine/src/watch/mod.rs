@@ -17,10 +17,11 @@ pub fn start_watch_mode(
 
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
+            match res {
+                Ok(event) if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() => {
                     let _ = tx.send(());
                 }
+                _ => {}
             }
         },
         Config::default().with_poll_interval(Duration::from_millis(300)),
@@ -70,24 +71,27 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
                 start.elapsed()
             );
 
-            if let Some(cov_p) = coverage_path {
-                if let Ok(cov_map) = crate::coverage::parse_lcov_file(cov_p) {
-                    let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
+            if let Some(cov_map) = coverage_path
+                .and_then(|cov_p| crate::coverage::parse_lcov_file(cov_p).ok())
+            {
+                let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
+                println!(
+                    "🎯 Requirement Coverage: {} item(s) audited (Threshold: {}%)",
+                    cov_rep.items.len(),
+                    cov_rep.threshold
+                );
+                for item in &cov_rep.items {
                     println!(
-                        "🎯 Requirement Coverage: {} item(s) audited (Threshold: {}%)",
-                        cov_rep.items.len(),
-                        cov_rep.threshold
+                        "   - {}: {:.1}% ({}/{} lines) [{}]",
+                        item.req_id,
+                        item.percentage,
+                        item.covered_lines,
+                        item.total_lines,
+                        match item.passed {
+                            true => "PASS",
+                            false => "FAIL",
+                        }
                     );
-                    for item in &cov_rep.items {
-                        println!(
-                            "   - {}: {:.1}% ({}/{} lines) [{}]",
-                            item.req_id,
-                            item.percentage,
-                            item.covered_lines,
-                            item.total_lines,
-                            if item.passed { "PASS" } else { "FAIL" }
-                        );
-                    }
                 }
             }
 
