@@ -364,10 +364,17 @@ pub fn execute_tool(
             let passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
 
             let mut summary = String::new();
+            let mut gate = "FAILED";
+            if passed {
+                gate = "PASSED";
+            }
+            let mut rigor_label = "T1+";
+            if is_relaxed {
+                rigor_label = "T0";
+            }
             summary.push_str(&format!(
                 "Traceability Gate: {} (rigor: {})\n",
-                if passed { "PASSED" } else { "FAILED" },
-                if is_relaxed { "T0" } else { "T1+" }
+                gate, rigor_label
             ));
             summary.push_str(&format!(
                 "Requirements: {} total | {} closed | {} broken MUST | {} pending SHOULD | {} DRAFT\n",

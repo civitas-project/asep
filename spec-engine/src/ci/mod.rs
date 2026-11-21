@@ -58,10 +58,9 @@ pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
     let mut overall_success = true;
     let mut unproven = false;
 
-    let target_gates: Vec<u8> = if let Some(g) = opts.gate {
-        vec![g]
-    } else {
-        vec![0, 1, 2, 3, 4]
+    let target_gates: Vec<u8> = match opts.gate {
+        Some(g) => vec![g],
+        None => vec![0, 1, 2, 3, 4],
     };
 
     for &g in &target_gates {
@@ -141,11 +140,13 @@ fn run_gate_0(dir: &Path) -> GateResult {
         if !check.passed && !check.skipped {
             passed = false;
             details.push(format!("[FAIL] {}: {} ({})", check.tool, check.file, check.message));
-        } else if check.skipped {
-            details.push(format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message));
-        } else {
-            details.push(format!("[PASS] {}: {}", check.tool, check.file));
+            continue;
         }
+        if check.skipped {
+            details.push(format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message));
+            continue;
+        }
+        details.push(format!("[PASS] {}: {}", check.tool, check.file));
     }
 
     if details.is_empty() {
@@ -194,25 +195,30 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
                 .any(|v| v.rule_id == "COV-02");
             let passed = graph.is_closed && !(strict && has_cov02) && !has_antislop_failure;
 
+            if !passed && strict && has_cov02 {
+                details.push("COV-02 coverage warnings promoted to failures by --strict".to_string());
+            }
             if !passed {
-                if strict && has_cov02 {
-                    details.push("COV-02 coverage warnings promoted to failures by --strict".to_string());
-                }
                 for v in &graph.violations {
                     details.push(format!(
                         "[FAIL] {}: {} (found {}, required {})",
                         v.rule_id, v.subject, v.found, v.required
                     ));
                 }
-            } else {
+            }
+            if passed {
                 details.push(format!("Closed MUST gates: structural closed, {} violations", graph.violations.len()));
             }
 
             for v in &anti_errors {
                 let blocked = tier != TierId::T0;
+                let status = match blocked {
+                    true => "FAIL",
+                    false => "WARN",
+                };
                 details.push(format!(
                     "[{}] anti-slop {}:{} {}",
-                    if blocked { "FAIL" } else { "WARN" },
+                    status,
                     v.file_path.display(),
                     v.line_number,
                     v.message
@@ -220,9 +226,13 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
             }
             for v in &anti_warnings {
                 let blocked = strict && tier != TierId::T0;
+                let status = match blocked {
+                    true => "FAIL",
+                    false => "WARN",
+                };
                 details.push(format!(
                     "[{}] anti-slop warning {}:{} {}",
-                    if blocked { "FAIL" } else { "WARN" },
+                    status,
                     v.file_path.display(),
                     v.line_number,
                     v.message
@@ -277,20 +287,20 @@ fn run_gate_2(dir: &Path) -> GateResult {
         .output();
 
     match out {
-        Ok(res) => GateResult {
-            gate_number: 2,
-            name: gate_name(2).to_string(),
-            passed: res.status.success(),
-            skipped: false,
-            duration_ms: 0,
-            details: vec![
-                if res.status.success() {
-                    "Clippy passed with zero warnings".to_string()
-                } else {
-                    String::from_utf8_lossy(&res.stderr).trim().to_string()
-                },
-            ],
-        },
+        Ok(res) => {
+            let passed = res.status.success();
+            GateResult {
+                gate_number: 2,
+                name: gate_name(2).to_string(),
+                passed,
+                skipped: false,
+                duration_ms: 0,
+                details: vec![match passed {
+                    true => "Clippy passed with zero warnings".to_string(),
+                    false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
+                }],
+            }
+        }
         Err(e) => GateResult {
             gate_number: 2,
             name: gate_name(2).to_string(),
@@ -342,13 +352,10 @@ fn run_gate_3(dir: &Path) -> GateResult {
         passed,
         skipped: false,
         duration_ms: 0,
-        details: vec![
-            if passed {
-                "Test suite passed completely".to_string()
-            } else {
-                "Test suite failed".to_string()
-            },
-        ],
+        details: vec![match passed {
+            true => "Test suite passed completely".to_string(),
+            false => "Test suite failed".to_string(),
+        }],
     }
 }
 
@@ -372,20 +379,20 @@ fn run_gate_4(dir: &Path) -> GateResult {
         .output();
 
     match out {
-        Ok(res) => GateResult {
-            gate_number: 4,
-            name: gate_name(4).to_string(),
-            passed: res.status.success(),
-            skipped: false,
-            duration_ms: 0,
-            details: vec![
-                if res.status.success() {
-                    "Benchmark harness compiled and verified against noise floor".to_string()
-                } else {
-                    String::from_utf8_lossy(&res.stderr).trim().to_string()
-                },
-            ],
-        },
+        Ok(res) => {
+            let passed = res.status.success();
+            GateResult {
+                gate_number: 4,
+                name: gate_name(4).to_string(),
+                passed,
+                skipped: false,
+                duration_ms: 0,
+                details: vec![match passed {
+                    true => "Benchmark harness compiled and verified against noise floor".to_string(),
+                    false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
+                }],
+            }
+        }
         Err(e) => GateResult {
             gate_number: 4,
             name: gate_name(4).to_string(),

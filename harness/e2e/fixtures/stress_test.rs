@@ -35,27 +35,29 @@ const MANIFEST: &str = "manifest.json";
 fn seed_from_manifest() -> u64 {
     const DEFAULT_SEED: u64 = 0x5EED_5EED;
     // Manual override for ad-hoc runs.
-    if let Ok(value) = env::var("STRESS_SEED") {
-        if let Ok(seed) = value.trim().parse::<u64>() {
-            return seed;
-        }
+    if let Some(seed) = env::var("STRESS_SEED")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+    {
+        return seed;
     }
     // P0 manifest.json carries the run seed written at bootstrap.
     // Cargo runs tests from `dummy/`, so walk ancestor directories for
     // `manifest.json` (the run dir is the parent of `dummy/`).
-    if let Ok(mut dir) = env::current_dir() {
-        loop {
-            let candidate = dir.join(MANIFEST);
-            if candidate.is_file() {
-                if let Ok(text) = fs::read_to_string(&candidate) {
-                    if let Some(seed) = seed_from_text(&text) {
-                        return seed;
-                    }
-                }
-            }
-            if !dir.pop() {
-                break;
-            }
+    let mut dir = env::current_dir().unwrap_or_else(|_| return DEFAULT_SEED);
+    loop {
+        let candidate = dir.join(MANIFEST);
+        let mut seed = None;
+        if candidate.is_file() {
+            seed = fs::read_to_string(&candidate)
+                .ok()
+                .and_then(|s| seed_from_text(&s));
+        }
+        if let Some(s) = seed {
+            return s;
+        }
+        if !dir.pop() {
+            break;
         }
     }
     DEFAULT_SEED
@@ -133,13 +135,15 @@ fn stress_fifo_no_loss_no_dup() {
                     yield_hook(seed, value);
                 }
                 None => {
-                    if consumer_done.load(Ordering::Acquire) {
+                    let done = consumer_done.load(Ordering::Acquire);
+                    if done {
                         empty_retries += 1;
-                        if empty_retries > 16 {
-                            break; // producer finished and ring is drained
-                        }
-                    } else {
+                    }
+                    if !done {
                         empty_retries = 0;
+                    }
+                    if empty_retries > 16 {
+                        break; // producer finished and ring is drained
                     }
                     println!("pop empty");
                     yield_hook(seed, empty_retries);

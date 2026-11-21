@@ -35,18 +35,17 @@ pub fn add_skill_full(
     let version_line = version
         .map(|v| format!("version: {}\n", v.trim()))
         .unwrap_or_default();
-    let depends_line = if depends.is_empty() {
-        String::new()
-    } else {
-        format!(
+    let mut depends_line = String::new();
+    if !depends.is_empty() {
+        depends_line = format!(
             "depends: [{}]\n",
             depends
                 .iter()
                 .map(|d| d.trim())
                 .collect::<Vec<_>>()
                 .join(", ")
-        )
-    };
+        );
+    }
 
     let content = format!(
         "---\nname: {}\ndescription: {}\n{}{}---\n\n{}\n",

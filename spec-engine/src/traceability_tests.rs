@@ -9,6 +9,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
+use crate::auditor::anti_slop::{audit_anti_slop, audit_project_anti_slop, AntiSlopViolationKind};
 use crate::auditor::doc_contracts::{audit_doc_contracts, DocContractViolationKind};
 use crate::cli::{AdrCommands, Cli, Commands};
 use crate::config::settings::{load_config, save_config, EditorPreference, EngineConfig};
@@ -20,7 +21,7 @@ use crate::mcp::tools::get_tools_list;
 use crate::pack::embedded::get_embedded_skills;
 use crate::pack::manifest::generate_plugin_json;
 use crate::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
-use crate::policy::{load_policy, TierId};
+use crate::policy::{load_policy, AntiSlopRule, Severity, TierId};
 use crate::scanner::{parse_tags_from_line, Priority, TagKind};
 use crate::skill::inspector::detect_skill_drift;
 use crate::skill::manager::{add_skill, delete_skill};
@@ -305,4 +306,100 @@ fn test_init_asep_project_creates_docs_tree_and_prd() {
     init_asep_project(tmp.path()).expect("re-init must succeed");
     let second = fs::read_to_string(&prd).unwrap();
     assert_eq!(first, second);
+}
+
+// @test:FR-ANTISLOP-05
+#[test]
+fn test_else_branch_is_flagged() {
+    let violations =
+        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { return; } else {} }");
+    assert!(
+        violations.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
+        "expected an ElseBranch violation, got {violations:?}"
+    );
+}
+
+// @test:FR-ANTISLOP-06
+#[test]
+fn test_nested_if_is_excessive_but_sequential_ifs_are_not() {
+    let nested =
+        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { if b {} } }");
+    assert!(
+        nested.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
+        "nested if must yield ExcessiveNesting, got {nested:?}"
+    );
+
+    let sequential =
+        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a {} if b {} }");
+    assert!(
+        !sequential
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
+        "sequential top-level ifs must not yield ExcessiveNesting, got {sequential:?}"
+    );
+}
+
+// @test:FR-ANTISLOP-07
+#[test]
+fn test_policy_declares_else_and_nesting_rules() {
+    let policy = load_policy();
+    let else_rule = policy
+        .antislop_rules()
+        .iter()
+        .find(|r| r.id == "AS-CODE-ELSE")
+        .expect("policy must declare rule AS-CODE-ELSE");
+    assert_eq!(else_rule.severity, Severity::Error);
+
+    let nesting_rule = policy
+        .antislop_rules()
+        .iter()
+        .find(|r| r.id == "AS-CODE-NESTING")
+        .expect("policy must declare rule AS-CODE-NESTING");
+    assert_eq!(nesting_rule.max_nesting, Some(0));
+}
+
+// @test:FR-ANTISLOP-08
+#[test]
+fn test_asepignore_excluded_directory_is_not_audited() {
+    let tmp = tempdir().expect("tempdir created");
+    fs::write(
+        tmp.path().join("violate.rs"),
+        "fn f(){ if a { return; } else {} }",
+    )
+    .unwrap();
+    fs::create_dir_all(tmp.path().join("excluded")).unwrap();
+    fs::write(
+        tmp.path().join("excluded").join("violate.rs"),
+        "fn f(){ if a { return; } else {} }",
+    )
+    .unwrap();
+    fs::write(tmp.path().join(".asepignore"), "excluded/").unwrap();
+
+    let violations =
+        audit_project_anti_slop(tmp.path()).expect("project audit must succeed");
+    let excluded: Vec<_> = violations
+        .iter()
+        .filter(|v| v.file_path.to_string_lossy().contains("excluded"))
+        .collect();
+    assert!(
+        excluded.is_empty(),
+        "files under .asepignore must not be audited: {violations:?}"
+    );
+    assert!(
+        violations.iter().any(|v| v.file_path == Path::new("violate.rs")),
+        "non-excluded file must be audited, got {violations:?}"
+    );
+}
+
+// @test:FR-ANTISLOP-09
+#[test]
+fn test_else_branch_not_suppressed_by_allow_marker() {
+    let violations = audit_anti_slop(
+        Path::new("t.rs"),
+        "fn f(){ if a { return; } else {} } // asep:allow-antislop",
+    );
+    assert!(
+        violations.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
+        "ElseBranch must not be suppressible via asep:allow-antislop, got {violations:?}"
+    );
 }

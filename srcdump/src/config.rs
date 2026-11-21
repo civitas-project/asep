@@ -164,15 +164,8 @@ impl Config {
 
     /// Check if a file extension is included.
     pub fn is_extension_included(&self, ext: &str) -> bool {
-        if self.use_default_includes {
-            if !self.include_ext.is_empty() && !self.include_ext.iter().any(|e| e == ext) {
-                return false;
-            }
-        } else {
-            // If not using default includes and include_ext is empty, allow all
-            if !self.include_ext.is_empty() && !self.include_ext.iter().any(|e| e == ext) {
-                return false;
-            }
+        if !self.include_ext.is_empty() && !self.include_ext.iter().any(|e| e == ext) {
+            return false;
         }
         !self.exclude_ext.iter().any(|e| e == ext)
     }

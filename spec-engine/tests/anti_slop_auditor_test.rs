@@ -174,15 +174,16 @@ fn test_markdown_buzzword_uses_copy_rule() {
 
 #[test]
 fn test_nesting_threshold_from_policy() {
-    // Depth 2 is below the policy max_nesting (3): must not be flagged.
+    // With max_nesting=0, any nested if (depth 2+) must be flagged.
     let violations = audit_rs(
         "fn foo(x: bool) {\n    if x {\n        if true {\n        }\n    }\n}\n",
     );
     assert!(
-        violations
-            .iter()
-            .all(|v| !matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
-        "depth below threshold must not be flagged: {violations:?}"
+        violations.iter().any(|v| {
+            matches!(&v.kind, AntiSlopViolationKind::ExcessiveNesting { depth } if *depth == 2)
+                && v.severity == Severity::Error
+        }),
+        "depth-2 nested if must be flagged as Error: {violations:?}"
     );
 }
 

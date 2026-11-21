@@ -55,14 +55,13 @@ impl<A> TrackingAllocator<A> {
 
     pub fn assert_peak_budget(&self, max_bytes: usize) -> Result<(), String> {
         let peak = self.peak_bytes();
-        if peak <= max_bytes {
-            Ok(())
-        } else {
-            Err(format!(
+        if peak > max_bytes {
+            return Err(format!(
                 "peak allocation budget exceeded: peak {} bytes, max {} bytes",
                 peak, max_bytes
-            ))
+            ));
         }
+        Ok(())
     }
 
     pub fn assert_zero_leak(&self, baseline_bytes: usize) -> Result<(), String> {
@@ -70,10 +69,9 @@ impl<A> TrackingAllocator<A> {
         if current == baseline_bytes {
             return Ok(());
         }
-        let (delta, direction) = if current > baseline_bytes {
-            (current - baseline_bytes, "above")
-        } else {
-            (baseline_bytes - current, "below")
+        let (delta, direction) = match current > baseline_bytes {
+            true => (current - baseline_bytes, "above"),
+            false => (baseline_bytes - current, "below"),
         };
         Err(format!(
             "memory leak detected: current {} bytes differs from baseline {} bytes by {} bytes {}",
@@ -134,15 +132,15 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for TrackingAllocator<A> {
             return new_ptr;
         }
         let old_size = layout.size();
-        if new_size >= old_size {
-            let diff = new_size - old_size;
-            let prev = self.current_bytes.fetch_add(diff, Ordering::Relaxed);
-            self.total_allocated.fetch_add(diff, Ordering::Relaxed);
-            self.peak_bytes.fetch_max(prev + diff, Ordering::Relaxed);
-        } else {
+        if new_size < old_size {
             let diff = old_size - new_size;
             self.current_bytes.fetch_sub(diff, Ordering::Relaxed);
+            return new_ptr;
         }
+        let diff = new_size - old_size;
+        let prev = self.current_bytes.fetch_add(diff, Ordering::Relaxed);
+        self.total_allocated.fetch_add(diff, Ordering::Relaxed);
+        self.peak_bytes.fetch_max(prev + diff, Ordering::Relaxed);
         new_ptr
     }
 }
@@ -159,11 +157,10 @@ pub struct ScopedAllocationReport {
 }
 
 fn net_diff(start: usize, end: usize) -> isize {
-    if end >= start {
-        (end - start) as isize
-    } else {
-        -((start - end) as isize)
+    if end < start {
+        return -((start - end) as isize);
     }
+    (end - start) as isize
 }
 
 #[cfg(test)]

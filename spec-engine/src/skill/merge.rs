@@ -45,35 +45,40 @@ pub fn three_way_merge(base: &str, local: &str, remote: &str) -> (String, bool) 
         let l = local_lines.get(i).copied();
         let r = remote_lines.get(i).copied();
 
-        if l == r {
-            if let Some(line) = l {
-                out.push_str(line);
-                out.push('\n');
+        match (l, r, b) {
+            (_, _, _) if l == r => {
+                let _ = l.map(|line| {
+                    out.push_str(line);
+                    out.push('\n');
+                });
             }
-        } else if l == b {
-            if let Some(line) = r {
-                out.push_str(line);
-                out.push('\n');
+            (_, _, _) if l == b => {
+                let _ = r.map(|line| {
+                    out.push_str(line);
+                    out.push('\n');
+                });
             }
-        } else if r == b {
-            if let Some(line) = l {
-                out.push_str(line);
-                out.push('\n');
+            (_, _, _) if r == b => {
+                let _ = l.map(|line| {
+                    out.push_str(line);
+                    out.push('\n');
+                });
             }
-        } else {
-            // Conflict
-            has_conflict = true;
-            out.push_str("<<<<<<< LOCAL\n");
-            if let Some(line) = l {
-                out.push_str(line);
-                out.push('\n');
+            _ => {
+                // Conflict
+                has_conflict = true;
+                out.push_str("<<<<<<< LOCAL\n");
+                let _ = l.map(|line| {
+                    out.push_str(line);
+                    out.push('\n');
+                });
+                out.push_str("=======\n");
+                let _ = r.map(|line| {
+                    out.push_str(line);
+                    out.push('\n');
+                });
+                out.push_str(">>>>>>> REMOTE\n");
             }
-            out.push_str("=======\n");
-            if let Some(line) = r {
-                out.push_str(line);
-                out.push('\n');
-            }
-            out.push_str(">>>>>>> REMOTE\n");
         }
         i += 1;
     }
@@ -99,25 +104,31 @@ where
             in_remote = false;
             local_buf.clear();
             remote_buf.clear();
-        } else if line.starts_with("=======") && in_conflict {
+            continue;
+        }
+        if line.starts_with("=======") && in_conflict {
             in_remote = true;
-        } else if line.starts_with(">>>>>>> ") && in_conflict {
+            continue;
+        }
+        if line.starts_with(">>>>>>> ") && in_conflict {
             in_conflict = false;
             let resolved = resolver(local_buf.trim_end(), remote_buf.trim_end());
             out.push_str(&resolved);
             out.push('\n');
-        } else if in_conflict {
-            if in_remote {
-                remote_buf.push_str(line);
-                remote_buf.push('\n');
-            } else {
-                local_buf.push_str(line);
-                local_buf.push('\n');
-            }
-        } else {
-            out.push_str(line);
-            out.push('\n');
+            continue;
         }
+        if in_conflict && in_remote {
+            remote_buf.push_str(line);
+            remote_buf.push('\n');
+            continue;
+        }
+        if in_conflict && !in_remote {
+            local_buf.push_str(line);
+            local_buf.push('\n');
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
     }
 
     out

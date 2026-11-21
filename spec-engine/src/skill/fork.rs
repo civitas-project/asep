@@ -21,33 +21,26 @@ pub fn fork_skill(
 
     // Locate source content
     let entries = inspect_skills(skills_dir);
-    let mut source_content = None;
-
-    if let Some(e) = entries.iter().find(|e| e.id == src_id) {
-        if e.file_path.exists() {
-            source_content = fs::read_to_string(&e.file_path).ok();
-        }
-    }
+    let mut source_content = entries
+        .iter()
+        .find(|e| e.id == src_id)
+        .filter(|e| e.file_path.exists())
+        .and_then(|e| fs::read_to_string(&e.file_path).ok());
 
     if source_content.is_none() {
-        let embedded = get_embedded_skills();
-        if let Some(orig) = embedded.iter().find(|e| e.id == src_id || e.directory == src_id) {
-            source_content = Some(orig.content.to_string());
-        }
+        source_content = get_embedded_skills()
+            .iter()
+            .find(|e| e.id == src_id || e.directory == src_id)
+            .map(|e| e.content.to_string());
     }
 
     let source = source_content.ok_or_else(|| format!("source skill '{}' not found", src_id))?;
 
     // Extract body (after frontmatter)
-    let body = if let Some(rest) = source.strip_prefix("---") {
-        if let Some(end_idx) = rest.find("\n---") {
-            rest[end_idx + 4..].trim()
-        } else {
-            source.trim()
-        }
-    } else {
-        source.trim()
-    };
+    let body = source
+        .strip_prefix("---")
+        .and_then(|rest| rest.find("\n---").map(|end_idx| rest[end_idx + 4..].trim()))
+        .unwrap_or_else(|| source.trim());
 
     let new_content = format!(
         "---\nname: {}\ndescription: {}\nversion: 0.1.0\ndepends: []\n---\n\n{}\n",

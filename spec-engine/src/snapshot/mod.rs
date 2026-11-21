@@ -241,19 +241,21 @@ impl<K: Ord, V> MvccStore<K, V> {
             if seq > min_seq {
                 // Must retain all revisions above min_active_seq for concurrent snapshots
                 kept.insert(InternalKey { user_key, seq, kind }, value);
-            } else if !kept_at_or_below_min {
-                // First (newest) revision at or below min_active_seq
-                kept_at_or_below_min = true;
-                if kind == ValueKind::Put {
-                    kept.insert(InternalKey { user_key, seq, kind }, value);
-                } else {
-                    // Delete tombstone with no active snapshots preceding it is elided
-                    pruned += 1;
-                }
-            } else {
+                continue;
+            }
+            if kept_at_or_below_min {
                 // Obsolete historical revision below min_active_seq safely pruned
                 pruned += 1;
+                continue;
             }
+            // First (newest) revision at or below min_active_seq
+            kept_at_or_below_min = true;
+            if kind != ValueKind::Put {
+                // Delete tombstone with no active snapshots preceding it is elided
+                pruned += 1;
+                continue;
+            }
+            kept.insert(InternalKey { user_key, seq, kind }, value);
         }
 
         *entries = kept;

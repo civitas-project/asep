@@ -52,9 +52,9 @@ fn loom_sp_sc_fifo_no_loss_no_dup() {
                 while log.lock().unwrap().len() < VALUES.len() {
                     if let Some(v) = ring.pop() {
                         log.lock().unwrap().push(v);
-                    } else {
-                        loom::thread::yield_now();
+                        continue;
                     }
+                    loom::thread::yield_now();
                 }
             }
         });

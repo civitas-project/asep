@@ -74,3 +74,13 @@
 @rel:verifies:FR-SKILL-02->FR-SKILL-02 "add_skill normalizes the id and delete_skill removes the skill dir"
 @rel:verifies:FR-VERIFY-01->FR-VERIFY-01 "evaluate yields Fail/Unproven/Pass for broken graph, missing evidence, and controlled inputs"
 @rel:verifies:FR-INIT-01->FR-INIT-01 "init_asep_project creates the docs tree and writes PRD.md with \@req:FR-INIT-01:MUST"
+@rel:satisfies:FR-ANTISLOP-05->FR-ANTISLOP-05
+@rel:satisfies:FR-ANTISLOP-06->FR-ANTISLOP-06
+@rel:satisfies:FR-ANTISLOP-07->FR-ANTISLOP-07
+@rel:satisfies:FR-ANTISLOP-08->FR-ANTISLOP-08
+@rel:satisfies:FR-ANTISLOP-09->FR-ANTISLOP-09
+@rel:verifies:FR-ANTISLOP-05->FR-ANTISLOP-05 "audit_anti_slop flags every else token as an Error-severity violation"
+@rel:verifies:FR-ANTISLOP-06->FR-ANTISLOP-06 "audit_anti_slop flags any if nested inside another if with max_nesting=0"
+@rel:verifies:FR-ANTISLOP-07->FR-ANTISLOP-07 "code_rule reads AS-CODE-ELSE and AS-CODE-NESTING severity from asep-policy.toml"
+@rel:verifies:FR-ANTISLOP-08->FR-ANTISLOP-08 "audited repository sources contain no else token and no nested if"
+@rel:verifies:FR-ANTISLOP-09->FR-ANTISLOP-09 "asep:allow-antislop does not suppress AS-CODE-ELSE or AS-CODE-NESTING"

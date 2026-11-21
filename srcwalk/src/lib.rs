@@ -110,11 +110,11 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
         let ft = meta.file_type();
 
         if ft.is_dir() {
-            if let Ok(canon) = path.canonicalize() {
-                if !seen.insert(canon) {
-                    continue;
-                }
-            }
+            let canon = match path.canonicalize() {
+                Ok(canon) => canon,
+                Err(_) => continue,
+            };
+            seen.insert(canon);
             continue;
         }
 

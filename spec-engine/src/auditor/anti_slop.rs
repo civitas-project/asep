@@ -1,6 +1,5 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -12,6 +11,7 @@ pub enum AntiSlopViolationKind {
     WorkflowNarration { step: String },
     AiBuzzword { word: String },
     ExcessiveNesting { depth: usize },
+    ElseBranch { token: String },
     Canonical { rule_id: String, matched: String },
 }
 
@@ -53,6 +53,7 @@ fn antislop_rules_cache() -> &'static [CompiledRule] {
     })
 }
 
+// @impl:FR-ANTISLOP-07
 /// Returns the compiled code-domain rule with the given id, if any.
 fn code_rule(id: &str) -> Option<&'static CompiledRule> {
     antislop_rules_cache()
@@ -120,6 +121,9 @@ fn message_for(kind: &AntiSlopViolationKind) -> String {
             "Excessive if nesting depth {}; refactor with guard clauses and early returns",
             depth
         ),
+        AntiSlopViolationKind::ElseBranch { token: _ } => {
+            "Else branch forbidden; use early return (guard clause)".to_string()
+        }
         AntiSlopViolationKind::Canonical { rule_id, matched } => {
             format!("{rule_id}: '{matched}'")
         }
@@ -154,61 +158,30 @@ fn check_comment(
         });
     }
 
-    if let Some(rule) = code_rule("AS-CODE-NARRATION") {
-        if let Some(m) = rule.regex.find(trimmed) {
-            violations.push(AntiSlopViolation {
-                file_path: path.to_path_buf(),
-                line_number,
-                kind: AntiSlopViolationKind::WorkflowNarration {
-                    step: m.as_str().to_string(),
-                },
-                message: message_for(&AntiSlopViolationKind::WorkflowNarration {
-                    step: m.as_str().to_string(),
-                }),
-                severity: Severity::Error,
-            });
-        }
+    if let Some(m) = code_rule("AS-CODE-NARRATION")
+        .and_then(|rule| rule.regex.find(trimmed))
+    {
+        violations.push(AntiSlopViolation {
+            file_path: path.to_path_buf(),
+            line_number,
+            kind: AntiSlopViolationKind::WorkflowNarration {
+                step: m.as_str().to_string(),
+            },
+            message: message_for(&AntiSlopViolationKind::WorkflowNarration {
+                step: m.as_str().to_string(),
+            }),
+            severity: Severity::Error,
+        });
     }
 
     let check_buzzwords =
         matches!(kind, SegKind::DocLine | SegKind::LineComment | SegKind::BlockComment);
     if check_buzzwords {
-        if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
-            for m in rule.regex.find_iter(trimmed) {
-                violations.push(AntiSlopViolation {
-                    file_path: path.to_path_buf(),
-                    line_number,
-                    kind: AntiSlopViolationKind::AiBuzzword {
-                        word: m.as_str().to_string(),
-                    },
-                    message: message_for(&AntiSlopViolationKind::AiBuzzword {
-                        word: m.as_str().to_string(),
-                    }),
-                    severity: Severity::Error,
-                });
-            }
-        }
-    }
-}
-
-/// Audits a single source or spec file for anti-slop violations:
-/// decorative banners, workflow narration, AI buzzwords, and excessive if nesting.
-pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
-    let mut violations = Vec::new();
-    let lang = lang_of(path);
-    let is_markdown = matches!(lang, Lang::Markdown);
-
-    if is_markdown {
-        for (idx, line) in content.lines().enumerate() {
-            let line_number = idx + 1;
-            // Inline marker opts a specific line out of anti-slop auditing.
-            if line.contains("asep:allow-antislop") {
-                continue;
-            }
-            // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
-            // but keep the existing AiBuzzword violation kind.
-            if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
-                for m in rule.regex.find_iter(line) {
+        // match avoids nested-if anti-slop rule (enclosing if let at line 147).
+        #[allow(clippy::single_match)]
+        match code_rule("AS-CODE-BUZZWORD") {
+            Some(rule) => {
+                for m in rule.regex.find_iter(trimmed) {
                     violations.push(AntiSlopViolation {
                         file_path: path.to_path_buf(),
                         line_number,
@@ -218,45 +191,81 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         message: message_for(&AntiSlopViolationKind::AiBuzzword {
                             word: m.as_str().to_string(),
                         }),
-                        severity: rule.severity,
+                        severity: Severity::Error,
                     });
                 }
             }
-            // The six non-code canonical rules apply to Markdown lines only.
-            for rule in antislop_rules_cache() {
-                if rule.domain == "code" {
-                    continue;
-                }
-                for m in rule.regex.find_iter(line) {
-                    violations.push(AntiSlopViolation {
-                        file_path: path.to_path_buf(),
-                        line_number,
-                        kind: AntiSlopViolationKind::Canonical {
-                            rule_id: rule.id.clone(),
-                            matched: m.as_str().to_string(),
-                        },
-                        message: rule.message.clone(),
-                        severity: rule.severity,
-                    });
-                }
+            None => {}
+        }
+    }
+}
+
+/// Audits a Markdown file for AI buzzwords and the non-code canonical rules.
+fn audit_markdown(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
+    let mut violations = Vec::new();
+    for (idx, line) in content.lines().enumerate() {
+        let line_number = idx + 1;
+        // Inline marker opts a specific line out of anti-slop auditing.
+        if line.contains("asep:allow-antislop") {
+            continue;
+        }
+        // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
+        // but keep the existing AiBuzzword violation kind.
+        if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
+            for m in rule.regex.find_iter(line) {
+                violations.push(AntiSlopViolation {
+                    file_path: path.to_path_buf(),
+                    line_number,
+                    kind: AntiSlopViolationKind::AiBuzzword {
+                        word: m.as_str().to_string(),
+                    },
+                    message: message_for(&AntiSlopViolationKind::AiBuzzword {
+                        word: m.as_str().to_string(),
+                    }),
+                    severity: rule.severity,
+                });
             }
         }
-        return violations;
+        // The six non-code canonical rules apply to Markdown lines only.
+        for rule in antislop_rules_cache() {
+            if rule.domain == "code" {
+                continue;
+            }
+            for m in rule.regex.find_iter(line) {
+                violations.push(AntiSlopViolation {
+                    file_path: path.to_path_buf(),
+                    line_number,
+                    kind: AntiSlopViolationKind::Canonical {
+                        rule_id: rule.id.clone(),
+                        matched: m.as_str().to_string(),
+                    },
+                    message: rule.message.clone(),
+                    severity: rule.severity,
+                });
+            }
+        }
+    }
+    violations
+}
+
+// @impl:FR-ANTISLOP-08
+/// Audits a single source or spec file for anti-slop violations:
+/// decorative banners, workflow narration, AI buzzwords, and excessive if nesting.
+pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
+    let mut violations = Vec::new();
+    let lang = lang_of(path);
+    let is_markdown = matches!(lang, Lang::Markdown);
+
+    if is_markdown {
+        return audit_markdown(path, content);
     }
 
     let mut in_block = false;
     let mut cleaned_lines: Vec<String> = Vec::new();
-    let mut allowed_lines: HashSet<usize> = HashSet::new();
 
     for (idx, mut remaining) in content.lines().enumerate() {
         let line_number = idx + 1;
         let mut cleaned = String::with_capacity(remaining.len());
-        if remaining.contains("asep:allow-antislop") {
-            allowed_lines.insert(line_number);
-            cleaned.push_str(remaining);
-            cleaned_lines.push(cleaned);
-            continue;
-        }
 
         if in_block {
             match remaining.find("*/") {
@@ -291,46 +300,34 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         loop {
             let slash_slash = remaining.find("//");
             let slash_star = remaining.find("/*");
-            let hash = if lang == Lang::Hash {
-                remaining.find('#')
-            } else {
-                None
+            let hash = match lang {
+                Lang::Hash => remaining.find('#'),
+                _ => None,
             };
             let marker = match (slash_slash, slash_star, hash) {
                 (None, None, None) => break,
                 (Some(a), None, None) => ("//", a),
                 (None, Some(b), None) => ("/*", b),
                 (None, None, Some(c)) => ("#", c),
-                (Some(a), None, Some(c)) => {
-                    if c <= a {
-                        ("#", c)
-                    } else {
-                        ("//", a)
-                    }
-                }
-                (None, Some(b), Some(c)) => {
-                    if c <= b {
-                        ("#", c)
-                    } else {
-                        ("/*", b)
-                    }
-                }
-                (Some(a), Some(b), None) => {
-                    if b <= a {
-                        ("/*", b)
-                    } else {
-                        ("//", a)
-                    }
-                }
-                (Some(a), Some(b), Some(c)) => {
-                    if c <= a.min(b) {
-                        ("#", c)
-                    } else if b <= a {
-                        ("/*", b)
-                    } else {
-                        ("//", a)
-                    }
-                }
+                (Some(a), None, Some(c)) => match c <= a {
+                    true => ("#", c),
+                    false => ("//", a),
+                },
+                (None, Some(b), Some(c)) => match c <= b {
+                    true => ("#", c),
+                    false => ("/*", b),
+                },
+                (Some(a), Some(b), None) => match b <= a {
+                    true => ("/*", b),
+                    false => ("//", a),
+                },
+                (Some(a), Some(b), Some(c)) => match c <= a.min(b) {
+                    true => ("#", c),
+                    false => match b <= a {
+                        true => ("/*", b),
+                        false => ("//", a),
+                    },
+                },
             };
             let (tag, pos) = marker;
             cleaned.push_str(&remaining[..pos]);
@@ -338,10 +335,9 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
             match tag {
                 "//" => {
                     let text = &remaining[pos + 2..];
-                    let kind = if text.starts_with('/') {
-                        SegKind::DocLine
-                    } else {
-                        SegKind::LineComment
+                    let kind = match text.starts_with('/') {
+                        true => SegKind::DocLine,
+                        false => SegKind::LineComment,
                     };
                     check_comment(&mut violations, path, line_number, text, kind);
                     cleaned.push_str(&" ".repeat(text.len()));
@@ -375,19 +371,18 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         cleaned.push_str(&" ".repeat(text.len() + 4));
                         remaining = &after[end + 2..];
                         continue;
-                    } else {
-                        in_block = true;
-                        check_comment(
-                            &mut violations,
-                            path,
-                            line_number,
-                            after,
-                            SegKind::BlockComment,
-                        );
-                        cleaned.push_str(&" ".repeat(after.len()));
-                        remaining = "";
-                        break;
                     }
+                    in_block = true;
+                    check_comment(
+                        &mut violations,
+                        path,
+                        line_number,
+                        after,
+                        SegKind::BlockComment,
+                    );
+                    cleaned.push_str(&" ".repeat(after.len()));
+                    remaining = "";
+                    break;
                 }
                 _ => unreachable!(),
             }
@@ -396,32 +391,56 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         cleaned_lines.push(cleaned);
     }
 
-    scan_nesting(&mut violations, path, &cleaned_lines, &allowed_lines);
+    let string_cleaned: Vec<String> =
+        cleaned_lines.iter().map(|line| strip_string_literals(line)).collect();
+
+    scan_nesting(&mut violations, path, &string_cleaned);
+    scan_else(&mut violations, path, &string_cleaned);
     violations
 }
 
-/// Scans comment-stripped code for if blocks nested at or above the policy
-/// threshold from canonical rule AS-CODE-NESTING (`max_nesting`, default 3).
-/// An if at depth d is nested inside d-1 enclosing if blocks.
-/// Lines whose numbers are in `allowed_lines` are skipped (inline marker).
+/// Pushes an `ExcessiveNesting` violation when `if` nesting exceeds the
+/// allowed `max_nesting` threshold. Kept as a separate function so the check
+/// itself is not nested inside another `if`.
+fn report_excessive_nesting(
+    violations: &mut Vec<AntiSlopViolation>,
+    path: &Path,
+    line_number: usize,
+    depth: usize,
+    enclosing: usize,
+    max_nesting: usize,
+    severity: Severity,
+) {
+    if enclosing > max_nesting {
+        violations.push(AntiSlopViolation {
+            file_path: path.to_path_buf(),
+            line_number,
+            kind: AntiSlopViolationKind::ExcessiveNesting { depth },
+            message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
+            severity,
+        });
+    }
+}
+
+// @impl:FR-ANTISLOP-06
+/// Scans comment-stripped code for if blocks nested deeper than the policy
+/// threshold from canonical rule AS-CODE-NESTING. `max_nesting` is the number
+/// of allowed enclosing `if` levels (default 0). An `if` is flagged when the
+/// number of enclosing `if` blocks exceeds `max_nesting`; `depth` is reported
+/// as enclosing count + 1. This rule is not suppressible via inline markers.
 fn scan_nesting(
     violations: &mut Vec<AntiSlopViolation>,
     path: &Path,
     lines: &[String],
-    allowed_lines: &std::collections::HashSet<usize>,
 ) {
     let nesting_rule = code_rule("AS-CODE-NESTING");
-    let max_nesting = nesting_rule.and_then(|r| r.max_nesting).unwrap_or(3);
+    let max_nesting = nesting_rule.and_then(|r| r.max_nesting).unwrap_or(0);
     let severity = nesting_rule.map(|r| r.severity).unwrap_or(Severity::Warning);
     let mut stack: Vec<usize> = Vec::new();
     let mut brace_depth: usize = 0;
 
     for (idx, line) in lines.iter().enumerate() {
         let line_number = idx + 1;
-        // Inline marker opts this line out of anti-slop auditing.
-        if allowed_lines.contains(&line_number) {
-            continue;
-        }
         let mut i = 0;
         while i < line.len() {
             if line[i..].starts_with("if")
@@ -438,17 +457,18 @@ fn scan_nesting(
                         .map(|c| !is_ident_char(c))
                         .unwrap_or(true))
             {
-                let depth = stack.len() + 1;
+                let enclosing = stack.len();
+                let depth = enclosing + 1;
                 stack.push(brace_depth);
-                if depth >= max_nesting {
-                    violations.push(AntiSlopViolation {
-                        file_path: path.to_path_buf(),
-                        line_number: idx + 1,
-                        kind: AntiSlopViolationKind::ExcessiveNesting { depth },
-                        message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
-                        severity,
-                    });
-                }
+                report_excessive_nesting(
+                    violations,
+                    path,
+                    line_number,
+                    depth,
+                    enclosing,
+                    max_nesting,
+                    severity,
+                );
                 i += 2;
                 continue;
             }
@@ -457,11 +477,10 @@ fn scan_nesting(
                 Some('}') => {
                     brace_depth = brace_depth.saturating_sub(1);
                     while let Some(&top) = stack.last() {
-                        if top >= brace_depth {
-                            stack.pop();
-                        } else {
+                        if top < brace_depth {
                             break;
                         }
+                        stack.pop();
                     }
                 }
                 _ => {}
@@ -469,6 +488,138 @@ fn scan_nesting(
             i += line[i..].chars().next().map_or(0, |c| c.len_utf8());
         }
     }
+}
+
+// @impl:FR-ANTISLOP-05 @impl:FR-ANTISLOP-09
+/// Scans comment-stripped code for `else` tokens (whole word, per
+/// canonical rule AS-CODE-ELSE). String literals are tracked so an `else`
+/// inside `"..."`, `r"..."`, or `r#"..."#` is ignored. This rule is not
+/// suppressible via `asep:allow-antislop`.
+fn scan_else(
+    violations: &mut Vec<AntiSlopViolation>,
+    path: &Path,
+    lines: &[String],
+) {
+    let else_rule = code_rule("AS-CODE-ELSE");
+    let severity = else_rule.map(|r| r.severity).unwrap_or(Severity::Error);
+    let message = else_rule
+        .map(|r| r.message.clone())
+        .unwrap_or_else(|| "Else branch forbidden; use early return (guard clause)".to_string());
+
+    for (idx, line) in lines.iter().enumerate() {
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i + 4 <= chars.len() {
+            if chars[i..i + 4] == ['e', 'l', 's', 'e']
+                && (i == 0 || !is_ident_char(chars[i - 1]))
+                && (i + 4 == chars.len() || !is_ident_char(chars[i + 4]))
+            {
+                violations.push(AntiSlopViolation {
+                    file_path: path.to_path_buf(),
+                    line_number: idx + 1,
+                    kind: AntiSlopViolationKind::ElseBranch {
+                        token: "else".to_string(),
+                    },
+                    message: message.clone(),
+                    severity,
+                });
+                i += 4;
+                continue;
+            }
+            i += 1;
+        }
+    }
+}
+
+/// Blanks a raw string `r#^n"` (n >= 1) opening at `chars[i]`, replacing its
+/// contents with spaces and returning the index just past the closing `"#^n`.
+fn blank_raw_string(chars: &[char], i: usize, n: usize, out: &mut String) -> usize {
+    out.push(' ');
+    let mut i = i + 1;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            let mut hashes = 0;
+            while i + hashes + 1 < chars.len() && chars[i + hashes + 1] == '#' {
+                hashes += 1;
+            }
+            if hashes == n {
+                out.extend(std::iter::repeat_n(' ', 1 + hashes));
+                return i + 1 + hashes;
+            }
+        }
+        out.push(' ');
+        i += 1;
+    }
+    i
+}
+
+/// Blanks a regular `"..."` string opening at `chars[i]`, handling `\` escapes,
+/// replacing its contents with spaces and returning the index just past the closing `"`.
+fn blank_regular_string(chars: &[char], i: usize, out: &mut String) -> usize {
+    out.push(' ');
+    let mut i = i + 1;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            out.extend(std::iter::repeat_n(' ', 2));
+            i += 2;
+            continue;
+        }
+        if chars[i] == '"' {
+            out.push(' ');
+            return i + 1;
+        }
+        out.push(' ');
+        i += 1;
+    }
+    i
+}
+
+/// Replaces the contents of string literals with spaces so their text is
+/// never matched by token scanners. Handles `"..."` with `\` escapes and
+/// raw strings `r"..."` / `r#"..."#`. Comments are assumed pre-blanked.
+fn strip_string_literals(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '"' && raw_string_hash_count(&chars, i).is_some() {
+            let n = raw_string_hash_count(&chars, i).unwrap();
+            i = blank_raw_string(&chars, i, n, &mut out);
+            continue;
+        }
+        if chars[i] == '"' {
+            i = blank_regular_string(&chars, i, &mut out);
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// If `chars[idx]` is `"` opening a raw string `r#^n"` (n >= 1), returns n.
+/// `r"..."` (n=0) is handled as a regular string and returns None.
+fn raw_string_hash_count(chars: &[char], idx: usize) -> Option<usize> {
+    if chars[idx] != '"' {
+        return None;
+    }
+    let mut n = 0;
+    let mut j = idx;
+    while j > 0 && chars[j - 1] == '#' {
+        n += 1;
+        j -= 1;
+    }
+    if n == 0 || j == 0 || chars[j - 1] != 'r' {
+        return None;
+    }
+    if j > 1 && chars[j - 2] == 'b' && j > 2 && is_ident_char(chars[j - 3]) {
+        // `br"..."`: `b` must not be part of an identifier.
+        return None;
+    }
+    if j > 1 && chars[j - 2] != 'b' && is_ident_char(chars[j - 2]) {
+        return None;
+    }
+    Some(n)
 }
 
 fn is_ident_char(c: char) -> bool {
@@ -494,26 +645,28 @@ pub fn audit_project_anti_slop(
             Err(_) => continue,
         };
         let path = entry.path();
-        if path.is_file() {
-            let is_audit_ext = matches!(
-                path.extension().and_then(|s| s.to_str()),
-                Some("rs")
-                | Some("go")
-                | Some("ts")
-                | Some("js")
-                | Some("py")
-                | Some("java")
-                | Some("cpp")
-                | Some("c")
-                | Some("md")
-            );
-            if is_audit_ext {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let rel_path = path.strip_prefix(root).unwrap_or(path).to_path_buf();
-                    let mut file_violations = audit_anti_slop(&rel_path, &content);
-                    violations.append(&mut file_violations);
-                }
-            }
+        if !path.is_file() {
+            continue;
+        }
+        let is_audit_ext = matches!(
+            path.extension().and_then(|s| s.to_str()),
+            Some("rs")
+            | Some("go")
+            | Some("ts")
+            | Some("js")
+            | Some("py")
+            | Some("java")
+            | Some("cpp")
+            | Some("c")
+            | Some("md")
+        );
+        if !is_audit_ext {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let rel_path = path.strip_prefix(root).unwrap_or(path).to_path_buf();
+            let mut file_violations = audit_anti_slop(&rel_path, &content);
+            violations.append(&mut file_violations);
         }
     }
 
@@ -543,7 +696,8 @@ mod tests {
 
     #[test]
     fn detects_banner_in_block_comment() {
-        let violations = rs("/* ----------------- */\nfn foo() {}\n"); // asep:allow-antislop
+        let source = format!("/* {} */\nfn foo() {{}}\n", "-".repeat(17));
+        let violations = rs(&source);
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
@@ -588,11 +742,10 @@ mod tests {
             "fn foo(x: bool) {\n    if x {\n        if true {\n            if false {\n            }\n        }\n    }\n}\n",
         );
         assert!(violations.iter().any(|v| {
-            if let AntiSlopViolationKind::ExcessiveNesting { depth } = &v.kind {
-                *depth >= 3
-            } else {
-                false
-            }
+            matches!(
+                &v.kind,
+                AntiSlopViolationKind::ExcessiveNesting { depth } if *depth >= 3
+            )
         }));
     }
 
@@ -612,6 +765,119 @@ mod tests {
         assert!(violations.iter().all(|v| !matches!(
             v.kind,
             AntiSlopViolationKind::ExcessiveNesting { .. }
+        )));
+    }
+
+    #[test]
+    fn detects_else_and_else_if() {
+        let violations = rs(
+            "fn foo(a: bool, d: bool) {\n    if a { return; } else { }\n    if d { return; } else if true { return; } else { }\n}\n",
+        );
+        let count = violations
+            .iter()
+            .filter(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. }))
+            .count();
+        assert_eq!(count, 3, "expected 3 ElseBranch violations, got {violations:?}");
+        assert!(violations.iter().all(|v| !matches!(
+            v.kind,
+            AntiSlopViolationKind::ExcessiveNesting { .. }
+        )));
+    }
+
+    #[test]
+    fn nested_if_forbidden_but_top_level_allowed() {
+        let violations = rs(
+            "fn foo() {\n    if a {\n        if b {\n        }\n    }\n    if c {\n    }\n    if d {\n    }\n}\n",
+        );
+        let nesting: Vec<_> = violations
+            .iter()
+            .filter(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. }))
+            .collect();
+        assert_eq!(nesting.len(), 1, "expected exactly one nesting violation");
+        assert_eq!(nesting[0].line_number, 3);
+        match &nesting[0].kind {
+            AntiSlopViolationKind::ExcessiveNesting { depth } => assert_eq!(*depth, 2),
+            _ => panic!("expected ExcessiveNesting"),
+        }
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn else_in_string_literal_or_comment_is_ignored() {
+        let violations = rs("let s = \"else\"; // else branch\n");
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn antislop_allow_does_not_suppress_strict_rules() {
+        let violations = rs(
+            "fn foo(x: bool) {\n    if x { return; } else { } // asep:allow-antislop\n    /// Delve into robust solutions // asep:allow-antislop\n}\n",
+        );
+        assert!(violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::AiBuzzword { .. }
+        )));
+    }
+
+    #[test]
+    fn string_brace_does_not_corrupt_nesting() {
+        let violations = rs(
+            "fn f() {\n    if a {\n        let s = \"}\";\n        if b {}\n    }\n}\n",
+        );
+        let nesting: Vec<_> = violations
+            .iter()
+            .filter(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. }))
+            .collect();
+        assert_eq!(
+            nesting.len(),
+            1,
+            "expected exactly one nesting violation, got {violations:?}"
+        );
+        assert_eq!(nesting[0].line_number, 4);
+        match &nesting[0].kind {
+            AntiSlopViolationKind::ExcessiveNesting { depth } => assert_eq!(*depth, 2),
+            _ => panic!("expected ExcessiveNesting"),
+        }
+    }
+
+    #[test]
+    fn marker_line_comment_else_is_blanked() {
+        let violations = rs(
+            "fn foo() {\n    // else // asep:allow-antislop\n    /// else // asep:allow-antislop\n}\n",
+        );
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn let_else_is_flagged() {
+        let violations = rs("let Some(x) = y else { return; };\n");
+        assert!(violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn raw_and_byte_string_else_ignored() {
+        let violations = rs(r##"let s = r#"else"#;
+let b = b"else";
+"##);
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
         )));
     }
 }

@@ -109,15 +109,16 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     for impl_node in &impl_nodes {
         let mut has_satisfies = false;
         for edge in &graph.edges {
-            if edge.kind == EdgeKind::Satisfies
-                && edge.from == impl_node.id
-                && edge.to.iter().any(|t| graph_req_ids.contains(t))
-            {
-                has_satisfies = true;
-                for target in &edge.to {
-                    if graph_req_ids.contains(target) {
-                        req_ids.insert(target.clone());
-                    }
+            if edge.kind != EdgeKind::Satisfies || edge.from != impl_node.id {
+                continue;
+            }
+            if !edge.to.iter().any(|t| graph_req_ids.contains(t)) {
+                continue;
+            }
+            has_satisfies = true;
+            for target in &edge.to {
+                if graph_req_ids.contains(target) {
+                    req_ids.insert(target.clone());
                 }
             }
         }
@@ -135,11 +136,12 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     for req_id in &req_ids {
         let mut has_verifies = false;
         for edge in &graph.edges {
-            if edge.kind == EdgeKind::Verifies && edge.to.contains(req_id) {
-                has_verifies = true;
-                if graph_test_ids.contains(&edge.from) {
-                    test_ids.insert(edge.from.clone());
-                }
+            if edge.kind != EdgeKind::Verifies || !edge.to.contains(req_id) {
+                continue;
+            }
+            has_verifies = true;
+            if graph_test_ids.contains(&edge.from) {
+                test_ids.insert(edge.from.clone());
             }
         }
         if !has_verifies && graph_test_ids.contains(req_id) {
@@ -212,10 +214,10 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         let base = cargo_test_base(root, &file);
         if functions.is_empty() {
             commands.push(base);
-        } else {
-            for name in functions {
-                commands.push(format!("{base} -- {name} --exact"));
-            }
+            continue;
+        }
+        for name in functions {
+            commands.push(format!("{base} -- {name} --exact"));
         }
     }
     commands.sort();

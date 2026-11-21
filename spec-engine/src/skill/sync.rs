@@ -57,10 +57,9 @@ pub fn sync_skills(
                 | TargetAgent::Goose
                 | TargetAgent::ClaudeCode => {
                     let s_dir = target.join(&entry.id);
-                    if let Err(e) = fs::create_dir_all(&s_dir) {
-                        Err(e.to_string())
-                    } else {
-                        fs::write(s_dir.join("SKILL.md"), &content).map_err(|e| e.to_string())
+                    match fs::create_dir_all(&s_dir) {
+                        Ok(()) => fs::write(s_dir.join("SKILL.md"), &content).map_err(|e| e.to_string()),
+                        Err(e) => Err(e.to_string()),
                     }
                 }
                 TargetAgent::Cursor => {

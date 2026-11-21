@@ -85,13 +85,12 @@ impl AsymptoticAnalyzer {
         let limit = max_slope + SLOPE_TOLERANCE;
 
         if slope > limit {
-            Err(format!(
+            return Err(format!(
                 "complexity assert failed: estimated log-log slope {:.4} exceeds max_slope {} + tolerance {}",
                 slope, max_slope, SLOPE_TOLERANCE
-            ))
-        } else {
-            Ok(slope)
+            ));
         }
+        Ok(slope)
     }
 }
 
