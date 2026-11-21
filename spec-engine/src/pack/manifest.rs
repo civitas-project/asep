@@ -31,6 +31,15 @@ pub fn generate_mcp_config_json(command: &str) -> String {
     .to_string()
 }
 
+/// Creates the parent directory of `config_path` when it can be determined,
+/// without failing when there is no parent (e.g. a bare file name).
+fn ensure_parent_dir(config_path: &Path) -> std::io::Result<()> {
+    match config_path.parent() {
+        Some(parent) => fs::create_dir_all(parent),
+        None => Ok(()),
+    }
+}
+
 /// Merges `asep` MCP configuration into an existing or new `opencode.json`.
 ///
 /// Safety: reads and parses the existing file first; if parsing fails, the
@@ -39,26 +48,25 @@ pub fn generate_mcp_config_json(command: &str) -> String {
 /// before any successful write.
 pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std::io::Error> {
     // Read existing content (if any) without losing it.
-    let existing_raw = if config_path.exists() {
-        fs::read_to_string(config_path)?
-    } else {
-        if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent)?;
+    let existing_raw = match fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) if !config_path.exists() => {
+            ensure_parent_dir(config_path)?;
+            String::new()
         }
-        String::new()
+        Err(e) => return Err(e),
     };
 
     // Parse existing JSON. If the file is non-empty but unparseable, back up
     // the raw content and return an error instead of overwriting.
-    let mut config: serde_json::Value = if existing_raw.trim().is_empty() {
-        serde_json::json!({})
-    } else {
+    let mut config: serde_json::Value = serde_json::json!({});
+    if !existing_raw.trim().is_empty() {
         match serde_json::from_str(&existing_raw) {
-            Ok(v) => v,
+            Ok(v) => config = v,
             Err(e) => {
                 // Preserve the user's file verbatim in a backup.
                 let backup_path = config_path.with_extension("json.bak");
-                let _ = fs::write(&backup_path, &existing_raw);
+                let _ = fs::write(&backup_path, existing_raw.as_bytes());
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
@@ -69,7 +77,7 @@ pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std
                 ));
             }
         }
-    };
+    }
 
     if !config.is_object() {
         config = serde_json::json!({});
@@ -91,35 +99,53 @@ pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std
     // Back up the original content before overwriting (best effort).
     if !existing_raw.is_empty() {
         let backup_path = config_path.with_extension("json.bak");
-        let _ = fs::write(&backup_path, &existing_raw);
+        let _ = fs::write(&backup_path, existing_raw.as_bytes());
     }
 
     let formatted = serde_json::to_string_pretty(&config).map_err(std::io::Error::other)?;
 
     // Sanity check: the merged result must still contain any previously
     // present top-level keys (e.g. "provider", "model", "plugins").
-    if !existing_raw.trim().is_empty() {
-        if let Ok(prev) = serde_json::from_str::<serde_json::Value>(&existing_raw) {
-            if let Some(prev_obj) = prev.as_object() {
-                if let Some(new_obj) = config.as_object() {
-                    for key in prev_obj.keys() {
-                        if !new_obj.contains_key(key) {
-                            // Should not happen, but guard against silent loss.
-                            let backup_path = config_path.with_extension("json.bak");
-                            let _ = fs::write(&backup_path, &existing_raw);
-                            return Err(std::io::Error::other(format!(
-                                "merge would drop top-level key '{}'; aborted, backup at {}",
-                                key,
-                                backup_path.display()
-                            )));
-                        }
-                    }
-                }
-            }
-        }
-    }
+    check_no_dropped_keys(config_path, &existing_raw, &config)?;
 
     fs::write(config_path, formatted)?;
+    Ok(())
+}
+
+/// Verifies the merged config still contains every top-level key present in
+/// the original input; aborts with a backup if any key would be silently dropped.
+fn check_no_dropped_keys(
+    config_path: &Path,
+    existing_raw: &str,
+    config: &serde_json::Value,
+) -> Result<(), std::io::Error> {
+    if existing_raw.trim().is_empty() {
+        return Ok(());
+    }
+    let prev = match serde_json::from_str::<serde_json::Value>(existing_raw) {
+        Ok(v) => v,
+        Err(_) => return Ok(()),
+    };
+    let prev_obj = match prev.as_object() {
+        Some(o) => o,
+        None => return Ok(()),
+    };
+    let new_obj = match config.as_object() {
+        Some(o) => o,
+        None => return Ok(()),
+    };
+    for key in prev_obj.keys() {
+        if !new_obj.contains_key(key) {
+            // Should not happen, but guard against silent loss.
+            let backup_path = config_path.with_extension("json.bak");
+            let _ = fs::write(&backup_path, existing_raw.as_bytes());
+            return Err(std::io::Error::other(format!(
+                "merge would drop top-level key '{}'; aborted, backup at {}",
+                key,
+                backup_path.display()
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -139,7 +165,8 @@ fn agent_permissions(profile: &CapabilityProfile, extra: &[serde_json::Value]) -
         push("read", "allow");
         push("glob", "allow");
         push("grep", "allow");
-    } else {
+    }
+    if !profile.file_read {
         push("read", "deny");
         push("glob", "deny");
         push("grep", "deny");
@@ -147,29 +174,34 @@ fn agent_permissions(profile: &CapabilityProfile, extra: &[serde_json::Value]) -
     if profile.file_write {
         push("edit", "allow");
         push("write", "allow");
-    } else {
+    }
+    if !profile.file_write {
         push("edit", "deny");
         push("write", "deny");
     }
     if profile.terminal {
         push("shell", "allow");
-    } else {
+    }
+    if !profile.terminal {
         push("shell", "deny");
     }
     if profile.mcp {
         push("mcp", "allow");
-    } else {
+    }
+    if !profile.mcp {
         push("mcp", "deny");
     }
     if profile.subagents {
         push("subagent", "allow");
-    } else {
+    }
+    if !profile.subagents {
         push("subagent", "deny");
     }
     if profile.web {
         push("webfetch", "allow");
         push("websearch", "allow");
-    } else {
+    }
+    if !profile.web {
         push("webfetch", "deny");
         push("websearch", "deny");
     }
@@ -317,25 +349,24 @@ pub fn scaffold_opencode_agents(
     profile: &CapabilityProfile,
 ) -> Result<(), std::io::Error> {
     // Read existing content (if any) without losing it.
-    let existing_raw = if config_path.exists() {
-        fs::read_to_string(config_path)?
-    } else {
-        if let Some(parent) = config_path.parent() {
-            fs::create_dir_all(parent)?;
+    let existing_raw = match fs::read_to_string(config_path) {
+        Ok(content) => content,
+        Err(_) if !config_path.exists() => {
+            ensure_parent_dir(config_path)?;
+            String::new()
         }
-        String::new()
+        Err(e) => return Err(e),
     };
 
     // Parse existing JSON. If the file is non-empty but unparseable, back up
     // the raw content and return an error instead of overwriting.
-    let mut config: serde_json::Value = if existing_raw.trim().is_empty() {
-        serde_json::json!({})
-    } else {
+    let mut config: serde_json::Value = serde_json::json!({});
+    if !existing_raw.trim().is_empty() {
         match serde_json::from_str(&existing_raw) {
-            Ok(v) => v,
+            Ok(v) => config = v,
             Err(e) => {
                 let backup_path = config_path.with_extension("json.bak");
-                let _ = fs::write(&backup_path, &existing_raw);
+                let _ = fs::write(&backup_path, existing_raw.as_bytes());
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
@@ -346,7 +377,7 @@ pub fn scaffold_opencode_agents(
                 ));
             }
         }
-    };
+    }
 
     if !config.is_object() {
         config = serde_json::json!({});
@@ -490,7 +521,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
     // Back up the original content before overwriting (best effort).
     if !existing_raw.is_empty() {
         let backup_path = config_path.with_extension("json.bak");
-        let _ = fs::write(&backup_path, &existing_raw);
+        let _ = fs::write(&backup_path, existing_raw.as_bytes());
     }
 
     let formatted = serde_json::to_string_pretty(&config).map_err(std::io::Error::other)?;
