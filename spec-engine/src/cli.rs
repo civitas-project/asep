@@ -199,6 +199,29 @@ pub enum Commands {
         #[arg(short, long)]
         root: Option<PathBuf>,
     },
+
+    /// Measure or clean Rust target artifacts by size threshold
+    Clean {
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+
+        /// Explicit threshold in GiB (overrides measured baseline)
+        #[arg(long)]
+        max_gb: Option<f64>,
+
+        /// Target directory to measure/clean (default: <root>/target)
+        #[arg(long)]
+        target: Option<PathBuf>,
+
+        /// Write the current target size as baseline and exit
+        #[arg(long)]
+        measure: bool,
+
+        /// Report the plan without deleting anything
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
