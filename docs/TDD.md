@@ -64,6 +64,14 @@
 ## FR-ANTISLOP-09 Non-suppressible strict rules
 `scan_nesting` currently skips line numbers in `allowed_lines` (populated by `asep:allow-antislop`) and `scan_else` must initially be wired the same way. Change both scanners to ignore `allowed_lines` for these two rules only; all other anti-slop rules keep the existing opt-out. This makes requirements 05 and 06 absolute as requested.
 
+<!-- @design:FR-ANTISLOP-07 -->
+## FR-ANTISLOP-07 Policy-driven enforcement
+`spec-engine/src/auditor/anti_slop.rs::code_rule` reads `AS-CODE-NESTING` and `AS-CODE-ELSE` from `spec-engine/policy/asep-policy.toml` through the cached compiled-rule table. Severity and message come from the policy (Error fallback for `AS-CODE-ELSE`), so changing severity or thresholds in the policy changes `asep check`/`asep ci` behavior without recompiling gate logic in `runner.rs` or `ci/mod.rs`.
+
+<!-- @design:FR-ANTISLOP-08 -->
+## FR-ANTISLOP-08 Self-compliance
+Every audited source file in the repository is refactored to sequential guard clauses (top-level `if cond { return/continue/break }`), removing all `else` tokens and all nested `if`. No `asep:allow-antislop` marker is used for these two rules. `.asepignore` keeps `spec-engine/tests/`, `srcidx/tests/`, `**/benches/**`, `vendor/`, and `harness/e2e/vendor-loom/` out of audit scope.
+
 ## Implementation plan (ordered; one file or one function per unit)
 
 ### Task 1 — Policy declaration
