@@ -62,10 +62,12 @@ pub fn new_run(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     Ok(run_dir)
 }
 
-/// Deterministic u32 seed: first 4 bytes of sha256(run_id), little-endian.
-fn seed_from_run_id(run_id: &str) -> u32 {
+/// Deterministic u32 seed: first 4 bytes of sha256(run_id), big-endian.
+/// Matches the legacy shell script which parses the first 8 hex chars as a
+/// big-endian integer.
+pub fn seed_from_run_id(run_id: &str) -> u32 {
     let hash = Sha256::digest(run_id.as_bytes());
-    u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
+    u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]])
 }
 
 fn rustc_version() -> Result<String, String> {
