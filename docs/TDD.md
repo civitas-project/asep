@@ -51,3 +51,50 @@
 
 ## FR-INIT-01 Baseline project init
 `spec-engine/src/init/mod.rs::init_asep_project` (already declared in source) creates the canonical documentation tree (`docs/adr`, `docs/diagrams/rendered`, `docs/invariants`) and writes `docs/PRD.md` containing `<!-- @req:FR-INIT-01:MUST Baseline project specification -->` only when no PRD exists yet. Invoked by the `asep init` CLI command (runner.rs Commands::Init).
+
+<!-- @design:FR-ANTISLOP-05 -->
+## FR-ANTISLOP-05 No `else` — guard clauses only
+`spec-engine/policy/asep-policy.toml` gains `[[antislop_rules]] id='AS-CODE-ELSE', domain='code', severity='Error', pattern='\belse\b', message='Else branch forbidden; use early return (guard clause)'`. `spec-engine/src/auditor/anti_slop.rs` adds `AntiSlopViolationKind::ElseBranch { token: String }`, `scan_else(violations, path, cleaned_lines)` over comment-stripped code lines, and a `message_for` arm. A dedicated `scan_else` (rather than a generic regex over raw lines) is required because code-domain canonical rules currently run only on comments; the scanner must run on the stripped code body. The existing gate logic in `runner.rs:177-208` and `ci/mod.rs:179-195` already fails on `Severity::Error`, so no gate change is needed.
+
+<!-- @design:FR-ANTISLOP-06 -->
+## FR-ANTISLOP-06 No nested `if`
+`AS-CODE-NESTING` becomes `severity='Error'`, `max_nesting=2`. `scan_nesting` already reports `depth >= max_nesting` with `depth = enclosing_ifs + 1`; value 2 therefore flags the first nested `if` and every deeper one. Keep the brace-stack algorithm and `ExcessiveNesting` kind; update the message to `Nested if forbidden; use early return (guard clause)`.
+
+<!-- @design:FR-ANTISLOP-09 -->
+## FR-ANTISLOP-09 Non-suppressible strict rules
+`scan_nesting` currently skips line numbers in `allowed_lines` (populated by `asep:allow-antislop`) and `scan_else` must initially be wired the same way. Change both scanners to ignore `allowed_lines` for these two rules only; all other anti-slop rules keep the existing opt-out. This makes requirements 05 and 06 absolute as requested.
+
+## Implementation plan (ordered; one file or one function per unit)
+
+### Task 1 — Policy declaration
+- File: `spec-engine/policy/asep-policy.toml`
+- Symbol: `AS-CODE-NESTING` (severity Error, max_nesting 2), new `AS-CODE-ELSE` (Error)
+- Acceptance: `load_policy()` parses the file; `code_rule("AS-CODE-ELSE")` returns an Error-severity rule; nesting rule has `max_nesting = 2`.
+- Verification: `cargo test -p asep --lib --offline policy::tests` then the command emitted by `cargo run -q -p asep --bin asep -- affected spec-engine/policy/asep-policy.toml`.
+
+### Task 2 — Auditor scanners
+- File: `spec-engine/src/auditor/anti_slop.rs`
+- Symbols: `AntiSlopViolationKind::ElseBranch`, `scan_else`, `message_for`, `scan_nesting` (ignore `allowed_lines`)
+- Acceptance: unit tests prove `else` and `else if` are flagged; an `if` inside an `if` is flagged at depth 2; comment text and string literals containing `else` are not flagged; `asep:allow-antislop` does not suppress these two rules but still suppresses AI-buzzword and narration rules.
+- Verification: `cargo test -p asep --lib --offline auditor::anti_slop::tests` plus `asep affected spec-engine/src/auditor/anti_slop.rs`.
+
+### Task 3 — Gate behavior test
+- File: `spec-engine/tests/cli_test.rs`
+- Symbol: new test `check_fails_on_guard_clause_violations`
+- Acceptance: a temp project containing a `.rs` file with one `else` and one nested `if` makes `asep check --rigor T1` exit non-zero; the same project with guard clauses exits 0.
+- Verification: `cargo test -p asep --test cli_test --offline`.
+
+### Task 4..N — Self-compliance refactor (one unit per file)
+- Files (audited, 35 files / 212 `else` tokens): top offenders `spec-engine/src/runner.rs` (48), `skill/inspector.rs` (13), `skill/menu.rs` (12), `agent_protocol/mod.rs` (11), `pack/manifest.rs` (10), `auditor/anti_slop.rs` (10), `pack/installer.rs` (9), `ci/mod.rs` (9), then the remaining 27 files. Nested `if` sites are found per file by the new scanner.
+- Symbol: each file's control-flow sites, converted to sequential guard clauses (`if cond { return/continue/break }`).
+- Acceptance: the file has zero `else` tokens and zero nested `if`; public behavior and existing tests unchanged; no `asep:allow-antislop` added for these rules.
+- Verification: `cargo run -q -p asep --bin asep -- affected <changed-file>` and run its derived commands.
+
+### Final Task — Whole-branch compliance gate
+- Acceptance: `asep check . --rigor T1` exits 0 with the new strict policy in force; zero violations of `AS-CODE-ELSE` and `AS-CODE-NESTING` in audited files.
+- Verification: `cargo run -q -p asep --bin asep -- affected <all-changed-paths>`, `cargo clippy -p asep --offline -- -D warnings`, `cargo run -q -p asep --bin asep -- check . --rigor T1`.
+
+## Known consequences of this plan
+- The self-compliance phase is the bulk of the work: 35 files, 212 `else` tokens plus nested `if` sites. It is split into one executor unit per file; each unit is independently verified.
+- Making the rules Error-severity means intermediate commits will fail `asep check . --rigor T1` until the cleanup phase finishes. The final gate is the acceptance point.
+- `.asepignore` already excludes `spec-engine/tests/`, `srcidx/tests/`, `vendor/`, and `harness/e2e/vendor-loom/`, so third-party and fixture code is out of scope.
