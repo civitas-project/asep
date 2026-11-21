@@ -31,22 +31,20 @@ pub fn parse_lcov(content: &str) -> HashMap<PathBuf, HashMap<usize, usize>> {
 
     for line in content.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("SF:") {
-            if let Some(f) = current_file.take() {
-                files.insert(f, std::mem::take(&mut current_lines));
+        match trimmed {
+            rest if rest.starts_with("SF:") => {
+                let rest = rest.strip_prefix("SF:").unwrap().trim();
+                flush_current_file(&mut current_file, &mut current_lines, &mut files);
+                current_file = Some(PathBuf::from(rest));
             }
-            let file_str = rest.trim();
-            current_file = Some(PathBuf::from(file_str));
-        } else if let Some(rest) = trimmed.strip_prefix("DA:") {
-            if let Some((line_s, hit_s)) = rest.split_once(',') {
-                if let (Ok(line_num), Ok(hit_count)) = (line_s.parse::<usize>(), hit_s.parse::<usize>()) {
-                    current_lines.insert(line_num, hit_count);
-                }
+            rest if rest.starts_with("DA:") => {
+                let rest = rest.strip_prefix("DA:").unwrap().trim();
+                apply_da_hit(&mut current_lines, rest);
             }
-        } else if trimmed == "end_of_record" {
-            if let Some(f) = current_file.take() {
-                files.insert(f, std::mem::take(&mut current_lines));
+            _ if trimmed == "end_of_record" => {
+                flush_current_file(&mut current_file, &mut current_lines, &mut files);
             }
+            _ => {}
         }
     }
 
@@ -57,10 +55,37 @@ pub fn parse_lcov(content: &str) -> HashMap<PathBuf, HashMap<usize, usize>> {
     files
 }
 
+/// Flushes the current file's accumulated lines into `files`, if a file is active.
+fn flush_current_file(
+    current_file: &mut Option<PathBuf>,
+    current_lines: &mut HashMap<usize, usize>,
+    files: &mut HashMap<PathBuf, HashMap<usize, usize>>,
+) {
+    if let Some(f) = current_file.take() {
+        files.insert(f, std::mem::take(current_lines));
+    }
+}
+
 /// Parses LCOV file from disk.
 pub fn parse_lcov_file(path: &Path) -> Result<HashMap<PathBuf, HashMap<usize, usize>>, std::io::Error> {
     let content = fs::read_to_string(path)?;
     Ok(parse_lcov(&content))
+}
+
+/// Parses a single LCOV `DA:` payload into `(line_number, hit_count)`.
+/// Returns `None` when the payload has no comma or either value fails to parse.
+fn parse_da_pair(rest: &str) -> Option<(usize, usize)> {
+    let (line_s, hit_s) = rest.split_once(',')?;
+    let line_num = line_s.parse::<usize>().ok()?;
+    let hit_count = hit_s.parse::<usize>().ok()?;
+    Some((line_num, hit_count))
+}
+
+/// Applies a parsed `DA:` hit count to the current line map, if parsing succeeded.
+fn apply_da_hit(current_lines: &mut HashMap<usize, usize>, rest: &str) {
+    if let Some((line_num, hit_count)) = parse_da_pair(rest) {
+        current_lines.insert(line_num, hit_count);
+    }
 }
 
 /// Maps coverage execution counts against implementation lines for each requirement.
@@ -90,24 +115,20 @@ pub fn map_coverage_to_requirements(
         for (path, line_num) in impl_lines {
             // Find match by exact path or matching suffix
             let hit = cov_map.iter().find_map(|(p, lines)| {
-                if p == &path || path.ends_with(p) || p.ends_with(&path) {
-                    lines.get(&line_num).copied()
-                } else {
-                    None
+                if !(p == &path || path.ends_with(p) || p.ends_with(&path)) {
+                    return None;
                 }
+                lines.get(&line_num).copied()
             });
 
-            if let Some(count) = hit {
-                if count > 0 {
-                    covered += 1;
-                }
+            if hit.is_some_and(|count| count > 0) {
+                covered += 1;
             }
         }
 
-        let percentage = if total > 0 {
-            (covered as f64 / total as f64) * 100.0
-        } else {
-            0.0
+        let percentage = match total {
+            0 => 0.0,
+            _ => (covered as f64 / total as f64) * 100.0,
         };
 
         let passed = percentage >= threshold;
