@@ -5,6 +5,15 @@ All notable changes to `ASEP` (Axiomatic Systems Engineering Protocol) will be d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0-alpha] - 2026-11-21
+
+### Changed
+- **Breaking:** guard-clause style is now mandatory. `AS-CODE-ELSE` (Error) forbids every `else` token and `AS-CODE-NESTING` (Error, `max_nesting = 0`) forbids any nested `if`; both are non-suppressible. Code that previously passed `asep check` may now fail; refactor to early-return guard clauses.
+- Target cleanup (`asep clean`), pinned toolchain + vendored deps for offline builds, and E2E harness subcommands (`asep harness new-run|vendor-loom|verify`) replace legacy shell scripts.
+
+### Added
+- Five MUST requirements (FR-ANTISLOP-05..09) with full traceability; 12 anti-slop rules across 4 domains.
+
 ## [1.1.0-alpha] - 2026-11-17
 
 ### Added
@@ -56,4 +65,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Diátaxis Living Manual** (MANUAL.md, Parts I–V) per ISO/IEC/IEEE 26514:2022
 
 ### Notes
-- Pre-release / alpha: `1.0.0-alpha`. First tagged release (`v1.0.0-alpha`).
+- Pre-release / alpha: `2.0.0-alpha`. First tagged release was `v1.0.0-alpha`.

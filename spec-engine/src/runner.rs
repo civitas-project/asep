@@ -1868,12 +1868,9 @@ pub fn run() -> ExitCode {
         }
 
         None => {
-            println!(
-                "{}",
-                "Spec-Engine SDLC Validation Engine v1.0.0 (Rust)"
-                    .bold()
-                    .cyan()
-            );
+            let banner =
+                format!("Spec-Engine SDLC Validation Engine v{} (Rust)", env!("CARGO_PKG_VERSION"));
+            println!("{}", banner.bold().cyan());
             println!("Run 'spec-engine --help' for available subcommands.");
             ExitCode::SUCCESS
         }
