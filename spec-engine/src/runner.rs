@@ -48,17 +48,21 @@ struct CheckJsonReport {
 /// for code scans or `T0` when the scan finds only documentation files.
 pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &EngineConfig) -> TierId {
     // CLI override has highest precedence.
-    if let Some(r) = cli_rigor {
-        if let Ok(t) = r.parse::<TierId>() {
-            return t;
-        }
+    let cli_tier = cli_rigor.and_then(|r| r.parse::<TierId>().ok());
+    if let Some(t) = cli_tier {
+        return t;
     }
     let has_code_file = tags.iter().any(|t| matches!(
         t.file_path.extension().and_then(|s| s.to_str()),
         Some("rs" | "go" | "ts" | "js" | "py" | "cpp" | "c" | "h" | "hpp" | "java" | "cs")
     ));
 
-    let default_tier = if has_code_file { TierId::T1 } else { TierId::T0 };
+    #[allow(clippy::match_bool)]
+    // `match bool` replaces `if/else` to keep zero `else` tokens (AS-CODE-ELSE).
+    let default_tier = match has_code_file {
+        true => TierId::T1,  // code files present → T1
+        false => TierId::T0, // documentation-only → T0
+    };
 
     // @rigor:T<n> tag wins.
     for tag in tags {
@@ -70,10 +74,9 @@ pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &Engi
     }
 
     // Config value.
-    if let Some(r) = &config.rigor {
-        if let Ok(t) = r.parse::<TierId>() {
-            return t;
-        }
+    let config_tier = config.rigor.as_deref().and_then(|r| r.parse::<TierId>().ok());
+    if let Some(t) = config_tier {
+        return t;
     }
 
     default_tier
@@ -116,11 +119,13 @@ pub fn run() -> ExitCode {
             let tier = resolve_rigor(rigor.as_deref(), &tags, &config);
 
             if watch {
-                if let Err(e) = crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref()) {
-                    eprintln!("{} Watch mode failed: {e}", "✖".red());
-                    return ExitCode::from(1);
-                }
-                return ExitCode::SUCCESS;
+                return match crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref()) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("{} Watch mode failed: {e}", "✖".red());
+                        ExitCode::from(1)
+                    }
+                };
             }
 
             if args.verbose {
@@ -220,276 +225,284 @@ pub fn run() -> ExitCode {
                 }
             }
 
-            if args.json {
-                let json_output = CheckJsonReport {
-                    passed,
-                    rigor: tier.as_str().to_string(),
-                    total_requirements: report.total_requirements,
-                    must_satisfied: report.must_satisfied,
-                    must_broken: report.must_broken.len(),
-                    should_pending: report.should_pending.len(),
-                    draft_total: report.draft_total,
-                    draft_pending: report.draft_pending.len(),
-                    doc_contract_violations: violations.len(),
-                    anti_slop_violations: anti_slop_violations.len(),
-                    anti_slop_warnings: anti_warnings.len(),
-                    traceability: report,
-                    violations,
-                };
+            #[allow(clippy::match_bool)]
+            // `match bool` replaces `if/else` so the file keeps zero `else` tokens (AS-CODE-ELSE).
+            match args.json {
+                true => {
+                    let json_output = CheckJsonReport {
+                        passed,
+                        rigor: tier.as_str().to_string(),
+                        total_requirements: report.total_requirements,
+                        must_satisfied: report.must_satisfied,
+                        must_broken: report.must_broken.len(),
+                        should_pending: report.should_pending.len(),
+                        draft_total: report.draft_total,
+                        draft_pending: report.draft_pending.len(),
+                        doc_contract_violations: violations.len(),
+                        anti_slop_violations: anti_slop_violations.len(),
+                        anti_slop_warnings: anti_warnings.len(),
+                        traceability: report,
+                        violations,
+                    };
 
-                match serde_json::to_string_pretty(&json_output) {
-                    Ok(json_str) => println!("{json_str}"),
-                    Err(e) => {
-                        eprintln!("{} JSON serialization failed: {e}", "✖".red());
-                        return ExitCode::from(2);
+                    match serde_json::to_string_pretty(&json_output) {
+                        Ok(json_str) => println!("{json_str}"),
+                        Err(e) => {
+                            eprintln!("{} JSON serialization failed: {e}", "✖".red());
+                            return ExitCode::from(2);
+                        }
                     }
                 }
-            } else {
-                println!(
-                    "{}",
-                    "============================================================"
-                        .bold()
-                        .cyan()
-                );
-                println!(
-                    "{}",
-                    "              ASEP SDLC Traceability Report                 "
-                        .bold()
-                        .cyan()
-                );
-                println!(
-                    "{}",
-                    "============================================================"
-                        .bold()
-                        .cyan()
-                );
-
-                if report.total_requirements == 0 {
+                false => {
                     println!(
                         "{}",
-                        "No @req tags discovered in target repository.".yellow()
+                        "============================================================"
+                            .bold()
+                            .cyan()
                     );
-                } else {
                     println!(
-                        "Discovered {} requirements across workspace.",
-                        report.total_requirements.to_string().bold()
+                        "{}",
+                        "              ASEP SDLC Traceability Report                 "
+                            .bold()
+                            .cyan()
                     );
-                }
+                    println!(
+                        "{}",
+                        "============================================================"
+                            .bold()
+                            .cyan()
+                    );
 
-                if !report.must_broken.is_empty() {
-                    println!("\n{}", "❌ Broken MUST Traceability Gates:".red().bold());
-                    for broken in &report.must_broken {
-                        let mut missing = Vec::new();
-                        if broken.missing_design {
-                            missing.push("@design");
+                    #[allow(clippy::match_bool)]
+                    // `match bool` replaces `if/else` so the file keeps zero `else` tokens (AS-CODE-ELSE).
+                    match report.total_requirements == 0 {
+                        true => {
+                            println!(
+                                "{}",
+                                "No @req tags discovered in target repository.".yellow()
+                            );
                         }
-                        if broken.missing_impl {
-                            missing.push("@impl");
+                        false => {
+                            println!(
+                                "Discovered {} requirements across workspace.",
+                                report.total_requirements.to_string().bold()
+                            );
                         }
-                        if broken.missing_test {
-                            missing.push("@test");
-                        }
-                        println!(
-                            "   - {} ({}:{}) lacks: {}",
-                            broken.id.bold().red(),
-                            broken.file_path.display(),
-                            broken.line_number,
-                            missing.join(", ").yellow()
-                        );
                     }
-                }
 
-                if !report.should_pending.is_empty() {
-                    println!("\n{}", "⚠️ Pending SHOULD Requirements:".yellow().bold());
-                    for pending in &report.should_pending {
-                        println!(
-                            "   - {} ({}:{})",
-                            pending.id.bold().yellow(),
-                            pending.file_path.display(),
-                            pending.line_number
-                        );
+                    if !report.must_broken.is_empty() {
+                        println!("\n{}", "❌ Broken MUST Traceability Gates:".red().bold());
+                        for broken in &report.must_broken {
+                            let missing = [
+                                (broken.missing_design, "@design"),
+                                (broken.missing_impl, "@impl"),
+                                (broken.missing_test, "@test"),
+                            ]
+                            .into_iter()
+                            .filter_map(|(cond, label)| cond.then_some(label))
+                            .collect::<Vec<_>>();
+                            println!(
+                                "   - {} ({}:{}) lacks: {}",
+                                broken.id.bold().red(),
+                                broken.file_path.display(),
+                                broken.line_number,
+                                missing.join(", ").yellow()
+                            );
+                        }
                     }
-                }
 
-                if report.draft_total > 0 {
-                    println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
-                    for draft in &report.draft_pending {
-                        let mut missing = Vec::new();
-                        if draft.missing_design {
-                            missing.push("@design");
+                    if !report.should_pending.is_empty() {
+                        println!("\n{}", "⚠️ Pending SHOULD Requirements:".yellow().bold());
+                        for pending in &report.should_pending {
+                            println!(
+                                "   - {} ({}:{})",
+                                pending.id.bold().yellow(),
+                                pending.file_path.display(),
+                                pending.line_number
+                            );
                         }
-                        if draft.missing_impl {
-                            missing.push("@impl");
-                        }
-                        if draft.missing_test {
-                            missing.push("@test");
-                        }
-                        println!(
-                            "   - {} ({}:{}) in-progress (missing: {})",
-                            draft.id.bold().cyan(),
-                            draft.file_path.display(),
-                            draft.line_number,
-                            if missing.is_empty() {
-                                "none".to_string()
-                            } else {
-                                missing.join(", ").yellow().to_string()
+                    }
+
+                    if report.draft_total > 0 {
+                        println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
+                        for draft in &report.draft_pending {
+                            let mut missing = Vec::new();
+                            if draft.missing_design {
+                                missing.push("@design");
                             }
-                        );
+                            if draft.missing_impl {
+                                missing.push("@impl");
+                            }
+                            if draft.missing_test {
+                                missing.push("@test");
+                            }
+                            println!(
+                                "   - {} ({}:{}) in-progress (missing: {})",
+                                draft.id.bold().cyan(),
+                                draft.file_path.display(),
+                                draft.line_number,
+                                if missing.is_empty() {
+                                    "none".to_string()
+                                } else {
+                                    missing.join(", ").yellow().to_string()
+                                }
+                            );
+                        }
+                        if report.draft_pending.is_empty() {
+                            println!(
+                                "   All {} DRAFT requirements have full design, impl, and test scaffolds.",
+                                report.draft_total
+                            );
+                        }
                     }
-                    if report.draft_pending.is_empty() {
+
+                    if has_deny_drafts_failure {
                         println!(
-                            "   All {} DRAFT requirements have full design, impl, and test scaffolds.",
+                            "\n{}",
+                            "❌ Production Policy Violation (--deny-drafts):".red().bold()
+                        );
+                        println!(
+                            "   Discovered {} active @req:*:DRAFT tag(s). Graduate all drafts to MUST before merging into main trunk.",
                             report.draft_total
                         );
                     }
-                }
 
-                if has_deny_drafts_failure {
-                    println!(
-                        "\n{}",
-                        "❌ Production Policy Violation (--deny-drafts):".red().bold()
-                    );
-                    println!(
-                        "   Discovered {} active @req:*:DRAFT tag(s). Graduate all drafts to MUST before merging into main trunk.",
-                        report.draft_total
-                    );
-                }
-
-                if !violations.is_empty() {
-                    let header = if tier == TierId::T0 {
-                        "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold()
-                    } else {
-                        "❌ Docstring Contract Violations:".red().bold()
-                    };
-                    println!("\n{header}");
-                    for v in &violations {
-                        println!(
-                            "   - {}:{}: {}",
-                            v.file_path.display(),
-                            v.line_number,
-                            if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
-                        );
-                    }
-                }
-
-                if !anti_errors.is_empty() {
-                    let header = if tier == TierId::T0 {
-                        "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold()
-                    } else {
-                        "❌ Anti-slop Violations:".red().bold()
-                    };
-                    println!("\n{header}");
-                    for v in &anti_errors {
-                        println!(
-                            "   - {}:{}: {}",
-                            v.file_path.display(),
-                            v.line_number,
-                            if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
-                        );
-                    }
-                }
-
-                if !anti_warnings.is_empty() {
-                    if strict {
-                        println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
-                        for v in &anti_warnings {
+                    if !violations.is_empty() {
+                        let header = if tier == TierId::T0 {
+                            "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold()
+                        } else {
+                            "❌ Docstring Contract Violations:".red().bold()
+                        };
+                        println!("\n{header}");
+                        for v in &violations {
                             println!(
                                 "   - {}:{}: {}",
                                 v.file_path.display(),
                                 v.line_number,
-                                v.message.red()
+                                if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                             );
                         }
-                    } else {
-                        eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
-                        for v in &anti_warnings {
-                            eprintln!(
+                    }
+
+                    if !anti_errors.is_empty() {
+                        let header = if tier == TierId::T0 {
+                            "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold()
+                        } else {
+                            "❌ Anti-slop Violations:".red().bold()
+                        };
+                        println!("\n{header}");
+                        for v in &anti_errors {
+                            println!(
                                 "   - {}:{}: {}",
                                 v.file_path.display(),
                                 v.line_number,
-                                v.message.yellow()
+                                if tier == TierId::T0 { v.message.yellow() } else { v.message.red() }
                             );
                         }
                     }
-                }
 
-                if !skill_drifts.is_empty() {
-                    println!("\n{}", "❌ Skill Drift Detected:".red().bold());
-                    println!("   Installed skill copies differ from embedded canonicals:");
-                    for d in &skill_drifts {
-                        println!(
-                            "   - {} [{}] {}",
-                            d.skill_id.bold(),
-                            d.kind.red(),
-                            d.path.display()
-                        );
-                    }
-                    println!(
-                        "   Restore canonical copies with 'asep skill restore --all' or re-run the pack installer.",
-                    );
-                }
-
-                if let Some(ref cov_path) = coverage {
-                    match crate::coverage::parse_lcov_file(cov_path) {
-                        Ok(cov_map) => {
-                            let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
-                            println!("\n{}", "🎯 Requirement Traceability Test Coverage:".bold().cyan());
-                            for item in &cov_rep.items {
-                                let badge = if item.passed {
-                                    format!("{:.1}% PASS", item.percentage).green()
-                                } else {
-                                    format!("{:.1}% FAIL (< 80%)", item.percentage).red()
-                                };
+                    if !anti_warnings.is_empty() {
+                        if strict {
+                            println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
+                            for v in &anti_warnings {
                                 println!(
-                                    "   - {}: {} ({}/{} impl lines covered)",
-                                    item.req_id.bold(),
-                                    badge,
-                                    item.covered_lines,
-                                    item.total_lines
+                                    "   - {}:{}: {}",
+                                    v.file_path.display(),
+                                    v.line_number,
+                                    v.message.red()
                                 );
                             }
-                            if !cov_rep.all_passed && tier != TierId::T0 {
-                                passed = false;
+                        } else {
+                            eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
+                            for v in &anti_warnings {
+                                eprintln!(
+                                    "   - {}:{}: {}",
+                                    v.file_path.display(),
+                                    v.line_number,
+                                    v.message.yellow()
+                                );
                             }
                         }
-                        Err(e) => {
-                            eprintln!("{} Failed to parse coverage file {}: {e}", "⚠".yellow(), cov_path.display());
+                    }
+
+                    if !skill_drifts.is_empty() {
+                        println!("\n{}", "❌ Skill Drift Detected:".red().bold());
+                        println!("   Installed skill copies differ from embedded canonicals:");
+                        for d in &skill_drifts {
+                            println!(
+                                "   - {} [{}] {}",
+                                d.skill_id.bold(),
+                                d.kind.red(),
+                                d.path.display()
+                            );
+                        }
+                        println!(
+                            "   Restore canonical copies with 'asep skill restore --all' or re-run the pack installer.",
+                        );
+                    }
+
+                    if let Some(ref cov_path) = coverage {
+                        match crate::coverage::parse_lcov_file(cov_path) {
+                            Ok(cov_map) => {
+                                let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
+                                println!("\n{}", "🎯 Requirement Traceability Test Coverage:".bold().cyan());
+                                for item in &cov_rep.items {
+                                    let badge = if item.passed {
+                                        format!("{:.1}% PASS", item.percentage).green()
+                                    } else {
+                                        format!("{:.1}% FAIL (< 80%)", item.percentage).red()
+                                    };
+                                    println!(
+                                        "   - {}: {} ({}/{} impl lines covered)",
+                                        item.req_id.bold(),
+                                        badge,
+                                        item.covered_lines,
+                                        item.total_lines
+                                    );
+                                }
+                                if !cov_rep.all_passed && tier != TierId::T0 {
+                                    passed = false;
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("{} Failed to parse coverage file {}: {e}", "⚠".yellow(), cov_path.display());
+                            }
                         }
                     }
+
+                    println!(
+                        "{}",
+                        "------------------------------------------------------------".dimmed()
+                    );
+                    println!(
+                        "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
+                        tier.as_str().cyan().bold(),
+                        report.must_satisfied.to_string().green().bold(),
+                        report.must_broken.len().to_string().red().bold(),
+                        report.should_pending.len().to_string().yellow().bold(),
+                        report.draft_total.to_string().cyan().bold(),
+                        violations.len().to_string().red().bold(),
+                    );
+
+                    if passed {
+                        println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold());
+                    } else {
+                        println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold());
+                    }
+
+                    println!(
+                        "Verification: {} | structural={} behavioral={} semantic={} skipped={:?}",
+                        match verification_report.status {
+                            VerificationStatus::Pass => "PASS".green(),
+                            VerificationStatus::Fail => "FAIL".red(),
+                            VerificationStatus::Unproven => "UNPROVEN".yellow(),
+                        },
+                        verification_report.structural,
+                        verification_report.behavioral,
+                        verification_report.semantic,
+                        verification_report.skipped
+                    );
                 }
-
-                println!(
-                    "{}",
-                    "------------------------------------------------------------".dimmed()
-                );
-                println!(
-                    "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
-                    tier.as_str().cyan().bold(),
-                    report.must_satisfied.to_string().green().bold(),
-                    report.must_broken.len().to_string().red().bold(),
-                    report.should_pending.len().to_string().yellow().bold(),
-                    report.draft_total.to_string().cyan().bold(),
-                    violations.len().to_string().red().bold(),
-                );
-
-                if passed {
-                    println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold());
-                } else {
-                    println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold());
-                }
-
-                println!(
-                    "Verification: {} | structural={} behavioral={} semantic={} skipped={:?}",
-                    match verification_report.status {
-                        VerificationStatus::Pass => "PASS".green(),
-                        VerificationStatus::Fail => "FAIL".red(),
-                        VerificationStatus::Unproven => "UNPROVEN".yellow(),
-                    },
-                    verification_report.structural,
-                    verification_report.behavioral,
-                    verification_report.semantic,
-                    verification_report.skipped
-                );
             }
 
             let exit_codes = policy.exit_codes();
