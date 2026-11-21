@@ -53,6 +53,7 @@ fn antislop_rules_cache() -> &'static [CompiledRule] {
     })
 }
 
+// @impl:FR-ANTISLOP-07
 /// Returns the compiled code-domain rule with the given id, if any.
 fn code_rule(id: &str) -> Option<&'static CompiledRule> {
     antislop_rules_cache()
@@ -194,6 +195,7 @@ fn check_comment(
     }
 }
 
+// @impl:FR-ANTISLOP-08
 /// Audits a single source or spec file for anti-slop violations:
 /// decorative banners, workflow narration, AI buzzwords, and excessive if nesting.
 pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
