@@ -1,5 +1,4 @@
 //! E2E harness: scaffold run directories and write `manifest.json`.
-//! Port of `harness/e2e/scripts/new-run.sh`.
 
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -307,8 +306,7 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
     }
 }
 
-/// Required E2E run artifacts (P0-P7), exactly as in the legacy
-/// `harness/e2e/scripts/verify-artifacts.sh`.
+/// Required E2E run artifacts (P0-P7).
 const REQUIRED_ARTIFACTS: &[&str] = &[
     "manifest.json",
     "01-prd.md",
@@ -337,8 +335,7 @@ pub struct CommandResult {
     pub output: String,
 }
 
-/// Authoritative verdict for an E2E run directory (port of
-/// `harness/e2e/scripts/verify-artifacts.sh`).
+/// Authoritative verdict for an E2E run directory.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct VerifyReport {
     pub pass: bool,
@@ -483,7 +480,7 @@ pub fn verify_artifacts(run_dir: &Path, repo_root: &Path) -> Result<VerifyReport
     let asep_binary = resolve_asep_binary(run_dir, repo_root);
     let dummy = run_dir.join("dummy");
 
-    let test_rerun = run_command(&["cargo".to_string(), "test".to_string()], &dummy)?;
+    let test_rerun = run_command(&["cargo".to_string(), "test".to_string()], &dummy);
     let check_rerun = run_command(
         &[
             asep_binary.to_string_lossy().to_string(),
@@ -493,7 +490,7 @@ pub fn verify_artifacts(run_dir: &Path, repo_root: &Path) -> Result<VerifyReport
             "T4".to_string(),
         ],
         &dummy,
-    )?;
+    );
 
     let all_artifacts = artifacts.values().all(|present| *present);
     let passed = all_artifacts && hash_lock_ok && test_rerun.passed && check_rerun.passed;
@@ -561,33 +558,51 @@ fn is_executable_file(path: &Path) -> bool {
 
 /// Spawn `command` with `cwd`, capture combined output.
 ///
-/// Returns `Err` if the command cannot be spawned.
-fn run_command(command: &[String], cwd: &Path) -> Result<CommandResult, String> {
+/// If the command cannot be spawned (e.g. `cwd` does not exist), returns a
+/// `CommandResult` with `passed: false` and `exit_code: -1` instead of an
+/// error, so the verifier can still write `verify.json`.
+fn run_command(command: &[String], cwd: &Path) -> CommandResult {
     let display = command.join(" ");
-    let child = Command::new(&command[0])
+    match Command::new(&command[0])
         .args(&command[1..])
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to spawn '{display}': {e}"))?;
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("failed to wait for '{display}': {e}"))?;
-    let exit_code = output.status.code().unwrap_or(-1);
-    let passed = output.status.success();
-    let mut out = String::from_utf8_lossy(&output.stdout).to_string();
-    if !output.stderr.is_empty() {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(&String::from_utf8_lossy(&output.stderr));
+    {
+        Ok(child) => match child.wait_with_output() {
+            Ok(output) => {
+                let exit_code = output.status.code().unwrap_or(-1);
+                let passed = output.status.success();
+                let mut out = String::from_utf8_lossy(&output.stdout).to_string();
+                if !output.stderr.is_empty() {
+                    if !out.is_empty() {
+                        out.push('\n');
+                    }
+                    out.push_str(&String::from_utf8_lossy(&output.stderr));
+                }
+                CommandResult {
+                    command: command.to_vec(),
+                    cwd: cwd.to_path_buf(),
+                    exit_code,
+                    passed,
+                    output: out,
+                }
+            }
+            Err(e) => CommandResult {
+                command: command.to_vec(),
+                cwd: cwd.to_path_buf(),
+                exit_code: -1,
+                passed: false,
+                output: format!("failed to wait for '{display}': {e}"),
+            },
+        },
+        Err(e) => CommandResult {
+            command: command.to_vec(),
+            cwd: cwd.to_path_buf(),
+            exit_code: -1,
+            passed: false,
+            output: format!("failed to spawn '{display}': {e}"),
+        },
     }
-    Ok(CommandResult {
-        command: command.to_vec(),
-        cwd: cwd.to_path_buf(),
-        exit_code,
-        passed,
-        output: out,
-    })
 }

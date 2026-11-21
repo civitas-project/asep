@@ -30,19 +30,18 @@ fn git_short_commit(repo: &Path) -> String {
 #[test]
 fn test_new_run_creates_manifest() {
     let root = workspace_root();
-    let script = root.join("harness/e2e/scripts/new-run.sh");
     let tmp = TempDir::new().expect("temp dir");
     let run_id = "test-run-1";
 
-    let status = Command::new("bash")
-        .arg(&script)
+    assert_cmd::Command::cargo_bin("asep")
+        .expect("asep binary")
+        .arg("harness")
+        .arg("new-run")
         .arg(run_id)
-        .env("RUN_ROOT", tmp.path())
-        .current_dir(&root)
-        .status()
-        .expect("new-run.sh executable");
-
-    assert!(status.success(), "new-run.sh exited non-zero");
+        .arg("--root")
+        .arg(tmp.path())
+        .assert()
+        .success();
 
     let run_dir = tmp.path().join(run_id);
     assert!(run_dir.is_dir(), "run dir created at {}", run_dir.display());
@@ -102,17 +101,14 @@ const REQUIRED_ARTIFACTS: &[&str] = &[
     "07-judge.json", "07-check.log", "07-ci.log",
 ];
 
-fn verifier_script(root: &Path) -> PathBuf {
-    root.join("harness/e2e/scripts/verify-artifacts.sh")
-}
-
-fn run_verifier(root: &Path, run_dir: &Path) -> std::process::Output {
-    Command::new("bash")
-        .arg(verifier_script(root))
+fn run_verifier(run_dir: &Path) -> std::process::Output {
+    assert_cmd::Command::cargo_bin("asep")
+        .expect("asep binary")
+        .arg("harness")
+        .arg("verify")
         .arg(run_dir)
-        .current_dir(root)
         .output()
-        .expect("verify-artifacts.sh should run")
+        .expect("asep harness verify")
 }
 
 fn read_verify_json(run_dir: &Path) -> Value {
@@ -150,7 +146,6 @@ fn fake_run_dir(tmp: &TempDir, run_id: &str, omit: Option<&str>) -> PathBuf {
 
 #[test]
 fn test_verifier_catches_hash_drift() {
-    let root = workspace_root();
     let tmp = TempDir::new().expect("temp dir");
     let run_dir = fake_run_dir(&tmp, "hash-drift-run", None);
 
@@ -167,7 +162,7 @@ fn test_verifier_catches_hash_drift() {
         "0000000000000000000000000000000000000000000000000000000000000000  tests/ring_buffer_test.rs\n",
     );
 
-    let status = run_verifier(&root, &run_dir);
+    let status = run_verifier(&run_dir);
     assert_eq!(
         status.status.code(),
         Some(1),
@@ -189,11 +184,10 @@ fn test_verifier_catches_hash_drift() {
 
 #[test]
 fn test_verifier_catches_missing_artifact() {
-    let root = workspace_root();
     let tmp = TempDir::new().expect("temp dir");
     let run_dir = fake_run_dir(&tmp, "missing-artifact-run", Some("07-judge.json"));
 
-    let status = run_verifier(&root, &run_dir);
+    let status = run_verifier(&run_dir);
     assert_eq!(
         status.status.code(),
         Some(1),
@@ -306,7 +300,7 @@ fn test_verifier_runs_cargo_in_dummy_dir() {
         root.join("target/debug/asep").to_str().expect("utf-8 path"),
     ));
 
-    let status = run_verifier(&root, &run_dir);
+    let status = run_verifier(&run_dir);
     assert_eq!(
         status.status.code(),
         Some(0),
@@ -372,7 +366,7 @@ fn test_verifier_accepts_single_file_hash_line() {
         root.join("target/debug/asep").to_str().expect("utf-8 path"),
     ));
 
-    let status = run_verifier(&root, &run_dir);
+    let status = run_verifier(&run_dir);
     assert_eq!(
         status.status.code(),
         Some(0),
@@ -428,24 +422,24 @@ fn test_stress_fixture_has_no_unsafe() {
 }
 
 #[test]
-fn test_vendor_script_points_to_offline_config() {
+fn test_vendor_loom_source_points_to_offline_config() {
     let root = workspace_root();
-    let script = root.join("harness/e2e/scripts/vendor-loom.sh");
-    assert!(script.is_file(), "vendor-loom.sh must exist");
+    let source = root.join("spec-engine/src/harness/e2e.rs");
+    assert!(source.is_file(), "e2e.rs must exist");
 
-    let text = std::fs::read_to_string(&script).expect("read vendor-loom.sh");
+    let text = std::fs::read_to_string(&source).expect("read e2e.rs");
 
     assert!(
         text.contains("=0.7.3"),
-        "script must pin loom = \"=0.7.3\""
+        "e2e.rs must pin loom = \"=0.7.3\""
     );
     assert!(
-        text.contains(".cargo/config.toml"),
-        "script must write .cargo/config.toml"
+        text.contains(".cargo"),
+        "e2e.rs must write .cargo/config.toml"
     );
     assert!(
         text.contains("--offline"),
-        "script must verify with cargo test --offline"
+        "e2e.rs must verify with cargo test --offline"
     );
 }
 
