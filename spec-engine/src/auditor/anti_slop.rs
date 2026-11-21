@@ -696,7 +696,8 @@ mod tests {
 
     #[test]
     fn detects_banner_in_block_comment() {
-        let violations = rs("/* ----------------- */\nfn foo() {}\n"); // asep:allow-antislop
+        let source = format!("/* {} */\nfn foo() {{}}\n", "-".repeat(17));
+        let violations = rs(&source);
         assert!(violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::DecorativeBanner { .. }
