@@ -57,7 +57,10 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Setup logging
-    let level = if cli.verbose { Level::DEBUG } else { Level::INFO };
+    let level = match cli.verbose {
+        true => Level::DEBUG,
+        false => Level::INFO,
+    };
     tracing_subscriber::fmt()
         .with_max_level(level)
         .with_target(false)
