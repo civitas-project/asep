@@ -8,4 +8,6 @@ spec-engine/tests/
 srcidx/tests/
 **/benches/**
 vendor/
+# Exclude one-time vendored third-party source (loom = "=0.7.3")
+harness/e2e/vendor-loom/
 

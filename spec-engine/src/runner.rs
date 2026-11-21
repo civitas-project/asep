@@ -1722,6 +1722,85 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
+            HarnessCommands::NewRun { run_id, root } => {
+                let root = root
+                    .or_else(|| std::env::var("RUN_ROOT").ok().map(PathBuf::from))
+                    .unwrap_or_else(crate::harness::e2e::default_run_root);
+                match crate::harness::e2e::new_run(&root, &run_id) {
+                    Ok(run_dir) => {
+                        println!("{}", run_dir.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{} {e}", "✖".red());
+                        ExitCode::from(1)
+                    }
+                }
+            }
+            HarnessCommands::VendorLoom {
+                run_dir,
+                vendor_path,
+                offline: _,
+            } => {
+                let vendor_src = vendor_path.unwrap_or_else(|| {
+                    crate::harness::e2e::repo_root()
+                        .join("harness")
+                        .join("e2e")
+                        .join("vendor-loom")
+                });
+                match crate::harness::e2e::vendor_loom(&run_dir, &vendor_src) {
+                    Ok(()) => {
+                        println!("VENDOR_OK");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
+            HarnessCommands::Verify { run_dir } => {
+                match crate::harness::e2e::verify_artifacts(&run_dir, &crate::harness::e2e::repo_root())
+                {
+                    Ok(report) => {
+                        if args.json {
+                            match serde_json::to_string_pretty(&report) {
+                                Ok(json) => println!("{json}"),
+                                Err(e) => {
+                                    eprintln!(
+                                        "{} Failed to serialize verify report: {e}",
+                                        "✖".red()
+                                    );
+                                    return ExitCode::from(2);
+                                }
+                            }
+                        } else {
+                            println!(
+                                "{} verify: pass={} hash_lock_ok={} test_rerun exit={} passed={} check_rerun exit={} passed={}",
+                                if report.pass { "✔".green() } else { "✖".red() },
+                                report.pass,
+                                report.hash_lock_ok,
+                                report.test_rerun.exit_code,
+                                report.test_rerun.passed,
+                                report.check_rerun.exit_code,
+                                report.check_rerun.passed,
+                            );
+                            for reason in &report.reasons {
+                                println!("  - {reason}");
+                            }
+                        }
+                        if report.pass {
+                            ExitCode::SUCCESS
+                        } else {
+                            ExitCode::from(1)
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
         },
 
         None => {
