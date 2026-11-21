@@ -213,6 +213,25 @@ Exposes two canonical tools:
 - `spec_check`: Runs comprehensive traceability and docstring contract audits over targeted directories with mode configuration.
 - `adr_new`: Deterministically scaffolds sequentially numbered Architecture Decision Records.
 
+### 4. Build Artifact Cleanup
+
+Record a `target/` size baseline:
+
+```bash
+asep clean --measure
+```
+
+This writes `.spec-engine/target-baseline.json`. The cleanup threshold is `clamp(baseline x 1.5 + 2 GiB, 4 GiB, 16 GiB)` (8 GiB before a baseline exists).
+
+Preview or run cleanup:
+
+```bash
+asep clean --dry-run
+asep clean
+```
+
+Override the threshold with `--max-gb <N>`, pick another target directory with `--target <path>`, and get machine-readable output with `--json`. Cleanup may remove incremental caches; a later build recreates them.
+
 ---
 
 ## Part IV: Engine Architecture and Internal Lifelines

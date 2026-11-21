@@ -71,6 +71,29 @@ Continuous integration pipelines will automatically reject PRs that fail formatt
 
 ---
 
+## 3a. Build Artifact Cleanup
+
+Rust build output under `target/` can grow well beyond source size. This project profiles dev and test with `debug = "line-tables-only"` and release with `strip = true`; incremental compilation stays enabled.
+
+To record the current `target/` size as a baseline:
+
+```bash
+asep clean --measure
+```
+
+This writes `.spec-engine/target-baseline.json`. The cleanup threshold is then `clamp(baseline x 1.5 + 2 GiB, 4 GiB, 16 GiB)`. Before a baseline exists the threshold is 8 GiB.
+
+To preview or run cleanup:
+
+```bash
+asep clean --dry-run
+asep clean
+```
+
+Use `--max-gb <N>` to override the threshold, `--target <path>` for another target directory, and `--json` for machine-readable output. Cleanup may remove incremental caches; a later build recreates them. Run `asep clean --measure` again after a deliberately fresh build if you want a new baseline.
+
+---
+
 ## 4. Commit Standards
 
 Commit messages follow Conventional Commits format and reference traceability tags where applicable:
