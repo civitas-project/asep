@@ -68,11 +68,10 @@ pub fn rebuild_state(skills_dir: &Path) -> SkillState {
         if e.status == crate::skill::model::SkillStatus::Missing {
             continue;
         }
-        let hash = if e.file_path.exists() {
-            sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string())
-        } else {
-            "missing".to_string()
-        };
+        let mut hash = "missing".to_string();
+        if e.file_path.exists() {
+            hash = sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string());
+        }
         skills.push(SkillStateEntry {
             id: e.id.clone(),
             version: e.version.clone(),
@@ -97,28 +96,42 @@ pub fn record_agent_install(
 ) -> Result<(), std::io::Error> {
     let mut state = load_state(skills_dir).unwrap_or_else(|| rebuild_state(skills_dir));
     let agent_name = agent.id().to_string();
-    if let Some(entry) = state.skills.iter_mut().find(|e| e.id == skill_id) {
-        if !entry.agents.contains(&agent_name) {
-            entry.agents.push(agent_name);
-        }
-    } else {
-        // Skill exists on disk but not yet in state
-        let entries = inspect_skills(skills_dir);
-        if let Some(e) = entries.iter().find(|e| e.id == skill_id) {
-            let hash = if e.file_path.exists() {
-                sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string())
-            } else {
-                "missing".to_string()
-            };
-            state.skills.push(SkillStateEntry {
-                id: skill_id.to_string(),
-                version: e.version.clone(),
-                hash,
-                status: e.status.to_string(),
-                installed_at: timestamp_now(),
-                agents: vec![agent_name],
-            });
-        }
+
+    let tracked_index = state.skills.iter().position(|e| e.id == skill_id);
+    let already_has_agent = tracked_index
+        .map(|i| state.skills[i].agents.contains(&agent_name))
+        .unwrap_or(false);
+
+    // Skill already tracked and agent recorded: refresh timestamp only.
+    if tracked_index.is_some() && already_has_agent {
+        state.generated_at = timestamp_now();
+        return save_state(skills_dir, &state);
+    }
+    // Skill already tracked but agent not recorded: add the agent.
+    if let Some(i) = tracked_index {
+        state.skills[i].agents.push(agent_name);
+        state.generated_at = timestamp_now();
+        return save_state(skills_dir, &state);
+    }
+
+    // Skill exists on disk but not yet in state
+    let entries = inspect_skills(skills_dir);
+    let disk_entry = entries.iter().find(|e| e.id == skill_id);
+    let disk_hash = disk_entry.map_or_else(
+        || "missing".to_string(),
+        |e| sha256_file(&e.file_path).unwrap_or_else(|_| "missing".to_string()),
+    );
+    if let Some(e) = disk_entry {
+        let version = e.version.clone();
+        let status = e.status.to_string();
+        state.skills.push(SkillStateEntry {
+            id: skill_id.to_string(),
+            version,
+            hash: disk_hash,
+            status,
+            installed_at: timestamp_now(),
+            agents: vec![agent_name],
+        });
     }
     state.generated_at = timestamp_now();
     save_state(skills_dir, &state)
@@ -152,18 +165,27 @@ pub fn check_drift(skills_dir: &Path) -> Result<Vec<StateDrift>, std::io::Error>
     let mut drifts = Vec::new();
 
     for se in &state.skills {
-        match entries.iter().find(|e| e.id == se.id) {
+        let disk_entry = entries.iter().find(|e| e.id == se.id);
+        match disk_entry {
+            None => {
+                drifts.push(StateDrift {
+                    id: se.id.clone(),
+                    kind: "removed".to_string(),
+                    detail: "skill no longer present".to_string(),
+                });
+                continue;
+            }
             Some(e) => {
-                if e.file_path.exists() {
-                    let current_hash = sha256_file(&e.file_path).unwrap_or_default();
-                    if current_hash != se.hash {
-                        drifts.push(StateDrift {
-                            id: se.id.clone(),
-                            kind: "modified".to_string(),
-                            detail: "content changed since last state snapshot".to_string(),
-                        });
-                    }
-                } else {
+                if e.file_path.exists()
+                    && sha256_file(&e.file_path).unwrap_or_default() != se.hash
+                {
+                    drifts.push(StateDrift {
+                        id: se.id.clone(),
+                        kind: "modified".to_string(),
+                        detail: "content changed since last state snapshot".to_string(),
+                    });
+                }
+                if !e.file_path.exists() {
                     drifts.push(StateDrift {
                         id: se.id.clone(),
                         kind: "missing".to_string(),
@@ -177,13 +199,6 @@ pub fn check_drift(skills_dir: &Path) -> Result<Vec<StateDrift>, std::io::Error>
                         detail: format!("{:?} -> {:?}", se.version, e.version),
                     });
                 }
-            }
-            None => {
-                drifts.push(StateDrift {
-                    id: se.id.clone(),
-                    kind: "removed".to_string(),
-                    detail: "skill no longer present".to_string(),
-                });
             }
         }
     }
