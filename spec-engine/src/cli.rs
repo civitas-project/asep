@@ -202,6 +202,10 @@ pub enum Commands {
 
     /// Measure or clean Rust target artifacts by size threshold
     Clean {
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+
         /// Explicit threshold in GiB (overrides measured baseline)
         #[arg(long)]
         max_gb: Option<f64>,

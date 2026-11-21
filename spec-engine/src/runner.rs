@@ -1725,12 +1725,14 @@ pub fn run() -> ExitCode {
         },
 
         Some(Commands::Clean {
+            root,
             max_gb,
             target,
             dry_run,
             measure,
         }) => {
-            let root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let root =
+                root.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
             let target_dir = target.clone().unwrap_or_else(|| root.join("target"));
             const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
@@ -1780,7 +1782,7 @@ pub fn run() -> ExitCode {
 
             let threshold = match max_gb {
                 Some(gb) => {
-                    if gb <= 0.0 && !dry_run {
+                    if gb <= 0.0 {
                         eprintln!("{} --max-gb must be greater than 0 GiB", "✖".red());
                         return ExitCode::from(1);
                     }

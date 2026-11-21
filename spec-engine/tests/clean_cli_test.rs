@@ -51,7 +51,7 @@ fn test_clean_dry_run_does_not_delete() {
     cmd.current_dir(&root)
         .arg("clean")
         .arg("--max-gb")
-        .arg("0")
+        .arg("0.000001")
         .arg("--dry-run")
         .arg("--target")
         .arg(&target);
@@ -62,6 +62,47 @@ fn test_clean_dry_run_does_not_delete() {
 
     assert!(target.join("big.rlib").exists(), "files must survive dry run");
     assert!(target.join("deps").join("lib.rlib").exists());
+}
+
+#[test]
+fn test_clean_accepts_root_flag() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+    let target = setup_target(&root);
+
+    let mut cmd = asep_bin();
+    cmd.arg("clean")
+        .arg("--root")
+        .arg(&root)
+        .arg("--dry-run")
+        .arg("--max-gb")
+        .arg("8");
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains(
+            target.to_string_lossy().as_ref(),
+        ));
+}
+
+#[test]
+fn test_clean_rejects_zero_max_gb_in_dry_run() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path().to_path_buf();
+    setup_target(&root);
+
+    let mut cmd = asep_bin();
+    cmd.current_dir(&root)
+        .arg("clean")
+        .arg("--max-gb")
+        .arg("0")
+        .arg("--dry-run")
+        .arg("--target")
+        .arg(root.join("target"));
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("max-gb"));
 }
 
 #[test]
