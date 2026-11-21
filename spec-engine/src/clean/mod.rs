@@ -41,12 +41,14 @@ pub enum CleanAction {
 /// Symlinks are skipped to avoid loops and per-entry errors are ignored.
 pub fn measure_dir(path: &Path) -> u64 {
     let mut total = 0;
-    let Ok(entries) = fs::read_dir(path) else {
-        return 0;
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        _ => return 0,
     };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            _ => continue,
         };
         if file_type.is_symlink() {
             continue;
@@ -54,10 +56,9 @@ pub fn measure_dir(path: &Path) -> u64 {
         let child = entry.path();
         if file_type.is_dir() {
             total += measure_dir(&child);
-        } else if file_type.is_file() {
-            if let Ok(metadata) = entry.metadata() {
-                total += metadata.len();
-            }
+        }
+        if file_type.is_file() {
+            total += entry.metadata().map_or(0, |metadata| metadata.len());
         }
     }
     total
@@ -73,10 +74,11 @@ pub fn threshold_bytes(baseline: u64) -> u64 {
 /// Computes whether `target` exceeds `threshold` and the action to take, without deleting anything.
 pub fn plan(target: &Path, threshold: u64) -> CleanReport {
     let before = measure_dir(target);
-    let (action, after) = if before <= threshold {
-        (CleanAction::None, before)
-    } else {
-        (CleanAction::CleanPackage, 0)
+    #[allow(clippy::match_bool)]
+    // Policy AS-CODE-ELSE forbids `else`; match on the bool explicitly instead.
+    let (action, after) = match before <= threshold {
+        true => (CleanAction::None, before),
+        false => (CleanAction::CleanPackage, 0),
     };
     CleanReport {
         target: target.to_path_buf(),
@@ -86,6 +88,23 @@ pub fn plan(target: &Path, threshold: u64) -> CleanReport {
         after_bytes: after,
         removed_bytes: before.saturating_sub(after),
     }
+}
+
+/// Runs a `cargo clean` command and turns a failed launch or non-successful
+/// exit into an error. A helper keeps the status check a top-level guard
+/// instead of an `if` nested inside the `before > threshold` / `after > threshold`
+/// blocks (policy AS-CODE-NESTING / AS-CODE-ELSE).
+fn run_cargo_clean(cmd: &mut Command, target: &Path, op: &str) -> Result<(), String> {
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run cargo clean: {e}"))?;
+    if status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "cargo clean {op}--target-dir {} failed (status: {status})",
+        target.display()
+    ))
 }
 
 /// Performs the cleanup decision for `target` under `root`.
@@ -109,41 +128,25 @@ pub fn execute(
 
     if before > threshold {
         let manifest_path = root.join("Cargo.toml");
-        let status = Command::new("cargo")
-            .arg("clean")
+        let mut cmd = Command::new("cargo");
+        cmd.arg("clean")
             .arg("-p")
             .arg("asep")
             .arg("--target-dir")
             .arg(target)
             .arg("--manifest-path")
-            .arg(&manifest_path)
-            .status()
-            .map_err(|e| format!("failed to run cargo clean: {e}"))?;
-        if !status.success() {
-            return Err(format!(
-                "cargo clean -p asep --target-dir {} failed (status: {status})",
-                target.display()
-            ));
-        }
+            .arg(&manifest_path);
+        run_cargo_clean(&mut cmd, target, "-p asep ")?;
         action = CleanAction::CleanPackage;
         after = measure_dir(target);
+    }
 
-        if after > threshold {
-            let status = Command::new("cargo")
-                .arg("clean")
-                .arg("--target-dir")
-                .arg(target)
-                .status()
-                .map_err(|e| format!("failed to run cargo clean: {e}"))?;
-            if !status.success() {
-                return Err(format!(
-                    "cargo clean --target-dir {} failed (status: {status})",
-                    target.display()
-                ));
-            }
-            action = CleanAction::CleanAll;
-            after = measure_dir(target);
-        }
+    if after > threshold {
+        let mut cmd = Command::new("cargo");
+        cmd.arg("clean").arg("--target-dir").arg(target);
+        run_cargo_clean(&mut cmd, target, "")?;
+        action = CleanAction::CleanAll;
+        after = measure_dir(target);
     }
 
     Ok(CleanReport {
