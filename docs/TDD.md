@@ -79,10 +79,10 @@
 - Verification: `cargo test -p asep --lib --offline auditor::anti_slop::tests` plus `asep affected spec-engine/src/auditor/anti_slop.rs`.
 
 ### Task 3 — Gate behavior test
-- File: `spec-engine/tests/cli_test.rs`
+- File: `spec-engine/tests/integration_check_test.rs` (reuses the existing `write_t2_closed_project` helper and T1 anti-slop test pattern at line ~365)
 - Symbol: new test `check_fails_on_guard_clause_violations`
 - Acceptance: a temp project containing a `.rs` file with one `else` and one nested `if` makes `asep check --rigor T1` exit non-zero; the same project with guard clauses exits 0.
-- Verification: `cargo test -p asep --test cli_test --offline`.
+- Verification: `cargo test -p asep --test integration_check_test --offline`.
 
 ### Task 4..N — Self-compliance refactor (one unit per file)
 - Files (audited, 35 files / 212 `else` tokens): top offenders `spec-engine/src/runner.rs` (48), `skill/inspector.rs` (13), `skill/menu.rs` (12), `agent_protocol/mod.rs` (11), `pack/manifest.rs` (10), `auditor/anti_slop.rs` (10), `pack/installer.rs` (9), `ci/mod.rs` (9), then the remaining 27 files. Nested `if` sites are found per file by the new scanner.
