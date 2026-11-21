@@ -97,6 +97,13 @@ fn test_prepare_vendor_dir_creates_config_and_vendor() {
         config_text.contains("vendored-sources"),
         "config.toml should name the vendored source"
     );
+    assert!(
+        config_text.contains(&format!(
+            "directory = \"{}\"",
+            run_dir.path().join("vendor").display()
+        )),
+        "config.toml should point directory at the absolute vendor path"
+    );
 }
 
 #[test]

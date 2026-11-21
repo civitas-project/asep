@@ -219,18 +219,14 @@ pub fn prepare_vendor_dir(run_dir: &Path, repo_root: &Path) -> Result<(), String
     fs::create_dir_all(&config_dir)
         .map_err(|e| format!("failed to create directory '{}': {e}", config_dir.display()))?;
 
-    // The source replacement's `directory = "vendor"` is relative to this
-    // config file, i.e. `<run_dir>/.cargo/vendor`, so alias it at the
-    // vendored tree copied into `<run_dir>/vendor/`.
-    let vendor_link = config_dir.join("vendor");
-    if !vendor_link.exists() {
-        std::os::unix::fs::symlink("../vendor", &vendor_link)
-            .map_err(|e| format!("failed to symlink vendor directory: {e}"))?;
-    }
-
+    // Use an absolute directory replacement so cargo can locate the vendored
+    // tree on any platform (no symlink required).
     fs::write(
         &config_toml,
-        "[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.vendored-sources]\ndirectory = \"vendor\"\n",
+        format!(
+            "[source.crates-io]\nreplace-with = \"vendored-sources\"\n\n[source.vendored-sources]\ndirectory = \"{}\"\n",
+            vendor_dir.display()
+        ),
     )
     .map_err(|e| format!("failed to write '{}': {e}", config_toml.display()))?;
 
@@ -260,7 +256,10 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to spawn 'cargo test': {e}"))?;
+        .map_err(|e| {
+            let _ = fs::remove_dir_all(&proof_dir);
+            format!("failed to spawn 'cargo test': {e}")
+        })?;
 
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
@@ -275,9 +274,8 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
                         buffer
                     })
                     .unwrap_or_default();
+                let _ = fs::remove_dir_all(&proof_dir);
                 if status.success() {
-                    fs::remove_dir_all(&proof_dir)
-                        .map_err(|e| format!("failed to remove proof directory: {e}"))?;
                     return Ok(());
                 }
                 return Err(format!(
@@ -291,6 +289,7 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = fs::remove_dir_all(&proof_dir);
                     return Err(
                         "'cargo test --features loom-test --offline' timed out after 60 seconds"
                             .to_string(),
@@ -298,7 +297,10 @@ pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
                 }
                 thread::sleep(Duration::from_millis(100));
             }
-            Err(e) => return Err(format!("failed to wait for 'cargo test': {e}")),
+            Err(e) => {
+                let _ = fs::remove_dir_all(&proof_dir);
+                return Err(format!("failed to wait for 'cargo test': {e}"));
+            }
         }
     }
 }
