@@ -34,4 +34,6 @@ The judge contract is `harness/e2e/prompts/judge.md`. The judge writes one verdi
 
 ## P0 entry point
 
-`harness/e2e/scripts/new-run.sh <run-id>` [`RUN_ROOT=<dir>`] — prints the run directory path and writes `manifest.json` (see script header for field contract).
+`asep harness new-run <run-id>` [`--root <dir>`] — prints the run directory path and writes `manifest.json` (schema_version, run_id, seed, rustc_version, asep_commit, asep_binary, created_at).
+`asep harness vendor-loom <run-dir> --offline` — copies the committed vendored loom tree and runs a bounded offline concurrency proof.
+`asep harness verify <run-dir> [--json]` — checks artifacts 01–07, verifies the test hash lock, re-runs `cargo test` and `asep check --rigor T4`, and writes `verify.json`.
