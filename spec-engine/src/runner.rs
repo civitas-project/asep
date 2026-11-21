@@ -1725,7 +1725,7 @@ pub fn run() -> ExitCode {
             HarnessCommands::NewRun { run_id, root } => {
                 let root = root
                     .or_else(|| std::env::var("RUN_ROOT").ok().map(PathBuf::from))
-                    .unwrap_or_else(|| PathBuf::from(crate::harness::e2e::DEFAULT_RUN_ROOT));
+                    .unwrap_or_else(crate::harness::e2e::default_run_root);
                 match crate::harness::e2e::new_run(&root, &run_id) {
                     Ok(run_dir) => {
                         println!("{}", run_dir.display());
@@ -1737,8 +1737,18 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
-            HarnessCommands::VendorLoom { run_dir, offline: _ } => {
-                match crate::harness::e2e::vendor_loom(&run_dir, &crate::harness::e2e::repo_root()) {
+            HarnessCommands::VendorLoom {
+                run_dir,
+                vendor_path,
+                offline: _,
+            } => {
+                let vendor_src = vendor_path.unwrap_or_else(|| {
+                    crate::harness::e2e::repo_root()
+                        .join("harness")
+                        .join("e2e")
+                        .join("vendor-loom")
+                });
+                match crate::harness::e2e::vendor_loom(&run_dir, &vendor_src) {
                     Ok(()) => {
                         println!("VENDOR_OK");
                         ExitCode::SUCCESS

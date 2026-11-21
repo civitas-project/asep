@@ -4,17 +4,19 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
-/// Default run root; overridden by the `RUN_ROOT` environment variable.
-pub const DEFAULT_RUN_ROOT: &str = "/tmp/opencode/asep-e2e";
+/// Default run root: `<std::env::temp_dir()>/opencode/asep-e2e`; overridden
+/// by the `RUN_ROOT` environment variable. On Linux this is
+/// `/tmp/opencode/asep-e2e`.
+pub fn default_run_root() -> PathBuf {
+    std::env::temp_dir().join("opencode").join("asep-e2e")
+}
 
 const ASEP_BINARY_REL: &str = "target/debug/asep";
-const SECS_PER_DAY: u64 = 86_400;
 
 /// Repo root: parent of this crate's manifest dir at compile time.
 pub fn repo_root() -> PathBuf {
@@ -53,7 +55,7 @@ pub fn new_run(root: &Path, run_id: &str) -> Result<PathBuf, String> {
         rustc_version: rustc_version()?,
         asep_commit: asep_commit()?,
         asep_binary: repo_root().join(ASEP_BINARY_REL),
-        created_at: now_rfc3339_utc()?,
+        created_at: chrono::Utc::now().to_rfc3339(),
     };
 
     let manifest_json =
@@ -97,38 +99,6 @@ fn asep_commit() -> Result<String, String> {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-/// Current UTC time as an RFC 3339 string (`YYYY-MM-DDTHH:MM:SSZ`), std-only.
-fn now_rfc3339_utc() -> Result<String, String> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("system time is before UNIX_EPOCH: {e}"))?;
-    let days = now.as_secs() / SECS_PER_DAY;
-    let secs_of_day = now.as_secs() % SECS_PER_DAY;
-    let (year, month, day) = civil_from_days(days as i64);
-    let hour = secs_of_day / 3600;
-    let minute = (secs_of_day % 3600) / 60;
-    let second = secs_of_day % 60;
-    Ok(format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
-    ))
-}
-
-/// Converts days since 1970-01-01 to a Gregorian calendar date (Howard
-/// Hinnant's `civil_from_days` algorithm).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097; // [0, 146096]
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m as u32, d as u32)
 }
 
 /// Copy `src` recursively into `dst` using only the standard library.
@@ -196,12 +166,12 @@ fn vendored_loom_explores_schedules() {
 }
 "#;
 
-/// Vendor `loom = "=0.7.3"` into `<run_dir>/vendor/` and write the cargo
-/// source replacement at `<run_dir>/.cargo/config.toml`.
+/// Vendor `loom = "=0.7.3"` from `vendor_src` into `<run_dir>/vendor/` and
+/// write the cargo source replacement at `<run_dir>/.cargo/config.toml`.
 ///
 /// Refuses to overwrite if `<run_dir>/vendor/` or
 /// `<run_dir>/.cargo/config.toml` already exists.
-pub fn prepare_vendor_dir(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
+pub fn prepare_vendor_dir(run_dir: &Path, vendor_src: &Path) -> Result<(), String> {
     let vendor_dir = run_dir.join("vendor");
     let config_dir = run_dir.join(".cargo");
     let config_toml = config_dir.join("config.toml");
@@ -214,8 +184,7 @@ pub fn prepare_vendor_dir(run_dir: &Path, repo_root: &Path) -> Result<(), String
         ));
     }
 
-    let source = repo_root.join("harness").join("e2e").join("vendor-loom");
-    copy_dir_all(&source, &vendor_dir)?;
+    copy_dir_all(vendor_src, &vendor_dir)?;
 
     fs::create_dir_all(&config_dir)
         .map_err(|e| format!("failed to create directory '{}': {e}", config_dir.display()))?;
@@ -235,10 +204,12 @@ pub fn prepare_vendor_dir(run_dir: &Path, repo_root: &Path) -> Result<(), String
 }
 
 /// End-to-end proof that vendored `loom = "=0.7.3"` builds and passes its
-/// test suite fully offline. Removes the temporary proof crate on success;
-/// on failure returns `Err` carrying cargo's stderr.
-pub fn vendor_loom(run_dir: &Path, repo_root: &Path) -> Result<(), String> {
-    prepare_vendor_dir(run_dir, repo_root)?;
+/// test suite fully offline. `vendor_src` is the vendored loom tree (default:
+/// `<repo_root>/harness/e2e/vendor-loom`; overridable with `--vendor-path` for
+/// installed binaries pointing at an external tree). Removes the temporary
+/// proof crate on success; on failure returns `Err` carrying cargo's stderr.
+pub fn vendor_loom(run_dir: &Path, vendor_src: &Path) -> Result<(), String> {
+    prepare_vendor_dir(run_dir, vendor_src)?;
 
     let proof_dir = run_dir.join(".loom-proof");
     let src_dir = proof_dir.join("src");
@@ -373,7 +344,7 @@ pub fn verify_preflight(run_dir: &Path) -> (BTreeMap<String, bool>, bool, Vec<St
     (artifacts, hash_lock_ok, reasons)
 }
 
-/// Test hash lock: sha256 of every `*test*.rs` file under `run_dir`.
+/// Test hash lock: sha256 of every `*test*.rs` file under `run_dir/dummy`.
 ///
 /// Returns `(ok, reason)`. A `controller-ruling.json` artifact overrides the
 /// lock. With no test files the lock is unsatisfiable (`false`).
@@ -383,7 +354,7 @@ fn test_hash_lock(run_dir: &Path) -> (bool, String) {
     }
 
     let mut test_files = Vec::new();
-    if collect_test_files(run_dir, &mut test_files).is_err() {
+    if collect_test_files(&run_dir.join("dummy"), &mut test_files).is_err() {
         return (false, "run directory unreadable".to_string());
     }
 
@@ -548,12 +519,32 @@ fn resolve_asep_binary(run_dir: &Path, repo_root: &Path) -> PathBuf {
     default
 }
 
+/// Returns true when `path` exists and is executable by the current user.
+/// On Unix this means any execute permission bit. On Windows it additionally
+/// requires the `.exe` extension (files are not executable by mode bit).
+#[cfg(unix)]
 fn is_executable_file(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
     fs::metadata(path)
         .ok()
-        .map(|metadata| metadata.permissions())
-        .map(|permissions| permissions.mode() & 0o111 != 0)
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
         .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable_file(path: &Path) -> bool {
+    let is_file = fs::metadata(path).map(|metadata| metadata.is_file()).unwrap_or(false);
+    if !is_file {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        return path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"));
+    }
+    true
 }
 
 /// Spawn `command` with `cwd`, capture combined output.

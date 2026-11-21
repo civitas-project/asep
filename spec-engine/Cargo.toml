@@ -28,6 +28,7 @@ regex = "1.11"
 inquire = "0.9.4"
 toml = "1.1.8"
 sha2 = "0.10"
+chrono = { workspace = true }
 similar = "2.7"
 semver = "1.0"
 notify = "6.1"

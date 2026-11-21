@@ -562,7 +562,7 @@ pub enum HarnessCommands {
     NewRun {
         /// Run identifier
         run_id: String,
-        /// Run root (default: /tmp/opencode/asep-e2e, env RUN_ROOT overrides)
+        /// Run root (default: <temp-dir>/opencode/asep-e2e, env RUN_ROOT overrides)
         #[arg(long)]
         root: Option<PathBuf>,
     },
@@ -570,6 +570,10 @@ pub enum HarnessCommands {
     VendorLoom {
         /// E2E run directory
         run_dir: PathBuf,
+
+        /// Path to a vendored loom tree (default: <repo_root>/harness/e2e/vendor-loom)
+        #[arg(long)]
+        vendor_path: Option<PathBuf>,
 
         /// Accepted for compatibility; cargo is always invoked `--offline`
         #[arg(long)]

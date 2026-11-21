@@ -24,7 +24,9 @@ const REQUIRED_ARTIFACT_NAMES: &[&str] = &[
 ];
 
 fn write_test_file(run_dir: &Path) -> PathBuf {
-    let test_file = run_dir.join("one_test.rs");
+    let dummy = run_dir.join("dummy");
+    fs::create_dir_all(&dummy).expect("dummy dir created");
+    let test_file = dummy.join("one_test.rs");
     fs::write(&test_file, "fn one_test() {}\n").expect("test file should be written");
     test_file
 }
@@ -118,7 +120,8 @@ fn test_seed_written_to_manifest() {
 fn test_prepare_vendor_dir_creates_config_and_vendor() {
     let run_dir = tempfile::tempdir().expect("failed to create temp dir");
     let repo_root = repo_root();
-    prepare_vendor_dir(run_dir.path(), &repo_root).expect("prepare_vendor_dir should succeed");
+    let vendor_src = repo_root.join("harness").join("e2e").join("vendor-loom");
+    prepare_vendor_dir(run_dir.path(), &vendor_src).expect("prepare_vendor_dir should succeed");
 
     assert!(
         run_dir.path().join("vendor").join("loom").is_dir(),
@@ -144,8 +147,9 @@ fn test_prepare_vendor_dir_creates_config_and_vendor() {
 fn test_prepare_vendor_dir_refuses_existing() {
     let run_dir = tempfile::tempdir().expect("failed to create temp dir");
     let repo_root = repo_root();
-    prepare_vendor_dir(run_dir.path(), &repo_root).expect("first call should succeed");
-    let err = prepare_vendor_dir(run_dir.path(), &repo_root).unwrap_err();
+    let vendor_src = repo_root.join("harness").join("e2e").join("vendor-loom");
+    prepare_vendor_dir(run_dir.path(), &vendor_src).expect("first call should succeed");
+    let err = prepare_vendor_dir(run_dir.path(), &vendor_src).unwrap_err();
     assert!(!err.is_empty(), "second call should refuse to overwrite");
 }
 
