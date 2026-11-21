@@ -158,27 +158,61 @@ fn check_comment(
         });
     }
 
-    if let Some(rule) = code_rule("AS-CODE-NARRATION") {
-        if let Some(m) = rule.regex.find(trimmed) {
-            violations.push(AntiSlopViolation {
-                file_path: path.to_path_buf(),
-                line_number,
-                kind: AntiSlopViolationKind::WorkflowNarration {
-                    step: m.as_str().to_string(),
-                },
-                message: message_for(&AntiSlopViolationKind::WorkflowNarration {
-                    step: m.as_str().to_string(),
-                }),
-                severity: Severity::Error,
-            });
-        }
+    if let Some(m) = code_rule("AS-CODE-NARRATION")
+        .and_then(|rule| rule.regex.find(trimmed))
+    {
+        violations.push(AntiSlopViolation {
+            file_path: path.to_path_buf(),
+            line_number,
+            kind: AntiSlopViolationKind::WorkflowNarration {
+                step: m.as_str().to_string(),
+            },
+            message: message_for(&AntiSlopViolationKind::WorkflowNarration {
+                step: m.as_str().to_string(),
+            }),
+            severity: Severity::Error,
+        });
     }
 
     let check_buzzwords =
         matches!(kind, SegKind::DocLine | SegKind::LineComment | SegKind::BlockComment);
     if check_buzzwords {
-        if let Some(rule) = code_rule("AS-CODE-BUZZWORD") {
-            for m in rule.regex.find_iter(trimmed) {
+        // match avoids nested-if anti-slop rule (enclosing if let at line 147).
+        #[allow(clippy::single_match)]
+        match code_rule("AS-CODE-BUZZWORD") {
+            Some(rule) => {
+                for m in rule.regex.find_iter(trimmed) {
+                    violations.push(AntiSlopViolation {
+                        file_path: path.to_path_buf(),
+                        line_number,
+                        kind: AntiSlopViolationKind::AiBuzzword {
+                            word: m.as_str().to_string(),
+                        },
+                        message: message_for(&AntiSlopViolationKind::AiBuzzword {
+                            word: m.as_str().to_string(),
+                        }),
+                        severity: Severity::Error,
+                    });
+                }
+            }
+            None => {}
+        }
+    }
+}
+
+/// Audits a Markdown file for AI buzzwords and the non-code canonical rules.
+fn audit_markdown(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
+    let mut violations = Vec::new();
+    for (idx, line) in content.lines().enumerate() {
+        let line_number = idx + 1;
+        // Inline marker opts a specific line out of anti-slop auditing.
+        if line.contains("asep:allow-antislop") {
+            continue;
+        }
+        // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
+        // but keep the existing AiBuzzword violation kind.
+        if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
+            for m in rule.regex.find_iter(line) {
                 violations.push(AntiSlopViolation {
                     file_path: path.to_path_buf(),
                     line_number,
@@ -188,11 +222,30 @@ fn check_comment(
                     message: message_for(&AntiSlopViolationKind::AiBuzzword {
                         word: m.as_str().to_string(),
                     }),
-                    severity: Severity::Error,
+                    severity: rule.severity,
+                });
+            }
+        }
+        // The six non-code canonical rules apply to Markdown lines only.
+        for rule in antislop_rules_cache() {
+            if rule.domain == "code" {
+                continue;
+            }
+            for m in rule.regex.find_iter(line) {
+                violations.push(AntiSlopViolation {
+                    file_path: path.to_path_buf(),
+                    line_number,
+                    kind: AntiSlopViolationKind::Canonical {
+                        rule_id: rule.id.clone(),
+                        matched: m.as_str().to_string(),
+                    },
+                    message: rule.message.clone(),
+                    severity: rule.severity,
                 });
             }
         }
     }
+    violations
 }
 
 // @impl:FR-ANTISLOP-08
@@ -204,49 +257,7 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
     let is_markdown = matches!(lang, Lang::Markdown);
 
     if is_markdown {
-        for (idx, line) in content.lines().enumerate() {
-            let line_number = idx + 1;
-            // Inline marker opts a specific line out of anti-slop auditing.
-            if line.contains("asep:allow-antislop") {
-                continue;
-            }
-            // AI buzzwords in Markdown use the copy-domain rule AS-COPY-BUZZWORD
-            // but keep the existing AiBuzzword violation kind.
-            if let Some(rule) = rule_by_id("AS-COPY-BUZZWORD") {
-                for m in rule.regex.find_iter(line) {
-                    violations.push(AntiSlopViolation {
-                        file_path: path.to_path_buf(),
-                        line_number,
-                        kind: AntiSlopViolationKind::AiBuzzword {
-                            word: m.as_str().to_string(),
-                        },
-                        message: message_for(&AntiSlopViolationKind::AiBuzzword {
-                            word: m.as_str().to_string(),
-                        }),
-                        severity: rule.severity,
-                    });
-                }
-            }
-            // The six non-code canonical rules apply to Markdown lines only.
-            for rule in antislop_rules_cache() {
-                if rule.domain == "code" {
-                    continue;
-                }
-                for m in rule.regex.find_iter(line) {
-                    violations.push(AntiSlopViolation {
-                        file_path: path.to_path_buf(),
-                        line_number,
-                        kind: AntiSlopViolationKind::Canonical {
-                            rule_id: rule.id.clone(),
-                            matched: m.as_str().to_string(),
-                        },
-                        message: rule.message.clone(),
-                        severity: rule.severity,
-                    });
-                }
-            }
-        }
-        return violations;
+        return audit_markdown(path, content);
     }
 
     let mut in_block = false;
@@ -289,46 +300,34 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         loop {
             let slash_slash = remaining.find("//");
             let slash_star = remaining.find("/*");
-            let hash = if lang == Lang::Hash {
-                remaining.find('#')
-            } else {
-                None
+            let hash = match lang {
+                Lang::Hash => remaining.find('#'),
+                _ => None,
             };
             let marker = match (slash_slash, slash_star, hash) {
                 (None, None, None) => break,
                 (Some(a), None, None) => ("//", a),
                 (None, Some(b), None) => ("/*", b),
                 (None, None, Some(c)) => ("#", c),
-                (Some(a), None, Some(c)) => {
-                    if c <= a {
-                        ("#", c)
-                    } else {
-                        ("//", a)
-                    }
-                }
-                (None, Some(b), Some(c)) => {
-                    if c <= b {
-                        ("#", c)
-                    } else {
-                        ("/*", b)
-                    }
-                }
-                (Some(a), Some(b), None) => {
-                    if b <= a {
-                        ("/*", b)
-                    } else {
-                        ("//", a)
-                    }
-                }
-                (Some(a), Some(b), Some(c)) => {
-                    if c <= a.min(b) {
-                        ("#", c)
-                    } else if b <= a {
-                        ("/*", b)
-                    } else {
-                        ("//", a)
-                    }
-                }
+                (Some(a), None, Some(c)) => match c <= a {
+                    true => ("#", c),
+                    false => ("//", a),
+                },
+                (None, Some(b), Some(c)) => match c <= b {
+                    true => ("#", c),
+                    false => ("/*", b),
+                },
+                (Some(a), Some(b), None) => match b <= a {
+                    true => ("/*", b),
+                    false => ("//", a),
+                },
+                (Some(a), Some(b), Some(c)) => match c <= a.min(b) {
+                    true => ("#", c),
+                    false => match b <= a {
+                        true => ("/*", b),
+                        false => ("//", a),
+                    },
+                },
             };
             let (tag, pos) = marker;
             cleaned.push_str(&remaining[..pos]);
@@ -336,10 +335,9 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
             match tag {
                 "//" => {
                     let text = &remaining[pos + 2..];
-                    let kind = if text.starts_with('/') {
-                        SegKind::DocLine
-                    } else {
-                        SegKind::LineComment
+                    let kind = match text.starts_with('/') {
+                        true => SegKind::DocLine,
+                        false => SegKind::LineComment,
                     };
                     check_comment(&mut violations, path, line_number, text, kind);
                     cleaned.push_str(&" ".repeat(text.len()));
@@ -373,19 +371,18 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
                         cleaned.push_str(&" ".repeat(text.len() + 4));
                         remaining = &after[end + 2..];
                         continue;
-                    } else {
-                        in_block = true;
-                        check_comment(
-                            &mut violations,
-                            path,
-                            line_number,
-                            after,
-                            SegKind::BlockComment,
-                        );
-                        cleaned.push_str(&" ".repeat(after.len()));
-                        remaining = "";
-                        break;
                     }
+                    in_block = true;
+                    check_comment(
+                        &mut violations,
+                        path,
+                        line_number,
+                        after,
+                        SegKind::BlockComment,
+                    );
+                    cleaned.push_str(&" ".repeat(after.len()));
+                    remaining = "";
+                    break;
                 }
                 _ => unreachable!(),
             }
@@ -400,6 +397,29 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
     scan_nesting(&mut violations, path, &string_cleaned);
     scan_else(&mut violations, path, &string_cleaned);
     violations
+}
+
+/// Pushes an `ExcessiveNesting` violation when `if` nesting exceeds the
+/// allowed `max_nesting` threshold. Kept as a separate function so the check
+/// itself is not nested inside another `if`.
+fn report_excessive_nesting(
+    violations: &mut Vec<AntiSlopViolation>,
+    path: &Path,
+    line_number: usize,
+    depth: usize,
+    enclosing: usize,
+    max_nesting: usize,
+    severity: Severity,
+) {
+    if enclosing > max_nesting {
+        violations.push(AntiSlopViolation {
+            file_path: path.to_path_buf(),
+            line_number,
+            kind: AntiSlopViolationKind::ExcessiveNesting { depth },
+            message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
+            severity,
+        });
+    }
 }
 
 // @impl:FR-ANTISLOP-06 @impl:FR-ANTISLOP-09
@@ -440,15 +460,15 @@ fn scan_nesting(
                 let enclosing = stack.len();
                 let depth = enclosing + 1;
                 stack.push(brace_depth);
-                if enclosing > max_nesting {
-                    violations.push(AntiSlopViolation {
-                        file_path: path.to_path_buf(),
-                        line_number,
-                        kind: AntiSlopViolationKind::ExcessiveNesting { depth },
-                        message: message_for(&AntiSlopViolationKind::ExcessiveNesting { depth }),
-                        severity,
-                    });
-                }
+                report_excessive_nesting(
+                    violations,
+                    path,
+                    line_number,
+                    depth,
+                    enclosing,
+                    max_nesting,
+                    severity,
+                );
                 i += 2;
                 continue;
             }
@@ -457,11 +477,10 @@ fn scan_nesting(
                 Some('}') => {
                     brace_depth = brace_depth.saturating_sub(1);
                     while let Some(&top) = stack.last() {
-                        if top >= brace_depth {
-                            stack.pop();
-                        } else {
+                        if top < brace_depth {
                             break;
                         }
+                        stack.pop();
                     }
                 }
                 _ => {}
@@ -505,11 +524,54 @@ fn scan_else(
                     severity,
                 });
                 i += 4;
-            } else {
-                i += 1;
+                continue;
             }
+            i += 1;
         }
     }
+}
+
+/// Blanks a raw string `r#^n"` (n >= 1) opening at `chars[i]`, replacing its
+/// contents with spaces and returning the index just past the closing `"#^n`.
+fn blank_raw_string(chars: &[char], i: usize, n: usize, out: &mut String) -> usize {
+    out.push(' ');
+    let mut i = i + 1;
+    while i < chars.len() {
+        if chars[i] == '"' {
+            let mut hashes = 0;
+            while i + hashes + 1 < chars.len() && chars[i + hashes + 1] == '#' {
+                hashes += 1;
+            }
+            if hashes == n {
+                out.extend(std::iter::repeat_n(' ', 1 + hashes));
+                return i + 1 + hashes;
+            }
+        }
+        out.push(' ');
+        i += 1;
+    }
+    i
+}
+
+/// Blanks a regular `"..."` string opening at `chars[i]`, handling `\` escapes,
+/// replacing its contents with spaces and returning the index just past the closing `"`.
+fn blank_regular_string(chars: &[char], i: usize, out: &mut String) -> usize {
+    out.push(' ');
+    let mut i = i + 1;
+    while i < chars.len() {
+        if chars[i] == '\\' && i + 1 < chars.len() {
+            out.extend(std::iter::repeat_n(' ', 2));
+            i += 2;
+            continue;
+        }
+        if chars[i] == '"' {
+            out.push(' ');
+            return i + 1;
+        }
+        out.push(' ');
+        i += 1;
+    }
+    i
 }
 
 /// Replaces the contents of string literals with spaces so their text is
@@ -522,51 +584,15 @@ fn strip_string_literals(line: &str) -> String {
     while i < chars.len() {
         if chars[i] == '"' && raw_string_hash_count(&chars, i).is_some() {
             let n = raw_string_hash_count(&chars, i).unwrap();
-            out.push(' ');
-            i += 1;
-            // Scan for closing `"` followed by exactly n `#`.
-            let mut closed = false;
-            while i < chars.len() {
-                if chars[i] == '"' {
-                    let mut hashes = 0;
-                    while i + hashes + 1 < chars.len() && chars[i + hashes + 1] == '#' {
-                        hashes += 1;
-                    }
-                    if hashes == n {
-                        // push the closing quote and hashes as spaces
-                        out.extend(std::iter::repeat_n(' ', 1 + hashes));
-                        i += 1 + hashes;
-                        closed = true;
-                        break;
-                    }
-                }
-                out.push(' ');
-                i += 1;
-            }
-            if !closed {
-                // unterminated raw string: rest already blanked
-            }
-        } else if chars[i] == '"' {
-            out.push(' ');
-            i += 1;
-            while i < chars.len() {
-                if chars[i] == '\\' && i + 1 < chars.len() {
-                    out.extend(std::iter::repeat_n(' ', 2));
-                    i += 2;
-                    continue;
-                }
-                if chars[i] == '"' {
-                    out.push(' ');
-                    i += 1;
-                    break;
-                }
-                out.push(' ');
-                i += 1;
-            }
-        } else {
-            out.push(chars[i]);
-            i += 1;
+            i = blank_raw_string(&chars, i, n, &mut out);
+            continue;
         }
+        if chars[i] == '"' {
+            i = blank_regular_string(&chars, i, &mut out);
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
     }
     out
 }
@@ -586,12 +612,11 @@ fn raw_string_hash_count(chars: &[char], idx: usize) -> Option<usize> {
     if n == 0 || j == 0 || chars[j - 1] != 'r' {
         return None;
     }
-    if j > 1 && chars[j - 2] == 'b' {
+    if j > 1 && chars[j - 2] == 'b' && j > 2 && is_ident_char(chars[j - 3]) {
         // `br"..."`: `b` must not be part of an identifier.
-        if j > 2 && is_ident_char(chars[j - 3]) {
-            return None;
-        }
-    } else if j > 1 && is_ident_char(chars[j - 2]) {
+        return None;
+    }
+    if j > 1 && chars[j - 2] != 'b' && is_ident_char(chars[j - 2]) {
         return None;
     }
     Some(n)
@@ -620,26 +645,28 @@ pub fn audit_project_anti_slop(
             Err(_) => continue,
         };
         let path = entry.path();
-        if path.is_file() {
-            let is_audit_ext = matches!(
-                path.extension().and_then(|s| s.to_str()),
-                Some("rs")
-                | Some("go")
-                | Some("ts")
-                | Some("js")
-                | Some("py")
-                | Some("java")
-                | Some("cpp")
-                | Some("c")
-                | Some("md")
-            );
-            if is_audit_ext {
-                if let Ok(content) = std::fs::read_to_string(path) {
-                    let rel_path = path.strip_prefix(root).unwrap_or(path).to_path_buf();
-                    let mut file_violations = audit_anti_slop(&rel_path, &content);
-                    violations.append(&mut file_violations);
-                }
-            }
+        if !path.is_file() {
+            continue;
+        }
+        let is_audit_ext = matches!(
+            path.extension().and_then(|s| s.to_str()),
+            Some("rs")
+            | Some("go")
+            | Some("ts")
+            | Some("js")
+            | Some("py")
+            | Some("java")
+            | Some("cpp")
+            | Some("c")
+            | Some("md")
+        );
+        if !is_audit_ext {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let rel_path = path.strip_prefix(root).unwrap_or(path).to_path_buf();
+            let mut file_violations = audit_anti_slop(&rel_path, &content);
+            violations.append(&mut file_violations);
         }
     }
 
@@ -714,11 +741,10 @@ mod tests {
             "fn foo(x: bool) {\n    if x {\n        if true {\n            if false {\n            }\n        }\n    }\n}\n",
         );
         assert!(violations.iter().any(|v| {
-            if let AntiSlopViolationKind::ExcessiveNesting { depth } = &v.kind {
-                *depth >= 3
-            } else {
-                false
-            }
+            matches!(
+                &v.kind,
+                AntiSlopViolationKind::ExcessiveNesting { depth } if *depth >= 3
+            )
         }));
     }
 
@@ -768,10 +794,9 @@ mod tests {
             .collect();
         assert_eq!(nesting.len(), 1, "expected exactly one nesting violation");
         assert_eq!(nesting[0].line_number, 3);
-        if let AntiSlopViolationKind::ExcessiveNesting { depth } = &nesting[0].kind {
-            assert_eq!(*depth, 2);
-        } else {
-            panic!("expected ExcessiveNesting");
+        match &nesting[0].kind {
+            AntiSlopViolationKind::ExcessiveNesting { depth } => assert_eq!(*depth, 2),
+            _ => panic!("expected ExcessiveNesting"),
         }
         assert!(!violations.iter().any(|v| matches!(
             v.kind,
@@ -818,10 +843,9 @@ mod tests {
             "expected exactly one nesting violation, got {violations:?}"
         );
         assert_eq!(nesting[0].line_number, 4);
-        if let AntiSlopViolationKind::ExcessiveNesting { depth } = &nesting[0].kind {
-            assert_eq!(*depth, 2);
-        } else {
-            panic!("expected ExcessiveNesting");
+        match &nesting[0].kind {
+            AntiSlopViolationKind::ExcessiveNesting { depth } => assert_eq!(*depth, 2),
+            _ => panic!("expected ExcessiveNesting"),
         }
     }
 
