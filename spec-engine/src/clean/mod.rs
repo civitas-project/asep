@@ -70,7 +70,7 @@ pub fn threshold_bytes(baseline: u64) -> u64 {
     value.clamp(FOUR_GIB, SIXTEEN_GIB)
 }
 
-/// Plans a cleanup for `target` against `threshold` without deleting anything.
+/// Computes whether `target` exceeds `threshold` and the action to take, without deleting anything.
 pub fn plan(target: &Path, threshold: u64) -> CleanReport {
     let before = measure_dir(target);
     let (action, after) = if before <= threshold {
@@ -88,7 +88,7 @@ pub fn plan(target: &Path, threshold: u64) -> CleanReport {
     }
 }
 
-/// Executes the cleanup plan for `target` under `root`.
+/// Performs the cleanup decision for `target` under `root`.
 ///
 /// When `dry_run` is true, the plan is returned without deleting anything.
 /// Otherwise runs `cargo clean -p asep` first, then `cargo clean`
