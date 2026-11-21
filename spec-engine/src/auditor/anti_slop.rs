@@ -253,13 +253,6 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
     for (idx, mut remaining) in content.lines().enumerate() {
         let line_number = idx + 1;
         let mut cleaned = String::with_capacity(remaining.len());
-        if remaining.contains("asep:allow-antislop") {
-            // Strict rules (nesting, else) still run on this line; only
-            // comment-based rules opt out via check_comment's own marker check.
-            cleaned.push_str(remaining);
-            cleaned_lines.push(cleaned);
-            continue;
-        }
 
         if in_block {
             match remaining.find("*/") {
@@ -399,8 +392,11 @@ pub fn audit_anti_slop(path: &Path, content: &str) -> Vec<AntiSlopViolation> {
         cleaned_lines.push(cleaned);
     }
 
-    scan_nesting(&mut violations, path, &cleaned_lines);
-    scan_else(&mut violations, path, &cleaned_lines);
+    let string_cleaned: Vec<String> =
+        cleaned_lines.iter().map(|line| strip_string_literals(line)).collect();
+
+    scan_nesting(&mut violations, path, &string_cleaned);
+    scan_else(&mut violations, path, &string_cleaned);
     violations
 }
 
@@ -490,8 +486,7 @@ fn scan_else(
         .unwrap_or_else(|| "Else branch forbidden; use early return (guard clause)".to_string());
 
     for (idx, line) in lines.iter().enumerate() {
-        let sanitized = strip_string_literals(line);
-        let chars: Vec<char> = sanitized.chars().collect();
+        let chars: Vec<char> = line.chars().collect();
         let mut i = 0;
         while i + 4 <= chars.len() {
             if chars[i..i + 4] == ['e', 'l', 's', 'e']
@@ -803,6 +798,59 @@ mod tests {
         assert!(!violations.iter().any(|v| matches!(
             v.kind,
             AntiSlopViolationKind::AiBuzzword { .. }
+        )));
+    }
+
+    #[test]
+    fn string_brace_does_not_corrupt_nesting() {
+        let violations = rs(
+            "fn f() {\n    if a {\n        let s = \"}\";\n        if b {}\n    }\n}\n",
+        );
+        let nesting: Vec<_> = violations
+            .iter()
+            .filter(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. }))
+            .collect();
+        assert_eq!(
+            nesting.len(),
+            1,
+            "expected exactly one nesting violation, got {violations:?}"
+        );
+        assert_eq!(nesting[0].line_number, 4);
+        if let AntiSlopViolationKind::ExcessiveNesting { depth } = &nesting[0].kind {
+            assert_eq!(*depth, 2);
+        } else {
+            panic!("expected ExcessiveNesting");
+        }
+    }
+
+    #[test]
+    fn marker_line_comment_else_is_blanked() {
+        let violations = rs(
+            "fn foo() {\n    // else // asep:allow-antislop\n    /// else // asep:allow-antislop\n}\n",
+        );
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn let_else_is_flagged() {
+        let violations = rs("let Some(x) = y else { return; };\n");
+        assert!(violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
+        )));
+    }
+
+    #[test]
+    fn raw_and_byte_string_else_ignored() {
+        let violations = rs(r##"let s = r#"else"#;
+let b = b"else";
+"##);
+        assert!(!violations.iter().any(|v| matches!(
+            v.kind,
+            AntiSlopViolationKind::ElseBranch { .. }
         )));
     }
 }
