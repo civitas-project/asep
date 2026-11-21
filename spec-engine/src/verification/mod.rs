@@ -113,12 +113,10 @@ pub fn evaluate(
 
     let structural = graph.is_closed;
 
-    let behavioral = if behavioral_report.exists() {
-        read_behavioral_passed(behavioral_report)
-    } else {
+    let behavioral = read_behavioral_passed(behavioral_report);
+    if !behavioral_report.exists() {
         skipped.push("behavioral".to_string());
-        false
-    };
+    }
 
     let policy = load_policy();
     let semantic_required = policy.tier(tier).semantic_evidence_required;
@@ -130,22 +128,23 @@ pub fn evaluate(
         .map(|n| n.id.as_str())
         .collect();
 
-    let semantic = if !semantic_required {
-        skipped.push("semantic".to_string());
-        true
-    } else {
-        req_ids
+    let mut semantic = true;
+    if semantic_required {
+        semantic = req_ids
             .iter()
-            .all(|subject| load_semantic_evidence(evidence_dir, subject).is_some_and(|e| e.verdict == "ACCEPTED"))
-    };
+            .all(|subject| load_semantic_evidence(evidence_dir, subject).is_some_and(|e| e.verdict == "ACCEPTED"));
+    }
+    if !semantic_required {
+        skipped.push("semantic".to_string());
+    }
 
-    let status = if !structural || !behavioral {
-        VerificationStatus::Fail
-    } else if semantic_required && !semantic {
-        VerificationStatus::Unproven
-    } else {
-        VerificationStatus::Pass
-    };
+    let mut status = VerificationStatus::Pass;
+    if !structural || !behavioral {
+        status = VerificationStatus::Fail;
+    }
+    if structural && behavioral && semantic_required && !semantic {
+        status = VerificationStatus::Unproven;
+    }
 
     VerificationReport {
         status,
