@@ -17,3 +17,16 @@
 <!-- @req:FR-ANTISLOP-07:MUST Both rules shall be declared in `spec-engine/policy/asep-policy.toml` with `severity = 'Error'` — `AS-CODE-NESTING.max_nesting = 0` (zero nesting levels allowed; top-level `if` remains permitted for guard clauses) and a new `AS-CODE-ELSE` rule — so that gate behavior is policy-driven rather than hardcoded. -->
 <!-- @req:FR-ANTISLOP-08:MUST The repository itself shall contain no `else` token and no nested `if` in audited source files, so that `asep check . --rigor T1` exits 0 without relying on inline opt-outs for these two rules. -->
 <!-- @req:FR-ANTISLOP-09:MUST The `asep:allow-antislop` inline marker shall not suppress `AS-CODE-ELSE` or `AS-CODE-NESTING` violations; every other anti-slop rule shall keep its existing opt-out behavior. -->
+
+## Pilot optimasi build Rust
+
+<!-- @req:BUILD-PILOT-01:MUST The pilot shall compare edit-to-feedback time after a private function edit and an integration test edit, plus sampled peak and retained build storage, against the current ASEP baseline on the same pinned toolchain. -->
+<!-- @req:BUILD-PILOT-02:MUST The candidate shall be adopted only if feedback is consistently faster and build storage consistently smaller, with the same scoped test outcomes, no reduction in acceptance scope, and the main build cache left intact. -->
+
+Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk puncak turun 30%, dan artefak tersisa turun 40%.
+
+## Lanjutan optimasi build Rust
+
+<!-- @req:BUILD-NEXT-01:MUST Classify allocated bytes under target/debug/build without deleting the main cache. Measure consolidation of one integration-test group and preserve its test cases, assertions, and outcomes. Adopt it only if it reduces build cost without slowing edit feedback beyond observed variation. -->
+<!-- @req:BUILD-NEXT-02:MUST Measure actual Cargo dependency build units before and after removing a redundant variant. Keep supported inputs, features, and targeted tests intact. -->
+<!-- @req:BUILD-NEXT-03:MUST Compare two versus four Cargo jobs and concurrent versus serial Cargo commands on the same isolated target. Record wall time, lock waits, and disk use without changing global defaults. -->

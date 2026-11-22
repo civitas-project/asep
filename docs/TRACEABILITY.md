@@ -84,3 +84,43 @@
 @rel:verifies:FR-ANTISLOP-07->FR-ANTISLOP-07 "code_rule reads AS-CODE-ELSE and AS-CODE-NESTING severity from asep-policy.toml"
 @rel:verifies:FR-ANTISLOP-08->FR-ANTISLOP-08 "audited repository sources contain no else token and no nested if"
 @rel:verifies:FR-ANTISLOP-09->FR-ANTISLOP-09 "asep:allow-antislop does not suppress AS-CODE-ELSE or AS-CODE-NESTING"
+
+## Bukti pilot build
+
+<!-- @test:BUILD-PILOT-01 -->
+| Metrik | A lalu B: baseline ke kandidat | B lalu A: baseline ke kandidat |
+|---|---|---|
+| Median edit fungsi | 4,605 ke 4,261 s (turun 7,5%) | 8,162 ke 6,601 s (turun 19,1%) |
+| Median edit test | 2,345 ke 2,102 s (turun 10,4%) | 4,182 ke 3,272 s (turun 21,8%) |
+| Disk puncak teramati | 1.307.504.640 ke 1.063.677.952 byte (turun 18,6%) | 1.309.093.888 ke 1.063.706.624 byte (turun 18,7%) |
+| Disk tersisa | 1.217.093.632 ke 995.127.296 byte (turun 18,2%) | 1.217.122.304 ke 995.164.160 byte (turun 18,2%) |
+
+<!-- @test:BUILD-PILOT-02 -->
+Keempat run memakai cache eksperimen, bukan `target/` utama. Daftar 9 test `harness_e2e_test` sama dan tiap ulangan lulus 9/9. Bukti lokal: `run.json` di `/tmp/opencode/asep-pilot-A/`, `/tmp/opencode/asep-pilot-B/`, `/tmp/opencode/asep-pilot-B2/`, dan `/tmp/opencode/asep-pilot-A2/`.
+
+@rel:satisfies:BUILD-PILOT-01->BUILD-PILOT-01
+@rel:satisfies:BUILD-PILOT-02->BUILD-PILOT-02
+@rel:verifies:BUILD-PILOT-01->BUILD-PILOT-01 "Dua putaran dengan urutan terbalik mencatat waktu dan disk pada skenario yang sama"
+@rel:verifies:BUILD-PILOT-02->BUILD-PILOT-02 "Kedua putaran memenuhi syarat adopsi dengan daftar dan hasil test yang sama"
+
+## Bukti lanjutan optimasi build
+
+<!-- @test:BUILD-NEXT-01 -->
+Audit mendapati 1.205.305.344 byte di `target/debug/build` tanpa penghapusan. Benchmark konsolidasi memakai enam kasus identik, dengan `scanner::` dinormalisasi saat membandingkan nama. Semua kasus lulus dan log artefak Cargo mengonfirmasi `lexer_test` dibangun ulang pada tiap edit. Median edit baseline 1,511 s (1,411/1,746/1,511 s); kandidat 1,981 s (1,939/2,242/1,981 s). Artefak tersisa turun dari 781.291.520 ke 760.463.360 byte. Perbandingan valid ini memakai satu urutan baseline lalu kandidat; hasil cukup untuk menahan adopsi, bukan klaim bahwa konsolidasi selalu lebih lambat. Bukti lokal: `/tmp/opencode/asep-build-next-2b-fixed/measure_verified-20261122T064142Z-1092.json`.
+
+@rel:satisfies:BUILD-NEXT-01->BUILD-NEXT-01
+@rel:verifies:BUILD-NEXT-01->BUILD-NEXT-01 "Audit disk dan benchmark enam kasus dengan bukti rebuild menentukan keputusan konsolidasi"
+
+<!-- @test:BUILD-NEXT-02 -->
+Graf unit `lexer_test` turun dari 342 ke 336; hanya unit `serde_spanned` 0.6.9, `toml` 0.8.23, `toml_datetime` 0.6.11, `toml_edit` 0.22.27, `toml_write` 0.1.2, dan `winnow` 0.7.15 yang hilang. Kedua versi lulus lima kasus lexer dan tiga kasus konfigurasi, termasuk error parsing bertipe. Build awal 273,125 ke 227,059 s. Median edit 1,681 ke 2,300 s. Disk puncak teramati dan tersisa 937.979.904 ke 905.867.264 byte. Satu urutan baseline lalu kandidat; hasil mendasari keputusan untuk tidak adopsi, bukan estimasi efek universal. Bukti lokal: `/tmp/opencode/asep-build-next-3-parity/` dan `/tmp/opencode/asep-build-next-3-benchmark/toml-1795333025519548595.json`.
+
+@rel:satisfies:BUILD-NEXT-02->BUILD-NEXT-02
+@rel:verifies:BUILD-NEXT-02->BUILD-NEXT-02 "Graf unit, tes konfigurasi, dan benchmark terisolasi menentukan keputusan penyatuan TOML"
+
+<!-- @test:BUILD-NEXT-03 -->
+Build dari cache kosong: 242,014 s (2 job) vs 206,190 s (4 job). Median tiga rebuild edit: 5,222 vs 5,909 s, dengan rentang tumpang tindih. Artefak tersisa sama (620.298.240 byte). Log: `/tmp/opencode/asep-build-next-4/run2.stdout`.
+
+Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,571 s. Kedua ulangan serentak melaporkan tunggu lock; serial tidak. Durasi tunggu lock tidak terukur. Puncak teramati: serial 1.410.342.912–1.425.666.048 byte; serentak 1.456.300.032–1.456.308.224 byte. Artefak tersisa sama (1.409.732.608 byte). Lima kasus lexer lulus di tiap ulangan dan Cargo mengonfirmasi rebuild. Bukti lokal: `/tmp/opencode/asep-build-next-4/queue_only-20261122T083319Z-9728/metrics.json`.
+
+@rel:satisfies:BUILD-NEXT-03->BUILD-NEXT-03
+@rel:verifies:BUILD-NEXT-03->BUILD-NEXT-03 "Perbandingan job dan antrean mencatat wall time, disk, dan bukti tunggu lock tanpa mengubah default"
