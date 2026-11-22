@@ -195,3 +195,40 @@ fn test_verify_controller_ruling_overrides_hash() {
     let (_artifacts, hash_lock_ok, _reasons) = verify_preflight(run_dir.path());
     assert!(hash_lock_ok, "controller ruling should override hash lock");
 }
+
+
+#[test]
+fn test_hash_lock_collects_tests_in_multiple_subdirectories() {
+    use sha2::{Digest, Sha256};
+    let run_dir = tempfile::tempdir().expect("failed to create temp dir");
+    let dummy = run_dir.path().join("dummy");
+    // Two test files in two DIFFERENT subdirectories of dummy/.
+    let a_dir = dummy.join("mod_a");
+    let b_dir = dummy.join("mod_b");
+    fs::create_dir_all(&a_dir).expect("mod_a created");
+    fs::create_dir_all(&b_dir).expect("mod_b created");
+    let fa = a_dir.join("alpha_test.rs");
+    let fb = b_dir.join("beta_test.rs");
+    fs::write(&fa, "fn alpha() {}\n").expect("alpha written");
+    fs::write(&fb, "fn beta() {}\n").expect("beta written");
+
+    // Compute the exact aggregate hash the auditor should produce from BOTH files.
+    let hex = |data: &[u8]| -> String {
+        let mut h = Sha256::new();
+        h.update(data);
+        h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    };
+    let mut lines = vec![
+        format!("{}  {}", hex(fs::read(&fa).unwrap().as_slice()), fa.strip_prefix(run_dir.path()).unwrap().to_string_lossy()),
+        format!("{}  {}", hex(fs::read(&fb).unwrap().as_slice()), fb.strip_prefix(run_dir.path()).unwrap().to_string_lossy()),
+    ];
+    lines.sort();
+    let mut listing = lines.join("\n");
+    listing.push('\n');
+    let aggregate = hex(listing.as_bytes());
+    fs::write(run_dir.path().join("03-hash.txt"), format!("{aggregate}  all\n"))
+        .expect("03-hash.txt written");
+
+    let (_artifacts, hash_lock_ok, reasons) = verify_preflight(run_dir.path());
+    assert!(hash_lock_ok, "hash lock should cover test files in all subdirectories: {reasons:?}");
+}

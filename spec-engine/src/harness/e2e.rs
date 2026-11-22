@@ -459,11 +459,11 @@ fn collect_test_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()>
         let path = entry.path();
         if path.is_dir() {
             collect_test_files(&path, out)?;
-            return Ok(());
+            continue;
         }
         let name = match path.file_name().and_then(|name| name.to_str()) {
             Some(name) => name,
-            None => return Ok(()),
+            None => continue,
         };
         if name.contains("test") && name.ends_with(".rs") {
             out.push(path);
