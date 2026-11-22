@@ -18,7 +18,7 @@ Dummy project lives under `/tmp/opencode/asep-e2e/<run-id>/`; never inside the A
 
 ## Dispatch order
 
-`lead → executor → judge → verifier`
+`leader → executor → judge → verifier`
 
 Each phase is dispatched in that order with a prompt containing the brief path and the report path. The judge writes a verdict artifact; the harness then re-runs the tests and checks itself — the judge's claim is not accepted on executor logs alone.
 

@@ -185,24 +185,44 @@ dev   ─────●───────●──────────�
 - **Feature Branches:** Branched exclusively from `dev` using standard Conventional Commits (`feat/FR-[ID]`, `fix/FR-[ID]`, `perf/FR-[ID]`, `refactor/FR-[ID]`).
 
 ### 2. The 5-Gate CI Pipeline
-All pull requests targeting `main` must pass automated validation with **Exit Code 0**:
+
+`asep ci` is a local diagnostic pipeline, not CI itself. It runs five numbered gates, 0 through 4. Each gate reports `passed`, `skipped`, or `failed`; a mandatory input that is detected but cannot be proven is reported as **skipped**, never as `N/A` or passed.
+
+The diagnostic exit code is an aggregate: `asep ci` can exit 0 when a gate is `--skip`ped or missing tooling causes a gate to skip, because skipped gates do not fail the diagnostic aggregate. Fail-closed acceptance is the separate criterion `CiReport::passes_required`, not the diagnostic aggregate: every required gate must appear exactly once with `passed == true` and `skipped == false`, with no unproven evidence, `all_passed == true`, valid non-duplicated gate ids (0..=4), and a nonempty required set. It does not trust `all_passed` alone. A skipped mandatory gate cannot satisfy mandatory acceptance.
 
 ```bash
-# Gate 1: Symmetrical Traceability and Contract Gate
-asep check . --deny-drafts
+# Gate 0: Formal specifications (.als, .tla, .dbml, api.yaml)
+asep ci --gate 0
 
-# Gate 2: Static Type & Memory Safety
-cargo check --all-targets
+# Gate 1: Structural traceability, contracts & skill drift
+asep ci --gate 1
 
-# Gate 3: Zero Warnings Policy
-cargo clippy --all-targets -- -D warnings
+# Gate 2: Static analysis (clippy, -D warnings)
+asep ci --gate 2
 
-# Gate 4: Automated Test Suites
-cargo test --all-targets
+# Gate 3: Automated tests & invariant verification
+asep ci --gate 3
 
-# Gate 5: Deterministic Code Formatting
-cargo fmt --check
+# Gate 4: Benchmark compilation preflight (compilation only, no runtime performance proof)
+asep ci --gate 4
 ```
+
+Gate 0 formal policy: the absence of formal specification models (`.als`, `.tla`, `.dbml`, `api.yaml`) is existing policy — gate 0 passes with a "no models found" detail rather than reporting skipped. A detected model that cannot be proven is `skipped` and cannot satisfy mandatory acceptance.
+
+Gate 4 is preflight only: it compiles the benchmark harness (`cargo bench --no-run`) and proves nothing about runtime performance.
+
+All five gates are required inputs to acceptance; a skipped mandatory gate fails `CiReport::passes_required`.
+
+Existing independent quality checks remain requirements of this repository and are **not** executed or claimed by `asep ci`:
+- `asep check . --deny-drafts` — traceability closure, zero active drafts
+- `cargo check --all-targets` — static type & memory safety
+- `cargo clippy --all-targets -- -D warnings` — zero warnings policy
+- `cargo test --all-targets` — automated test suites
+- `cargo fmt --check` — deterministic code formatting
+
+PRs targeting `main` must pass all required checks with **Exit Code 0** before merge.
+
+> **Note:** `asep accept <full-commit>` runs on a trusted local runner and verifies all required gates structurally before acceptance. It is **not** merge authorization and does not approve a PR to merge into `main`. GitHub Actions required-check gating is deferred (not P0; not pending deployment). `asep ci` remains a local diagnostic only.
 
 ### 3. Model Context Protocol (MCP) Integration
 Integrate `asep` into MCP-compliant IDEs and agent harnesses using stdio transport:

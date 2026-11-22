@@ -163,7 +163,7 @@ fn test_agent_tools_do_not_return_payload() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir.to_str().unwrap(),
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": body,
@@ -206,7 +206,7 @@ fn test_agent_recv_filters_by_agent() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": dispatch,
@@ -218,7 +218,7 @@ fn test_agent_recv_filters_by_agent() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "judge",
             "kind": "RULING",
             "body": ruling,
@@ -261,7 +261,7 @@ fn test_agent_send_sets_reply_to() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": body,
@@ -288,4 +288,36 @@ fn test_agent_send_sets_reply_to() {
     // Deserialized envelope must expose reply_to.
     let envelope: Envelope = serde_json::from_str(&raw).unwrap();
     assert_eq!(envelope.reply_to.as_deref(), Some("msg-prev"));
+}
+
+// @test:FR-LEADER-02
+#[test]
+fn test_agent_send_rejects_legacy_lead_role() {
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = dir.path().to_path_buf();
+    let body = json!({
+        "task": "implement feature",
+        "files": ["src/feature.rs"],
+        "acceptance": "feature works",
+        "verification_command": "cargo test -p asep"
+    });
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir.to_str().unwrap(),
+            "agent": "lead",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": body,
+        }),
+        Path::new(""),
+    );
+    assert!(
+        res.is_err(),
+        "legacy role 'lead' must be rejected without alias: {:?}",
+        res
+    );
+    let err = res.unwrap_err();
+    assert!(err.contains("role"), "error must name role: {err}");
 }

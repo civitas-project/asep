@@ -38,12 +38,12 @@ fn test_task_report_requires_concerns() {
     let mut no_concerns = task_report_body(json!([]));
     no_concerns.as_object_mut().unwrap().remove("concerns");
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None, None)
+        .send(Role::Executor, Role::Leader, Kind::TaskReport, no_concerns, None, None)
         .is_err());
     assert!(store
         .send(
             Role::Executor,
-            Role::Lead,
+            Role::Leader,
             Kind::TaskReport,
             task_report_body(json!([])),
             None,
@@ -53,7 +53,7 @@ fn test_task_report_requires_concerns() {
     assert!(store
         .send(
             Role::Executor,
-            Role::Lead,
+            Role::Leader,
             Kind::TaskReport,
             task_report_body(json!(["draft spec"])),
             None,
@@ -68,7 +68,7 @@ fn test_lead_can_reject_own_sent_message() {
     let store = MessageStore::new(dir.path());
     let envelope = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -77,7 +77,7 @@ fn test_lead_can_reject_own_sent_message() {
         )
         .unwrap();
     // Lead may reject a message it sent.
-    store.ack(Role::Lead, &envelope.id, "rejected").unwrap();
+    store.ack(Role::Leader, &envelope.id, "rejected").unwrap();
     let env: serde_json::Value = serde_json::from_str(&fs::read_to_string(
         dir.path().join("messages").join(format!("{}.json", envelope.id)),
     )
@@ -89,7 +89,7 @@ fn test_lead_can_reject_own_sent_message() {
     // Lead may not ack its own message with a non-rejected status.
     let other = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -97,8 +97,8 @@ fn test_lead_can_reject_own_sent_message() {
             None,
         )
         .unwrap();
-    assert!(store.ack(Role::Lead, &other.id, "accepted").is_err());
-    assert!(store.ack(Role::Lead, &other.id, "done").is_err());
+    assert!(store.ack(Role::Leader, &other.id, "accepted").is_err());
+    assert!(store.ack(Role::Leader, &other.id, "done").is_err());
     // Lead cannot reject a message it did not send (and is not recipient of).
     let not_own = store
         .send(
@@ -110,7 +110,7 @@ fn test_lead_can_reject_own_sent_message() {
             None,
         )
         .unwrap();
-    assert!(store.ack(Role::Lead, &not_own.id, "rejected").is_err());
+    assert!(store.ack(Role::Leader, &not_own.id, "rejected").is_err());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_send_writes_envelope_without_body_in_summary() {
     let store = MessageStore::new(dir.path());
     let envelope = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -133,7 +133,7 @@ fn test_send_writes_envelope_without_body_in_summary() {
     assert!(summary.contains("\"from\""));
     assert!(summary.contains("\"to\""));
     assert!(!summary.contains("body"));
-    assert_eq!(envelope.from, Role::Lead);
+    assert_eq!(envelope.from, Role::Leader);
     assert_eq!(envelope.to, Role::Executor);
     assert_eq!(envelope.kind, Kind::TaskDispatch);
     assert_eq!(envelope.status, "sent");
@@ -150,7 +150,7 @@ fn test_ref_hash_mismatch_rejected() {
     fs::write(&ref_path, "original content").unwrap();
     store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -170,7 +170,7 @@ fn test_role_kind_mismatch_rejected() {
     let store = MessageStore::new(dir.path());
     let result = store.send(
         Role::Executor,
-        Role::Lead,
+        Role::Leader,
         Kind::TaskDispatch,
         dispatch_body(),
         None,
@@ -184,10 +184,10 @@ fn test_recv_returns_only_unacked_for_recipient() {
     let dir = tempfile::tempdir().unwrap();
     let store = MessageStore::new(dir.path());
     let e1 = store
-        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(Role::Leader, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
         .unwrap();
     let e2 = store
-        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(Role::Leader, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
         .unwrap();
     let e3 = store
         .send(Role::Judge, Role::Executor, Kind::Verdict, verdict_body(), None, None)
@@ -207,9 +207,9 @@ fn test_orphan_reply_to_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let _store = MessageStore::new(dir.path());
     let orphan = serde_json::json!({
-        "v": 1,
+        "v": 2,
         "id": "msg-1-orphan",
-        "from": "lead",
+        "from": "leader",
         "to": "executor",
         "kind": "TASK_DISPATCH",
         "reply_to": "msg-0-does-not-exist",
@@ -236,11 +236,11 @@ fn test_orphan_reply_to_rejected() {
 #[test]
 fn test_protocol_schema_loads() {
     let schema = asep::agent_protocol::protocol_schema();
-    assert_eq!(schema.version, 1);
+    assert_eq!(schema.version, 2);
     assert_eq!(schema.roles.len(), 4);
     assert_eq!(
         schema.roles.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-        vec!["lead", "executor", "judge", "explorer"]
+        vec!["leader", "executor", "judge", "explorer"]
     );
     assert_eq!(schema.kinds.len(), 6);
     assert_eq!(
@@ -262,13 +262,13 @@ fn test_schema_drives_role_kind_check() {
     let store = MessageStore::new(dir.path());
     // executor may not send TASK_DISPATCH per schema.
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(Role::Executor, Role::Leader, Kind::TaskDispatch, dispatch_body(), None, None)
         .is_err());
     // executor may send TASK_REPORT per schema.
     assert!(store
         .send(
             Role::Executor,
-            Role::Lead,
+            Role::Leader,
             Kind::TaskReport,
             task_report_body(json!([])),
             None,
@@ -285,7 +285,7 @@ fn test_schema_drives_body_check() {
     let mut no_concerns = task_report_body(json!([]));
     no_concerns.as_object_mut().unwrap().remove("concerns");
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None, None)
+        .send(Role::Executor, Role::Leader, Kind::TaskReport, no_concerns, None, None)
         .is_err());
     // VERDICT rerun with non-numeric test is rejected.
     let mut bad_verdict = verdict_body();
@@ -295,11 +295,11 @@ fn test_schema_drives_body_check() {
         .get_mut("rerun")
         .unwrap()["test"] = json!("one");
     assert!(store
-        .send(Role::Judge, Role::Lead, Kind::Verdict, bad_verdict, None, None)
+        .send(Role::Judge, Role::Leader, Kind::Verdict, bad_verdict, None, None)
         .is_err());
     // numeric rerun is accepted.
     assert!(store
-        .send(Role::Judge, Role::Lead, Kind::Verdict, verdict_body(), None, None)
+        .send(Role::Judge, Role::Leader, Kind::Verdict, verdict_body(), None, None)
         .is_ok());
 }
 
@@ -309,7 +309,7 @@ fn test_envelope_uses_full_semantic_keys() {
     let store = MessageStore::new(dir.path());
     let envelope = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -333,9 +333,9 @@ fn test_envelope_uses_full_semantic_keys() {
     // Legacy long-key envelope must still deserialize and pass validation.
     // Long keys are now the only format, so this is the same format.
     let legacy = serde_json::json!({
-        "v": 1,
+        "v": 2,
         "id": "msg-legacy-001",
-        "from": "lead",
+        "from": "leader",
         "to": "executor",
         "kind": "TASK_DISPATCH",
         "reply_to": null,
@@ -365,7 +365,7 @@ fn test_next_id_uses_random_suffix() {
     let store = MessageStore::new(dir.path());
     let id1 = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -376,7 +376,7 @@ fn test_next_id_uses_random_suffix() {
         .id;
     let id2 = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -411,7 +411,7 @@ fn test_send_sets_reply_to() {
     let store = MessageStore::new(dir.path());
     let envelope = store
         .send(
-            Role::Lead,
+            Role::Leader,
             Role::Executor,
             Kind::TaskDispatch,
             dispatch_body(),
@@ -420,4 +420,101 @@ fn test_send_sets_reply_to() {
         )
         .unwrap();
     assert_eq!(envelope.reply_to.as_deref(), Some("msg-prev"));
+}
+
+#[test]
+fn test_leader_v2_serde_rejects_old_lead() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+
+    // 1. Actual MessageStore::send generates a v2 leader envelope.
+    let sent = store
+        .send(
+            Role::Leader,
+            Role::Executor,
+            Kind::TaskDispatch,
+            dispatch_body(),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(sent.v, 2, "sent envelope must use envelope version 2");
+    assert_eq!(sent.from, Role::Leader, "sent envelope must use leader role");
+    let raw = fs::read_to_string(
+        dir.path().join("messages").join(format!("{}.json", sent.id)),
+    )
+    .unwrap();
+    let obj: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(obj["v"], 2, "on-disk envelope must write v: 2");
+    assert_eq!(
+        obj["from"], "leader",
+        "on-disk envelope must write from: leader"
+    );
+
+    // 2. v2 with legacy lead role rejects on role / unknown variant.
+    let bad_role = serde_json::json!({
+        "v": 2,
+        "id": "msg-bad-role",
+        "from": "lead",
+        "to": "executor",
+        "kind": "TASK_DISPATCH",
+        "reply_to": null,
+        "ref": null,
+        "status": "sent",
+        "ts": "2026-11-20T10:00:00Z",
+    });
+    fs::write(
+        dir.path().join("messages").join("msg-bad-role.json"),
+        serde_json::to_string(&bad_role).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("messages").join("msg-bad-role.body.json"),
+        serde_json::to_string(&dispatch_body()).unwrap(),
+    )
+    .unwrap();
+    let errors = asep::agent_protocol::validate_dir(dir.path()).unwrap_err();
+    assert!(!errors.is_empty());
+    assert!(
+        errors.iter().any(|e| e.contains("lead") || e.contains("variant") || e.contains("role")),
+        "v2 with legacy lead role must be flagged: {errors:?}"
+    );
+
+    // 3. v1 with valid leader role rejects unknown envelope version via read/recv/ack/validate_dir.
+    let old = serde_json::json!({
+        "v": 1,
+        "id": "msg-old-leader",
+        "from": "leader",
+        "to": "executor",
+        "kind": "TASK_DISPATCH",
+        "reply_to": null,
+        "ref": null,
+        "status": "sent",
+        "ts": "2026-11-20T10:00:00Z",
+    });
+    fs::write(
+        dir.path().join("messages").join("msg-old-leader.json"),
+        serde_json::to_string(&old).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("messages").join("msg-old-leader.body.json"),
+        serde_json::to_string(&dispatch_body()).unwrap(),
+    )
+    .unwrap();
+    // read rejects old envelope version.
+    assert!(store.read("msg-old-leader").is_err());
+    // recv does not return old-version messages to the recipient.
+    let inbox: Vec<_> = store.recv(Role::Executor);
+    assert!(
+        !inbox.iter().any(|e| e.id == "msg-old-leader"),
+        "old v1 envelope must not be returned by recv: {:?}",
+        inbox.iter().map(|e| &e.id).collect::<Vec<_>>()
+    );
+    // validate_dir flags unknown envelope version.
+    let errors = asep::agent_protocol::validate_dir(dir.path()).unwrap_err();
+    assert!(
+        errors.iter().any(|e| e.contains("version")),
+        "old envelope version must be flagged: {errors:?}"
+    );
 }

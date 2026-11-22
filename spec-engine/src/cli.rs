@@ -29,6 +29,23 @@ pub struct Cli {
     pub command: Option<Commands>,
 }
 
+/// Validate an exact full lowercase Git object ID (40 lowercase hex characters).
+fn validate_commit_id(value: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    if value.len() == 40
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return Ok(value.to_string());
+    }
+    Err(
+        format!(
+            "invalid commit id '{value}': expected exact full lowercase Git object ID (40 lowercase hex characters)"
+        )
+        .into(),
+    )
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Verify 1:1 traceability, docstring contracts, and governance maps
@@ -198,6 +215,15 @@ pub enum Commands {
         /// Project root (default: current directory)
         #[arg(short, long)]
         root: Option<PathBuf>,
+    },
+
+    /// Accept a commit using the configured trusted local runner; does not authorize merge.
+    Accept {
+        #[arg(
+            value_parser = validate_commit_id,
+            help = "Exact full lowercase Git object ID (40 lowercase hex characters) of the commit to accept",
+        )]
+        commit: String,
     },
 
     /// Measure or clean Rust target artifacts by size threshold
