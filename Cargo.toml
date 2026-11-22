@@ -7,7 +7,6 @@ version = "0.1.0"
 edition = "2021"
 authors = ["da578"]
 license = "MIT OR Apache-2.0"
-rust-version = "1.80"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
