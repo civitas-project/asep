@@ -106,3 +106,124 @@ Every audited source file in the repository is refactored to sequential guard cl
 - The self-compliance phase is the bulk of the work: 35 files, 212 `else` tokens plus nested `if` sites. It is split into one executor unit per file; each unit is independently verified.
 - Making the rules Error-severity means intermediate commits will fail `asep check . --rigor T1` until the cleanup phase finishes. The final gate is the acceptance point.
 - `.asepignore` already excludes `spec-engine/tests/`, `srcidx/tests/`, `vendor/`, and `harness/e2e/vendor-loom/`, so third-party and fixture code is out of scope.
+
+## Rust build optimization pilot
+
+<!-- @design:BUILD-PILOT-01 -->
+Compare the current profile (A) with `debug = 0` for non-workspace dependencies only in `dev` and `test` (B). Test B with `--config 'profile.dev.package."*".debug=0' --config 'profile.test.package."*".debug=0'`. Workspace code keeps `line-tables-only`; the release profile, incremental compilation, features, linker, and `nightly-2026-11-14` pin stay unchanged. No new runner is needed.
+
+Use a temporary worktree at the same SHA on the repository filesystem; local `/tmp` is tmpfs. Use one experiment artifact directory at the same path for both variants. Clear only that directory when switching variants; leave the main `target/` intact. Record the SHA, toolchain, linker, job count, and test order. Run serially. Stop if free disk space approaches 4 GiB. At the initial audit, the main `target/` used 3.3 GiB and 8.7 GiB was free.
+
+Measure initial and no-change build wall times for context. After warmup, repeat each edit scenario at least three times per variant. Apply identical changes and restore sources outside measurement; rebuild the initial state before each repeat. Record timing samples, medians, observed peak disk usage from `du -s -B1`, and retained disk usage immediately after the same sequence. Sampling can miss brief spikes. Do not report p95 from three samples. Store results outside the experiment artifact directory.
+
+<!-- @design:BUILD-PILOT-02 -->
+Adopt only if both edit medians, observed peak disk usage, and retained disk usage decrease, and the timing improvement does not depend on one sample. Repeat the comparison if differences are close to sample variation; keep the current profile if still inconclusive. Compare the same test target inventory and outcomes. The pilot does not run the full suite or change the applicable acceptance gate.
+
+### Pilot work order
+
+| Order | File and symbol | Acceptance criteria | Verification command |
+|---|---|---|---|
+| 1. Measure function edit | `spec-engine/src/harness/e2e.rs`, `now_rfc3339` | Temporarily change `duration.as_secs()` to `duration.as_secs().saturating_add(1)` in the experiment worktree. Both variants build the same target. Record each repeat and restore the file. | `cargo build -p asep --bin asep --offline --locked --timings` |
+| 2. Measure test edit and disk | `spec-engine/tests/harness_e2e_test.rs`, `test_new_run_writes_manifest` | Temporarily replace the seed presence assertion with a check for seed `883735528`. Both variants use the same tests and outcomes. Record time, observed peak, and retained size for steps 1–2. Restore the file. | `cargo test -p asep --test harness_e2e_test --offline --locked -- --list`; `cargo test -p asep --test harness_e2e_test --offline --locked` |
+| 3. Adopt if it passes | `Cargo.toml`, `profile.dev.package."*".debug` and `profile.test.package."*".debug` | Add only these two overrides. Do not change global config, tests, or gates. Leave the manifest unchanged if the candidate fails. | Run `asep affected Cargo.toml` and its suggested commands. If empty, record the missing graph mapping; run `cargo metadata --offline --locked --no-deps --format-version 1` and repeat the pilot target test without override flags in the experiment directory. |
+
+<!-- @impl:BUILD-PILOT-01 -->
+The pilot ran at `446a0656` with 4 jobs in both orders: A then B, and B then A. Each run measured three function edits and three test edits. Test edit wall time covered compilation via `--list` and test execution. Disk sampling ran every 1.5 seconds; one sample in the second baseline failed when a temporary file disappeared.
+
+<!-- @impl:BUILD-PILOT-02 -->
+Both orders met the adoption criteria. The candidate became two overrides in `Cargo.toml`. Reference targets were not reached. The acceptance gate stayed unchanged.
+
+## Rust build optimization follow-up
+
+<!-- @design:BUILD-NEXT-01 -->
+Initial audit: `target/debug/build` used 1,205,305,344 bytes. Regular file blocks deduplicated by inode accounted for 919.0 MiB of compilation unit output, 203.9 MiB of build script executables and metadata, 20.0 MiB of build script output, and 6.6 MiB of other files. Grammar `.a` and `.o` files were not the main contributor. Four no-edit pilot builds reported no recompilation. This mixed-cache snapshot neither establishes the new profile size nor proves that every command is free from invalidation.
+
+<!-- @design:BUILD-NEXT-02 -->
+Start with one version duplication: `srcdump` uses TOML 0.8.23, while ASEP already resolves TOML 1.2.1 through its `1.1.8` version constraint. Compare compilation units, not just `cargo tree` lines. Do not unify `syn` across versions or change the TLS backend in this round.
+
+<!-- @design:BUILD-NEXT-03 -->
+Run all tests offline with the pinned nightly, the pilot debug profile, one experiment cache on the repository filesystem, and at least 4 GiB free. Do not clear the main cache. For structural A/B comparisons, start with an empty experiment directory at the same path. Measure the initial build, three identical edit rebuilds, and observed peak and retained disk usage. For job counts and queue behavior, match cache state before each trial and reverse the order. Record each process's wall time, total completion time, Cargo lock messages, and peak and retained disk usage. Do not generalize job count results to other machines. The full suite and acceptance gate stay unchanged.
+
+### Work order
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| 1. Audit cache | `target/debug/build`, unit directories and build script output | Classify blocks without double-counting hard links. List the largest components and distinguish old artifacts from active output when evidence permits. Delete nothing. | `du -s -B1 target/debug/build`; inode inventory; warm no-op pilot log |
+| 2a. Merge one group | `spec-engine/tests/lexer_test.rs`, `scanner` module | Copy `test_scan_project_tags_respects_gitignore` from `scanner_test` without changing its fixture or assertions. Keep the five lexer cases. | `cargo test -p asep --test lexer_test --offline --locked` |
+| 2b. Remove duplicate target | `spec-engine/tests/scanner_test.rs`, `scanner_test` target | Delete only after all six cases are listed and pass. Compare the two old targets against the new one. Adopt if cost drops and edit feedback does not slow beyond sample variation. | `cargo test -p asep --test lexer_test --offline --locked -- --list`; `cargo metadata --offline --locked --no-deps --format-version 1`; A/B benchmark |
+| 3a. Pin config behavior | `srcdump/tests/config_test.rs`, `Config::from_file` | Test a valid config fixture and invalid TOML before changing the parser version. | `cargo test -p srcdump --test config_test --offline --locked` |
+| 3b. Unify versions | `Cargo.toml`, `workspace.dependencies.toml` | Match ASEP's version constraint without changing other features. | `cargo metadata --offline --format-version 1` in the experiment worktree |
+| 3c. Update resolution | `Cargo.lock`, TOML 0.8 family | Resolve offline without unrelated upgrades. Adopt if the old units disappear, config tests pass, and feedback and disk usage do not regress. | `cargo tree -p asep -d --offline --locked`; `cargo test -p asep --test lexer_test --unit-graph -Z unstable-options --offline --locked`; `cargo test -p srcdump --test config_test --offline --locked` |
+| 4. Test job counts and queues | `spec-engine/tests/lexer_test.rs`, `lexer_test` target; `Cargo.toml`, unchanged `build.jobs` setting | Compare 2 versus 4 jobs for an initial build and a rebuild after the same edit. Compare identical serial and concurrent build/test pairs on the experiment cache. Separate lock wait from compilation where logs support it. Report findings without changing defaults. | `cargo build -p asep --bin asep --offline --locked --jobs <2-or-4> --timings`; `cargo test -p asep --test lexer_test --offline --locked --jobs <2-or-4>` |
+
+For each change, run `asep affected <changed-paths>` first. If it returns no commands or names nonexistent Cargo targets, record that and use the targeted checks in the table. Review each unit's diff and evidence before continuing.
+
+<!-- @impl:BUILD-NEXT-01 -->
+The audit is complete. Consolidating `scanner_test` into `lexer_test` was not adopted. The valid round saved 19.9 MiB of retained artifacts (2.7%), but every candidate edit sample was slower than every baseline sample. Both targets remain separate in the main worktree.
+
+<!-- @impl:BUILD-NEXT-02 -->
+TOML unification removed six old compilation units without adding any. It was not adopted: in one round, the initial build was faster and disk use was lower, but every candidate edit sample was slower than every baseline sample. The parser version and main lockfile stayed unchanged; the three `srcdump` config tests were retained.
+
+<!-- @impl:BUILD-NEXT-03 -->
+On this machine, 4 jobs were faster in one cold-cache comparison. The three edit samples per job count overlapped. Run builds and tests serially when sharing a target directory: concurrent runs hit lock waits without a consistent total time improvement. Cargo defaults stayed unchanged.
+
+## Full Rust P0: leader and local acceptance
+
+<!-- @design:FR-LEADER-01 -->
+Keep four agents. `leader` sets scope and reports review results, not acceptance. `executor` supplies the snapshot identity or diff hash, command, exit code, and output location. `judge` stays read-only and reviews the diff and evidence identifying the snapshot and worktree. `explorer` may use `read`/`grep` when `srcdump` is unavailable. Apply the new names in repository configuration and installer presets. Back up global config and change it only on this machine, preserving models and unrelated permissions.
+
+<!-- @design:FR-LEADER-02 -->
+Switch directly to `Role::Leader` and the wire value `leader`. Bump the envelope and schema versions from 1 to 2. Reject old versions and the value `lead`. Do not rewrite or migrate old messages. Kind rules, ACK permissions, and message status meanings stay unchanged.
+
+<!-- @design:FR-ACCEPT-01 -->
+Initial audit: `MANUAL.md` listed gates 1–5, while the workflow router and CLI used 0–4 with different checks. `verification::evaluate` accepts a boolean from `behavioral.json` without binding it to a snapshot. Keep `asep check` and `asep ci` as local feedback, not acceptance evidence. P0 proposes `asep accept` for one Git commit, with a clean snapshot prepared by the runner and policy and reference tests from an approved source. Build and test the candidate under a separate OS identity or isolation boundary with no write access to the runner, policy, reference tests, or evidence store. The runner records each gate result, commit, fingerprint of tested inputs, toolchain, and policy identity. Do not accept workspace JSON as evidence. Do not issue `ACCEPTED` if permission separation cannot be enforced.
+
+GitHub Actions for merge authorization is deferred. Do not enable or replace required checks or change branch protections. P0 verifies snapshots locally only. Compiling a benchmark does not prove performance.
+
+### Proposed implementation order
+
+Run `asep affected <changed-paths>` for each unit. Use targeted checks in the table if the graph does not map the change.
+
+| Unit | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| 1. Role contract | `spec-engine/tests/agent_protocol_test.rs`, `spec-engine/tests/mcp_test.rs`, `spec-engine/tests/integration_check_test.rs`; role and envelope fixtures and legacy-version cases | New names are valid; old names and envelopes are rejected. Keep ACK and invalid-version diagnostic coverage. | `cargo test -p asep --offline --locked --test agent_protocol_test --test mcp_test --test integration_check_test` |
+| 2. Hard cutover | `spec-engine/src/agent_protocol/mod.rs` (`Role`, `ENVELOPE_VERSION`, `MessageStore::ack`), `spec-engine/policy/agent-protocol.toml` (`version`, `roles`), `spec-engine/src/mcp/tools.rs` (`mcp_role`, tool descriptions) | Rust, schema, and MCP agree without aliases. All three must agree before closing the unit. | Unit 1 test command. |
+| 3. Presets and terminology | `spec-engine/src/pack/manifest.rs` (`scaffold_opencode_agents`), `spec-engine/tests/targets_test.rs` (preset tests), `opencode.json` and `~/.config/opencode/opencode.json` (`agents`, `default_agent`); role documentation in `workflow-router/skill/SKILL.md` and `harness/e2e/RUNBOOK.md` | New presets use `leader`; global config selects it without changing models or permissions. Add no agent. | `cargo test -p asep --offline --locked --test targets_test`; validate both JSON configs and OpenCode agent selection. |
+| 4. Gate contract | `MANUAL.md` (pipeline), `spec-engine/src/ci/mod.rs` (`gate_name`, `run_ci_pipeline`) | Reconcile numbers, commands, and mandatory versus N/A outcomes before wiring acceptance. Skipping a mandatory gate cannot count as a pass. | `cargo test -p asep --offline --locked --test ci_and_formal_test` |
+| 5. Offline acceptance | `spec-engine/src/acceptance.rs` (proposed `evaluate_acceptance`), `spec-engine/src/cli.rs` (`Commands::Accept`), `spec-engine/src/runner.rs` (dispatch), `spec-engine/tests/acceptance_test.rs` | Evidence applies only to the tested snapshot. Test failed or skipped gates, missing, stale, or forged evidence, input changes, and missing isolation. | `cargo test -p asep --offline --locked --test acceptance_test`; test without network and verify write denial from the candidate process identity. |
+| 6. Remove workflow from P0 | `.github/workflows/asep-merge.yml` (`asep-merge`), `opencode.json` (`agents.leader.system`), `spec-engine/src/pack/manifest.rs` (`scaffold_opencode_agents`), `workflow-router/skill/SKILL.md` (role protocol), `MANUAL.md` (pipeline) | Delete the undeployed draft workflow. Prompts and docs do not name GitHub Actions as an active gate. Check global config and update `agents.leader.system` only if it claims Actions are active. Leave rulesets, permissions, and models unchanged. | `test ! -e .github/workflows/asep-merge.yml`; validate JSON config; `cargo test -p asep --offline --locked --test targets_test`; `git diff --check` |
+| 7. Close local acceptance | `spec-engine/src/acceptance/runner.rs` (`accept_commit`), `spec-engine/tests/acceptance_test.rs` (success and rejection evidence), `docs/TRACEABILITY.md` (`FR-ACCEPT-01`) | Run a controlled Git fixture on a provisioned Linux runner without network. A valid snapshot passes mandatory gates and yields protected evidence. A wrong snapshot, failed gate, or untrusted environment yields no accepted evidence. Do not close the requirement before obtaining success evidence. | `cargo test -p asep --offline --locked --lib acceptance::`; `cargo test -p asep --offline --locked --test acceptance_test`; test `asep accept <full-commit>` on the provisioned fixture; `asep check . --rigor T1` |
+
+Split multi-file rows into single-file or single-symbol units before delegation. P0 makes no other agent API changes and adds no ENI, persistent state machine, or crate.
+
+## ASEP 3.0.0-alpha release
+
+<!-- @design:FR-REL-03 -->
+Bump the major version because `Role::Lead`, wire value `lead`, and envelope v1 are no longer compatible. Stay on alpha. Keep the P0 and version commits separate and retain the local build optimization commit. Exclude PDFs, `SUGEST.md`, and local logs. The original publication plan pushed the same SHA to `release/3.0.0-alpha` on both remotes without force-pushing, merging, or tagging. The approved history replacement below applies only to that release branch.
+
+<!-- @design:FR-REL-04 -->
+Global OpenCode runs `asep mcp` from `PATH`, selecting `1.0.0-alpha`. Back up and atomically replace `~/.cargo/bin/asep` with the binary built from the verified release commit. Use its absolute path in `mcp.asep.command` so OpenCode cannot select another binary. Preserve `args`, default `leader`, models, providers, and permissions. A user MCP installation does not provision the trusted runner.
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| 1. Commit P0 | Reviewed P0 diff, `HEAD` and `refs/heads/release/3.0.0-alpha` | Compare both remotes; preserve the GitHub `dev` baseline and local commits without overwriting remote branches in the initial push. Commit only reviewed P0 files. | `git diff --check`; `git merge-base --is-ancestor`; `asep affected <changed-paths>`; `asep check . --rigor T1` |
+| 2. Bump Rust | `spec-engine/Cargo.toml`, `package.version`; `Cargo.lock`, `asep` package (separate unit) | Both use `3.0.0-alpha`; other dependency versions stay unchanged. | `cargo metadata --offline --locked --no-deps --format-version 1`; inspect lockfile diff |
+| 3. Bump Dart | `spec-engine/dart/pubspec.yaml`, `version` | Version is `3.0.0-alpha`. | Check the YAML `version` field |
+| 4. Changelog | `CHANGELOG.md`, `3.0.0-alpha` section | Record the breaking rename, protocol v2, offline acceptance, and build optimization. Do not claim merge or deployment. | `git diff --check`; inspect changelog section |
+| 5. Verify and push | `docs/TRACEABILITY.md`, `FR-REL-03`/`FR-REL-04` evidence; release refs on both remotes | Record actual evidence. Commit the version separately. Both remotes point to the same release SHA. | `asep affected <changed-paths>`; targeted tests; `cargo build -p asep --offline --locked --bin asep`; `asep --version`; `asep check . --rigor T1`; `git ls-remote` |
+| 6. Synchronize global OpenCode | `~/.cargo/bin/asep` (binary); `~/.config/opencode/opencode.json`, `mcp.asep.command` (separate unit) | The installed binary matches the release build. Only the ASEP MCP target changes in the config. | Compare binary hashes; run `--version` and MCP `initialize` via the configured command; compare JSON before and after |
+
+### English release documentation and commit replacement
+
+<!-- @design:FR-REL-05 -->
+Recreate the three release commits from `446a0656` with their existing English subjects and intent. Keep the old tip as a local recovery ref. Translate Indonesian additions to English without changing runtime behavior, benchmark results, or acceptance criteria. Replace only the unmerged release branch, using an explicit lease against each remote's previously verified tip. Do not rewrite `main`, `dev`, or tags. If either lease fails, stop and report the mismatch.
+
+| Unit | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| 1 | `docs/PRD.md`, build optimization, P0, and release sections | English prose; existing requirements and IDs preserved. | `git diff --check -- docs/PRD.md`; review translated sections against the old tip. |
+| 2 | `docs/TDD.md`, build optimization, P0, and release sections | English prose; numerical results, commands, and deployment limits preserved. | `git diff --check -- docs/TDD.md`; compare commands and measurements with the old tip. |
+| 3 | `docs/TRACEABILITY.md`, build, P0, and release evidence sections | English evidence and notes; graph links and measured results preserved. | `asep affected docs/TRACEABILITY.md`; `git diff --check -- docs/TRACEABILITY.md`; `asep check . --rigor T1`. |
+| 4 | `CHANGELOG.md`, `3.0.0-alpha` section | English and accurate; no claim of merge or tagged release. | `git diff --check -- CHANGELOG.md`; inspect release section and commit subjects. |
+| 5 | `refs/heads/release/3.0.0-alpha` and release PR text | Recreated commits contain no unintended file changes; both remote release refs match the new tip; PR text is English. | Compare old and new tip trees, run targeted checks only, check both refs with `git ls-remote`, and inspect the draft PR. |
+
+After the tip is verified, synchronize the global OpenCode MCP binary as planned above. The full suite, merge, and tagging remain out of scope.

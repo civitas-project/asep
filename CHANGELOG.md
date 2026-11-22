@@ -5,6 +5,16 @@ All notable changes to `ASEP` (Axiomatic Systems Engineering Protocol) will be d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-alpha] - Unreleased
+
+Release candidate; not published or tagged.
+
+### Changed
+- **Breaking:** leader protocol v2 — OpenCode agent `lead` renamed to `leader` (Rust `Role::Leader`), wire `leader` envelope v2 only; old role and v1 envelope rejected, no alias.
+- `asep accept` accepts offline Linux provisioned targets without network fetch.
+- Debug info reduced for non-workspace dependencies in dev/test profiles; workspace line tables kept.
+- GitHub Actions deferred; no scheduling claimed.
+
 ## [2.0.0-alpha] - 2026-11-21
 
 ### Changed
@@ -65,4 +75,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Diátaxis Living Manual** (MANUAL.md, Parts I–V) per ISO/IEC/IEEE 26514:2022
 
 ### Notes
-- Pre-release / alpha: `2.0.0-alpha`. First tagged release was `v1.0.0-alpha`.
+- Pre-release / alpha: `3.0.0-alpha`. First tagged release was `v1.0.0-alpha`.

@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 const MESSAGES_DIR: &str = "messages";
-const ENVELOPE_VERSION: u8 = 1;
+const ENVELOPE_VERSION: u8 = 2;
 const STATUS_SENT: &str = "sent";
 
 /// Canonical protocol schema, loaded once from `policy/agent-protocol.toml`.
@@ -65,11 +65,12 @@ pub fn protocol_schema() -> &'static ProtocolSchema {
     })
 }
 
+// @impl:FR-LEADER-02
 /// Every role allowed on the bus.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
-    #[serde(rename = "lead")]
-    Lead,
+    #[serde(rename = "leader")]
+    Leader,
     #[serde(rename = "executor")]
     Executor,
     #[serde(rename = "judge")]
@@ -81,7 +82,7 @@ pub enum Role {
 impl Role {
     pub fn as_str(&self) -> &str {
         match self {
-            Role::Lead => "lead",
+            Role::Leader => "leader",
             Role::Executor => "executor",
             Role::Judge => "judge",
             Role::Explorer => "explorer",
@@ -286,9 +287,9 @@ impl MessageStore {
         let env_path = self.messages_dir.join(format!("{id}.json"));
         let mut envelope = read_envelope_file(&env_path)?;
         let is_recipient = envelope.to == agent;
-        let is_lead_rejecting_own =
-            agent == Role::Lead && envelope.from == Role::Lead && status == "rejected";
-        if !is_recipient && !is_lead_rejecting_own {
+        let is_leader_rejecting_own =
+            agent == Role::Leader && envelope.from == Role::Leader && status == "rejected";
+        if !is_recipient && !is_leader_rejecting_own {
             return Err(format!("only recipient {} may ack {}", envelope.to.as_str(), id));
         }
         envelope.status = status.to_string();
@@ -433,9 +434,6 @@ fn validate_envelope(
     errors: &mut Vec<String>,
 ) {
     let prefix = format!("envelope {}", envelope.id);
-    if envelope.v != ENVELOPE_VERSION {
-        errors.push(format!("{prefix}: unknown envelope version {}", envelope.v));
-    }
     if !protocol_schema()
         .statuses
         .iter()
@@ -520,7 +518,11 @@ fn hash_file(path: &Path) -> Result<String, String> {
 
 fn read_envelope_file(path: &Path) -> Result<Envelope, String> {
     let data = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&data).map_err(|e| e.to_string())
+    let envelope: Envelope = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    if envelope.v != ENVELOPE_VERSION {
+        return Err(format!("unknown envelope version {}", envelope.v));
+    }
+    Ok(envelope)
 }
 
 fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), String> {

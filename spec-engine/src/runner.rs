@@ -1937,6 +1937,23 @@ pub fn run() -> ExitCode {
             }
         }
 
+        Some(Commands::Accept { commit }) => {
+            match crate::acceptance::runner::accept_commit(&commit) {
+                Ok(evidence_path) => {
+                    println!(
+                        "{} ACCEPTED: {}",
+                        "✔".green(),
+                        evidence_path.display()
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(diagnostic) => {
+                    eprintln!("{} NOT ACCEPTED: {diagnostic}", "✖".red());
+                    ExitCode::from(1)
+                }
+            }
+        }
+
         None => {
             let banner =
                 format!("Spec-Engine SDLC Validation Engine v{} (Rust)", env!("CARGO_PKG_VERSION"));
