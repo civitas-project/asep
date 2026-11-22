@@ -260,14 +260,12 @@ pub fn vendor_loom(run_dir: &Path, vendor_src: &Path) -> Result<(), String> {
     fs::write(src_dir.join("lib.rs"), LOOM_PROOF_LIB_RS)
         .map_err(|e| format!("failed to write proof lib.rs: {e}"))?;
 
-    // generator 0.8.12 (vendored by loom 0.7.3) uses `cfg_select!`, which is
-    // stable only from Rust 1.95. The workspace pin (rust-toolchain.toml) is
-    // 1.94.0 (PR #19), so the loom proof must run on nightly-2026-11-14 which
-    // has cfg_select. Scope the toolchain override to this command only.
+    // The workspace is pinned to nightly-2026-11-14, which provides the
+    // `cfg_select!` feature used by generator 0.8.12 (vendored by loom 0.7.3).
+    // No per-command toolchain override is needed.
     let mut child = Command::new("cargo")
         .args(["test", "--features", "loom-test", "--offline"])
         .env("LOOM_MAX_BRANCHES", "4096")
-        .env("RUSTUP_TOOLCHAIN", "nightly-2026-11-14")
         .current_dir(&proof_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
