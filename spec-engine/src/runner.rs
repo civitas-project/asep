@@ -1771,6 +1771,63 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
+            HarnessCommands::NewRun { run_id, root } => {
+                let root = root
+                    .or_else(|| std::env::var("RUN_ROOT").ok().map(PathBuf::from))
+                    .unwrap_or_else(crate::harness::e2e::default_run_root);
+                match crate::harness::e2e::new_run(&root, &run_id) {
+                    Ok(run_dir) => {
+                        println!("{}", run_dir.display());
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{} {e}", "✖".red());
+                        ExitCode::from(1)
+                    }
+                }
+            }
+            HarnessCommands::VendorLoom {
+                run_dir,
+                vendor_path,
+                offline: _,
+            } => {
+                let vendor_src = vendor_path
+                    .unwrap_or_else(|| crate::harness::e2e::repo_root().join("harness").join("e2e").join("vendor-loom"));
+                match crate::harness::e2e::vendor_loom(&run_dir, &vendor_src) {
+                    Ok(()) => {
+                        println!("VENDOR_OK");
+                        ExitCode::SUCCESS
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
+            HarnessCommands::Verify { run_dir } => {
+                let repo_root = crate::harness::e2e::repo_root();
+                match crate::harness::e2e::verify_artifacts(&run_dir, &repo_root) {
+                    Ok(report) => {
+                        println!(
+                            "pass={} hash_lock_ok={} test_rerun_exit_code={} check_rerun_exit_code={}",
+                            report.pass,
+                            report.hash_lock_ok,
+                            report.test_rerun.exit_code,
+                            report.check_rerun.exit_code,
+                        );
+                        #[allow(clippy::match_bool)]
+                        // Guard-clause policy: match bool instead of `if/else`.
+                        match report.pass {
+                            true => ExitCode::SUCCESS,
+                            false => ExitCode::from(1),
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{e}");
+                        ExitCode::from(1)
+                    }
+                }
+            }
         },
 
         Some(Commands::Clean {

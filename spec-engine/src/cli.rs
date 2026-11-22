@@ -581,4 +581,28 @@ pub enum HarnessCommands {
         #[arg(long, default_value = "30s", help = "Timeout")]
         timeout: String,
     },
+    /// Create a new E2E run directory and manifest
+    NewRun {
+        /// Run identifier
+        run_id: String,
+        /// Run root (default: <temp-dir>/opencode/asep-e2e, env RUN_ROOT overrides)
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    /// Vendor loom = "=0.7.3" into an E2E run directory and prove it works offline
+    VendorLoom {
+        /// E2E run directory
+        run_dir: PathBuf,
+        /// Path to a vendored loom tree (default: <repo_root>/harness/e2e/vendor-loom)
+        #[arg(long)]
+        vendor_path: Option<PathBuf>,
+        /// Accepted for compatibility; cargo is always invoked --offline
+        #[arg(long)]
+        offline: bool,
+    },
+    /// Verify an ASEP E2E run directory (artifacts, hash lock, re-runs)
+    Verify {
+        /// E2E run directory
+        run_dir: PathBuf,
+    },
 }
