@@ -169,10 +169,17 @@ fn test_update_opencode_json_preserves_existing_keys_and_merges_mcp() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
-    // Existing user config with custom plugin and settings
+    // Existing user config with custom plugin, settings, a legacy `mcp.asep`
+    // entry from a previous merge, and another pre-existing mcp.servers entry.
     let initial_json = r#"{
         "plugin": ["some-existing-plugin"],
-        "customSetting": true
+        "customSetting": true,
+        "mcp": {
+            "asep": {"command": "asep", "args": ["mcp"]},
+            "servers": {
+                "other": {"type": "sse", "url": "http://example.com/mcp"}
+            }
+        }
     }"#;
     fs::write(&config_file, initial_json).unwrap();
 
@@ -185,12 +192,23 @@ fn test_update_opencode_json_preserves_existing_keys_and_merges_mcp() {
     assert_eq!(parsed["customSetting"], true);
     assert_eq!(parsed["plugin"][0], "some-existing-plugin");
 
-    // Verify MCP config is properly added
-    assert!(parsed["mcp"]["asep"].is_object());
-    assert_eq!(parsed["mcp"]["asep"]["type"], "local");
-    assert_eq!(parsed["mcp"]["asep"]["command"], "asep");
-    assert_eq!(parsed["mcp"]["asep"]["args"][0], "mcp");
-    assert_eq!(parsed["mcp"]["asep"]["enabled"], true);
+    // Pre-existing mcp.servers entries are preserved.
+    assert_eq!(parsed["mcp"]["servers"]["other"]["type"], "sse");
+    assert_eq!(
+        parsed["mcp"]["servers"]["other"]["url"],
+        "http://example.com/mcp"
+    );
+
+    // MCP config is added in OpenCode v2 shape under mcp.servers.asep with
+    // command array [command, "mcp"].
+    assert!(parsed["mcp"]["servers"]["asep"].is_object());
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["type"], "local");
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["command"][0], "asep");
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["command"][1], "mcp");
+
+    // Legacy top-level mcp.asep entry must be absent.
+    let mcp_obj = parsed["mcp"].as_object().expect("mcp must be an object");
+    assert!(!mcp_obj.contains_key("asep"), "legacy mcp.asep must be removed");
 }
 
 // @test:ARCH-06
