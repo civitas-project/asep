@@ -1,4 +1,5 @@
 //! Tool definitions and execution dispatch for MCP.
+// @impl:FR-CAP-02
 
 use crate::adr::create_new_adr;
 use crate::agent_protocol::{Kind, MessageStore, Role};
@@ -249,6 +250,28 @@ pub fn get_tools_list() -> serde_json::Value {
                         "reply_to": {
                             "type": "string",
                             "description": "Optional id of the message this is a reply to"
+                        },
+                        "required_capabilities": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Required capabilities the recipient must have"
+                        },
+                        "media": {
+                            "type": "string",
+                            "description": "Media type of the message body"
+                        },
+                        "domain": {
+                            "type": "string",
+                            "description": "Domain of the message"
+                        },
+                        "tool_filter": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Allowed tools for the delegated task"
+                        },
+                        "delegation_threshold": {
+                            "type": "integer",
+                            "description": "Delegation threshold"
                         }
                     },
                     "required": ["run_dir", "agent", "to", "kind", "body"]
@@ -697,7 +720,7 @@ pub fn execute_tool(
             let from = mcp_role(mcp_require_str(arguments, "agent")?)?;
             let to = mcp_role(mcp_require_str(arguments, "to")?)?;
             let kind = mcp_kind(arguments, "kind")?;
-            let body = arguments
+            let mut body = arguments
                 .get("body")
                 .ok_or_else(|| "Missing required parameter 'body'".to_string())?
                 .clone();
@@ -706,6 +729,34 @@ pub fn execute_tool(
                 .and_then(|v| v.as_str())
                 .map(Path::new);
             let reply_to = arguments.get("reply_to").and_then(|v| v.as_str());
+
+            let required_capabilities = mcp_opt_array_of_strings(arguments, "required_capabilities")?;
+            let media = mcp_opt_string(arguments, "media")?;
+            let domain = mcp_opt_string(arguments, "domain")?;
+            let tool_filter = mcp_opt_array_of_strings(arguments, "tool_filter")?;
+            let delegation_threshold = mcp_opt_i64(arguments, "delegation_threshold")?;
+
+            match body.as_object_mut() {
+                Some(obj) => {
+                    if let Some(caps) = required_capabilities {
+                        obj.entry("required_capabilities").or_insert(json!(caps));
+                    }
+                    if let Some(m) = media {
+                        obj.entry("media").or_insert(json!(m));
+                    }
+                    if let Some(d) = domain {
+                        obj.entry("domain").or_insert(json!(d));
+                    }
+                    if let Some(f) = tool_filter {
+                        obj.entry("tool_filter").or_insert(json!(f));
+                    }
+                    if let Some(t) = delegation_threshold {
+                        obj.entry("delegation_threshold").or_insert(json!(t));
+                    }
+                }
+                None => {}
+            }
+
             let store = MessageStore::new(&run_dir);
             let envelope = store.send(from, to, kind, body, ref_path, reply_to)?;
             mcp_text(json!({
@@ -773,6 +824,47 @@ fn mcp_require_str<'a>(arguments: &'a serde_json::Value, key: &str) -> Result<&'
         .get(key)
         .and_then(|v| v.as_str())
         .ok_or_else(|| format!("Missing required parameter '{key}'"))
+}
+
+fn mcp_opt_array_of_strings(
+    arguments: &serde_json::Value,
+    key: &str,
+) -> Result<Option<Vec<String>>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .as_array()
+            .ok_or_else(|| format!("invalid {key}"))?
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| format!("invalid {key}"))
+            })
+            .collect::<Result<Vec<String>, String>>()
+            .map(Some),
+    }
+}
+
+fn mcp_opt_string(arguments: &serde_json::Value, key: &str) -> Result<Option<String>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("invalid {key}"))
+            .map(Some),
+    }
+}
+
+fn mcp_opt_i64(arguments: &serde_json::Value, key: &str) -> Result<Option<i64>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .as_i64()
+            .ok_or_else(|| format!("invalid {key}"))
+            .map(Some),
+    }
 }
 
 fn mcp_role(value: &str) -> Result<Role, String> {

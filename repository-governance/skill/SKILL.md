@@ -1,6 +1,7 @@
 ---
 name: repository-governance
 description: Use when authoring or auditing root governance files (README.md, ARCHITECTURE.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md) or human-centric manuals (MANUAL.md via Diátaxis)
+requires: []
 version: 2.1.0
 depends: []
 ---

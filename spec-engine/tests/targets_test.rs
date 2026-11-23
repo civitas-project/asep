@@ -1,3 +1,4 @@
+// @test:FR-CAP-06 // @test:FR-CAP-07
 use asep::config::settings::CapabilityProfile;
 use asep::pack::manifest::{
     generate_plugin_json, scaffold_opencode_agents, update_opencode_json,
@@ -659,4 +660,23 @@ fn test_leader_system_defaults_to_targeted_verification() {
         normalized.contains("full suite is reserved for merges to main"),
         "leader system must reserve the full suite for merges to main"
     );
+}
+
+// @test:ARCH-06
+#[test]
+fn test_scaffold_opencode_agents_includes_worker_presets() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    for name in ["code-worker", "git-worker", "media-worker", "verifier"] {
+        let agent = &parsed["agents"][name];
+        assert!(agent.is_object(), "{name} agent missing");
+        assert_eq!(agent["mode"], "subagent", "{name} mode must be subagent");
+        assert_eq!(agent["steps"], 20, "{name} steps must be 20");
+    }
 }

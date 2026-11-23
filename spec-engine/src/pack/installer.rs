@@ -1,8 +1,9 @@
 //! Interactive `inquire` TUI installer and headless packaging engine.
+// @impl:FR-AMB-02
 
 use crate::config::settings::load_config;
 use crate::pack::embedded::{
-    get_default_mcp_config_json, get_default_plugin_json, get_embedded_skills,
+    get_default_mcp_config_json, get_default_plugin_json,
 };
 use crate::pack::manifest::{scaffold_opencode_agents, update_opencode_json};
 use crate::pack::targets::{default_global_home, resolve_target_paths, InstallScope, TargetAgent};
@@ -177,38 +178,6 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
         return Ok(());
     }
 
-    // 4. Resolve Skills to extract
-    let all_embedded = get_embedded_skills();
-    let skills_to_install: Vec<&crate::pack::embedded::EmbeddedSkill> = match (
-        !opts.non_interactive,
-        opts.skills_filter.is_some(),
-    ) {
-        (_, true) => {
-            let filter = opts.skills_filter.as_ref().unwrap();
-            all_embedded
-                .iter()
-                .filter(|s| filter.iter().any(|f| f == s.id || f == s.directory))
-                .collect()
-        }
-        (true, false) => {
-            let skill_names: Vec<&str> = all_embedded.iter().map(|s| s.id).collect();
-            let default_indices: Vec<usize> = (0..all_embedded.len()).collect();
-            let selected_skills = MultiSelect::new("Select skills to unpack:", skill_names)
-                .with_default(&default_indices)
-                .with_help_message("Space to toggle, Enter to confirm selection")
-                .prompt()
-                .unwrap_or_else(|_| all_embedded.iter().map(|s| s.id).collect());
-
-            all_embedded
-                .iter()
-                .filter(|s| selected_skills.contains(&s.id))
-                .collect()
-        }
-        (false, false) => all_embedded.iter().collect(),
-    };
-
-    let skills = skills_to_install;
-
     for agent in agents {
         match agent {
             TargetAgent::Antigravity => {
@@ -224,32 +193,14 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                     get_default_mcp_config_json(),
                 )?;
 
-                // Write skills
-                let skills_dir = plugin_dir.join("skills");
-                for skill in &skills {
-                    let s_dir = skills_dir.join(skill.directory);
-                    fs::create_dir_all(&s_dir)?;
-                    fs::write(s_dir.join("SKILL.md"), skill.content)?;
-                }
-
                 println!(
-                    "{} Installed Antigravity plugin with {} skills at {}",
+                    "{} Installed Antigravity plugin at {}",
                     "✔".green(),
-                    skills.len(),
                     plugin_dir.display()
                 );
             }
 
             TargetAgent::OpenCode => {
-                let skills_dir = resolve_target_paths(&scope, TargetAgent::OpenCode);
-                fs::create_dir_all(&skills_dir)?;
-
-                for skill in &skills {
-                    let s_dir = skills_dir.join(skill.directory);
-                    fs::create_dir_all(&s_dir)?;
-                    fs::write(s_dir.join("SKILL.md"), skill.content)?;
-                }
-
                 // Update opencode.json
                 let config_file = match &scope {
                     InstallScope::Local(dir) => dir.join("opencode.json"),
@@ -263,165 +214,90 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 scaffold_opencode_agents(&config_file, &profile)?;
 
                 println!(
-                    "{} Installed OpenCode with {} skills, MCP, and agent presets in {}",
+                    "{} Installed OpenCode with MCP config and agent presets in {}",
                     "✔".green(),
-                    skills.len(),
                     config_file.display()
                 );
             }
 
             TargetAgent::ClaudeCode => {
-                let skills_dir = resolve_target_paths(&scope, TargetAgent::ClaudeCode);
-                fs::create_dir_all(&skills_dir)?;
-
-                for skill in &skills {
-                    let s_dir = skills_dir.join(skill.directory);
-                    fs::create_dir_all(&s_dir)?;
-                    fs::write(s_dir.join("SKILL.md"), skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::ClaudeCode);
                 println!(
-                    "{} Installed Claude Code with {} skills at {}",
+                    "{} Installed Claude Code at {}",
                     "✔".green(),
-                    skills.len(),
-                    skills_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Cursor => {
-                let rules_dir = resolve_target_paths(&scope, TargetAgent::Cursor);
-                fs::create_dir_all(&rules_dir)?;
-
-                for skill in &skills {
-                    let rule_file = rules_dir.join(format!("{}.mdc", skill.id));
-                    fs::write(rule_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Cursor);
                 println!(
-                    "{} Installed Cursor AI with {} rules (.mdc) at {}",
+                    "{} Installed Cursor AI at {}",
                     "✔".green(),
-                    skills.len(),
-                    rules_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Windsurf => {
-                let rules_dir = resolve_target_paths(&scope, TargetAgent::Windsurf);
-                fs::create_dir_all(&rules_dir)?;
-
-                for skill in &skills {
-                    let rule_file = rules_dir.join(format!("{}.md", skill.id));
-                    fs::write(rule_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Windsurf);
                 println!(
-                    "{} Installed Windsurf with {} rules at {}",
+                    "{} Installed Windsurf at {}",
                     "✔".green(),
-                    skills.len(),
-                    rules_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Continue => {
-                let rules_dir = resolve_target_paths(&scope, TargetAgent::Continue);
-                fs::create_dir_all(&rules_dir)?;
-
-                for skill in &skills {
-                    let rule_file = rules_dir.join(format!("{}.md", skill.id));
-                    fs::write(rule_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Continue);
                 println!(
-                    "{} Installed Continue with {} rules at {}",
+                    "{} Installed Continue at {}",
                     "✔".green(),
-                    skills.len(),
-                    rules_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::RooCode => {
-                let rules_dir = resolve_target_paths(&scope, TargetAgent::RooCode);
-                fs::create_dir_all(&rules_dir)?;
-
-                for skill in &skills {
-                    let rule_file = rules_dir.join(format!("{}.md", skill.id));
-                    fs::write(rule_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::RooCode);
                 println!(
-                    "{} Installed Roo Code / Cline with {} rules at {}",
+                    "{} Installed Roo Code / Cline at {}",
                     "✔".green(),
-                    skills.len(),
-                    rules_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Copilot => {
-                let skills_dir = resolve_target_paths(&scope, TargetAgent::Copilot);
-                fs::create_dir_all(&skills_dir)?;
-
-                for skill in &skills {
-                    let skill_file = skills_dir.join(format!("{}.md", skill.id));
-                    fs::write(skill_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Copilot);
                 println!(
-                    "{} Installed GitHub Copilot with {} skills at {}",
+                    "{} Installed GitHub Copilot at {}",
                     "✔".green(),
-                    skills.len(),
-                    skills_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Goose => {
-                let skills_dir = resolve_target_paths(&scope, TargetAgent::Goose);
-                fs::create_dir_all(&skills_dir)?;
-
-                for skill in &skills {
-                    let s_dir = skills_dir.join(skill.directory);
-                    fs::create_dir_all(&s_dir)?;
-                    fs::write(s_dir.join("SKILL.md"), skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Goose);
                 println!(
-                    "{} Installed Goose with {} skills at {}",
+                    "{} Installed Goose at {}",
                     "✔".green(),
-                    skills.len(),
-                    skills_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Zed => {
-                let rules_dir = resolve_target_paths(&scope, TargetAgent::Zed);
-                fs::create_dir_all(&rules_dir)?;
-
-                for skill in &skills {
-                    let rule_file = rules_dir.join(format!("{}.md", skill.id));
-                    fs::write(rule_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Zed);
                 println!(
-                    "{} Installed Zed Editor with {} rules at {}",
+                    "{} Installed Zed Editor at {}",
                     "✔".green(),
-                    skills.len(),
-                    rules_dir.display()
+                    target.display()
                 );
             }
 
             TargetAgent::Aider => {
-                let conventions_dir = resolve_target_paths(&scope, TargetAgent::Aider);
-                fs::create_dir_all(&conventions_dir)?;
-
-                for skill in &skills {
-                    let conv_file = conventions_dir.join(format!("{}.md", skill.id));
-                    fs::write(conv_file, skill.content)?;
-                }
-
+                let target = resolve_target_paths(&scope, TargetAgent::Aider);
                 println!(
-                    "{} Installed Aider with {} conventions at {}",
+                    "{} Installed Aider at {}",
                     "✔".green(),
-                    skills.len(),
-                    conventions_dir.display()
+                    target.display()
                 );
             }
         }

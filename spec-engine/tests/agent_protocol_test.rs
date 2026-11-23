@@ -1,3 +1,4 @@
+// @test:FR-CAP-05
 use asep::agent_protocol::{Kind, MessageStore, Role};
 use serde_json::json;
 use std::fs;
@@ -403,6 +404,64 @@ fn test_next_id_uses_random_suffix() {
         suffix2.chars().all(|c| c.is_ascii_hexdigit()),
         "suffix must be hex: {suffix2}"
     );
+}
+
+#[test]
+fn test_task_report_optional_fields_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+
+    let mut valid = task_report_body(json!([]));
+    valid
+        .as_object_mut()
+        .unwrap()
+        .insert("tool_call_count".to_string(), json!(42));
+    valid
+        .as_object_mut()
+        .unwrap()
+        .insert("duplicate_calls".to_string(), json!(["a", "b"]));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            valid,
+            None,
+            None
+        )
+        .is_ok());
+
+    let mut bad_numeric = task_report_body(json!([]));
+    bad_numeric
+        .as_object_mut()
+        .unwrap()
+        .insert("tool_call_count".to_string(), json!("lots"));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            bad_numeric,
+            None,
+            None
+        )
+        .is_err());
+
+    let mut bad_array = task_report_body(json!([]));
+    bad_array
+        .as_object_mut()
+        .unwrap()
+        .insert("duplicate_calls".to_string(), json!("not an array"));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            bad_array,
+            None,
+            None
+        )
+        .is_err());
 }
 
 #[test]
