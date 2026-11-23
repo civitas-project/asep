@@ -5,6 +5,19 @@ All notable changes to `ASEP` (Axiomatic Systems Engineering Protocol) will be d
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-alpha] - Unreleased
+
+### Added
+- Capability-aware delegation: `CapabilityProfile` now carries extensible `supported_media`, `tool_domains`, and `delegation_threshold`. `asep_agent_send` accepts optional capability/media fields and rejects tasks whose required capabilities or media are unsupported before any message is stored.
+- Ambient skill discovery: `asep init` injects a pointer block into `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` and scaffolds a flat `skills/` tree, including the `using-asep` bootstrap skill. `asep check --rigor T1` validates ambient skill structure.
+- Capability-domain agent presets (`code-worker`, `git-worker`, `media-worker`, `verifier`) and judge trajectory review of `tool_call_count`/`duplicate_calls`.
+
+
+### Changed
+- **Breaking:** `asep pack` is now provisioning-only; skill file copying was removed. Use `asep init` for ambient skill files.
+- **Breaking:** `PackOptions.skills_filter` was removed.
+- OpenCode MCP wiring now uses the v2 `mcp.servers.asep` shape instead of legacy `mcp.asep`.
+
 ## [2.0.0-alpha] - 2026-11-21
 
 ### Changed

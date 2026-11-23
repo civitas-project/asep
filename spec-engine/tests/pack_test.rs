@@ -13,7 +13,6 @@ fn test_run_pack_installer_headless_local_antigravity() {
         agents: vec![TargetAgent::Antigravity],
         non_interactive: true,
         target_dir: Some(tmp.path().to_path_buf()),
-        skills_filter: None,
     };
 
     run_pack_installer(opts).expect("Installer must succeed in headless mode");
@@ -44,7 +43,6 @@ fn test_run_pack_installer_headless_local_opencode() {
         agents: vec![TargetAgent::OpenCode],
         non_interactive: true,
         target_dir: Some(tmp.path().to_path_buf()),
-        skills_filter: None,
     };
 
     run_pack_installer(opts).expect("Installer must succeed in headless mode");
@@ -70,7 +68,6 @@ fn test_run_pack_installer_with_selective_skills() {
         agents: vec![TargetAgent::Antigravity],
         non_interactive: true,
         target_dir: Some(tmp.path().to_path_buf()),
-        skills_filter: Some(vec!["code-contracts".to_string()]),
     };
 
     run_pack_installer(opts).expect("Selective installer must succeed");
@@ -83,7 +80,7 @@ fn test_run_pack_installer_with_selective_skills() {
     );
     assert!(
         !plugin_dir.join("skills").exists(),
-        "skills_filter is ignored; no skills directory must be created"
+        "no skills directory must be created"
     );
 }
 
@@ -95,7 +92,6 @@ fn test_run_pack_installer_headless_cursor_and_zed() {
         agents: vec![TargetAgent::Cursor, TargetAgent::Zed],
         non_interactive: true,
         target_dir: Some(tmp.path().to_path_buf()),
-        skills_filter: None,
     };
 
     run_pack_installer(opts).expect("Installer must succeed for Cursor and Zed");
@@ -118,7 +114,6 @@ fn test_run_pack_installer_headless_detection_default() {
         agents: vec![], // Empty triggers auto-detection
         non_interactive: true,
         target_dir: Some(tmp.path().to_path_buf()),
-        skills_filter: None,
     };
 
     run_pack_installer(opts).expect("Installer must succeed with auto-detection");

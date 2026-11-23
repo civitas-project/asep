@@ -4,6 +4,7 @@
 use crate::adr::create_new_adr;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
+use crate::config::settings::load_config;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
 use crate::scanner::scan_project_tags;
@@ -738,10 +739,10 @@ pub fn execute_tool(
 
             match body.as_object_mut() {
                 Some(obj) => {
-                    if let Some(caps) = required_capabilities {
+                    if let Some(caps) = required_capabilities.as_ref() {
                         obj.entry("required_capabilities").or_insert(json!(caps));
                     }
-                    if let Some(m) = media {
+                    if let Some(m) = media.as_ref() {
                         obj.entry("media").or_insert(json!(m));
                     }
                     if let Some(d) = domain {
@@ -753,6 +754,36 @@ pub fn execute_tool(
                     if let Some(t) = delegation_threshold {
                         obj.entry("delegation_threshold").or_insert(json!(t));
                     }
+                }
+                None => {}
+            }
+
+            // Fail-closed capability/media guard before any message is stored.
+            let guard_reason = match (
+                required_capabilities.as_deref(),
+                media.as_deref().filter(|m| !m.is_empty()),
+            ) {
+                (None, None) => None,
+                (caps, med) => {
+                    let profile = load_config(default_dir).capabilities;
+                    let names: Vec<&str> = caps
+                        .map(|vec| vec.iter().map(String::as_str).collect())
+                        .unwrap_or_default();
+                    profile.covers(&names, med).err()
+                }
+            };
+            match guard_reason {
+                Some(reason) => {
+                    return Ok(serde_json::json!({
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": serde_json::json!({"blocked": true, "reason": reason})
+                                    .to_string()
+                            }
+                        ],
+                        "isError": true
+                    }));
                 }
                 None => {}
             }

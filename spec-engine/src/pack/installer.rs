@@ -1,3 +1,4 @@
+// @impl:FR-CAP-09
 //! Interactive `inquire` TUI installer and headless packaging engine.
 // @impl:FR-AMB-02
 
@@ -21,7 +22,6 @@ pub struct PackOptions {
     pub agents: Vec<TargetAgent>,
     pub non_interactive: bool,
     pub target_dir: Option<PathBuf>,
-    pub skills_filter: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
