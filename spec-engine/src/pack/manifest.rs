@@ -84,18 +84,38 @@ pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std
         config = serde_json::json!({});
     }
 
-    // Preserve any pre-existing mcp.servers (and other keys) by only touching
-    // the "asep" entry under mcp.
+    // Ensure mcp is an object without clobbering existing entries.
     if config.get("mcp").is_none() || !config["mcp"].is_object() {
         config["mcp"] = serde_json::json!({});
     }
 
-    config["mcp"]["asep"] = serde_json::json!({
-        "type": "local",
-        "command": command,
-        "args": ["mcp"],
-        "enabled": true
-    });
+    // Remove legacy `mcp.asep` entry written by a previous merge, if present.
+    config
+        .get_mut("mcp")
+        .and_then(|mcp| mcp.as_object_mut())
+        .map(|mcp_obj| mcp_obj.remove("asep"));
+
+    // Ensure mcp.servers is an object without clobbering existing server
+    // entries, then write the ASEP server in OpenCode v2 shape: command is
+    // the array [command, "mcp"].
+    let mcp_obj = config
+        .get_mut("mcp")
+        .and_then(|v| v.as_object_mut())
+        .expect("mcp value is an object");
+    if mcp_obj.get("servers").is_none() || !mcp_obj["servers"].is_object() {
+        mcp_obj.insert("servers".to_string(), serde_json::json!({}));
+    }
+    let servers_obj = mcp_obj
+        .get_mut("servers")
+        .and_then(|v| v.as_object_mut())
+        .expect("servers is an object");
+    servers_obj.insert(
+        "asep".to_string(),
+        serde_json::json!({
+            "type": "local",
+            "command": [command, "mcp"],
+        }),
+    );
 
     // Back up the original content before overwriting (best effort).
     if !existing_raw.is_empty() {
