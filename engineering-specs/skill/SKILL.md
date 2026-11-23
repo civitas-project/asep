@@ -1,6 +1,7 @@
 ---
 name: engineering-specs
 description: Use when authoring or auditing PRD/TDD specifications, ISO 29148 requirements grammar, Architecture-as-Code contracts, vector SVG diagrams, or cloud benchmark reports
+requires: []
 version: 2.1.0
 depends: []
 ---

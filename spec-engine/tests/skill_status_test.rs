@@ -1,5 +1,6 @@
+// @test:FR-AMB-05
 use asep::pack::embedded::get_embedded_skills;
-use asep::skill::inspector::{detect_skill_drift, inspect_skills};
+use asep::skill::inspector::{detect_skill_drift, extract_skill_requires, inspect_skills};
 use asep::skill::model::SkillStatus;
 use std::fs;
 use tempfile::tempdir;
@@ -105,4 +106,31 @@ fn test_skill_copy_drift_detected() {
     assert_eq!(drift.skill_id, target.id);
     assert_eq!(drift.path, target_dir.join("SKILL.md"));
     assert_eq!(drift.kind, "modified");
+}
+
+// @test:FR-SKILL-REQUIRES-01
+#[test]
+fn test_extract_skill_requires_inline_list() {
+    let content = "---\nname: test\nrequires: [a, b]\n---\n# body";
+    assert_eq!(
+        extract_skill_requires(content),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+// @test:FR-SKILL-REQUIRES-01
+#[test]
+fn test_extract_skill_requires_dash_list() {
+    let content = "---\nname: test\nrequires:\n- a\n- b\n---\n# body";
+    assert_eq!(
+        extract_skill_requires(content),
+        vec!["a".to_string(), "b".to_string()]
+    );
+}
+
+// @test:FR-SKILL-REQUIRES-01
+#[test]
+fn test_extract_skill_requires_absent() {
+    let content = "---\nname: test\n---\n# body";
+    assert_eq!(extract_skill_requires(content), Vec::<String>::new());
 }

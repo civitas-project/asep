@@ -1,3 +1,4 @@
+// @test:FR-CAP-02
 use asep::agent_protocol::Envelope;
 use asep::mcp::server::process_jsonrpc_request;
 use asep::mcp::tools::{execute_tool, get_tools_list};

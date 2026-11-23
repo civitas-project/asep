@@ -1,4 +1,5 @@
 //! Manifest generation and configuration merging for Antigravity and OpenCode.
+// @impl:FR-CAP-06 // @impl:FR-CAP-07
 
 use crate::config::settings::CapabilityProfile;
 use serde_json::json;
@@ -455,7 +456,9 @@ Rules:
 4. Ignore cosmetic style preferences unless asked.
 5. Use at most 20 steps. If the evidence is insufficient, stop and report the missing evidence.
 6. Scope check: compare the diff against the named scope. Any changed line outside the named file or function is a blocking issue. A DONE status for a task that named no file or function is a blocking issue.
-7. Output valid JSON without markdown:
+7. Evidence rule: judge only explicit snapshot/worktree evidence — every finding must cite path:line evidence inside the tested snapshot or worktree; unsupported claims are not evidence.
+8. Trajectory review: when TASK_REPORT includes `tool_call_count` or `duplicate_calls`, flag duplicate or unnecessary tool calls as a blocking issue with call-sequence evidence.
+9. Output valid JSON without markdown:
 {"verdict":"PASS|FAIL","blocking":[{"file":"...","line":0,"issue":"...","evidence":"..."}],"non_blocking":[],"missing_evidence":[],"next_action":"..."}
 
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
@@ -495,6 +498,34 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
                 ]
                 .concat()
             )
+        },
+        "code-worker": {
+            "description": "Code-focused worker agent for implementation tasks.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the code-worker subagent. Capability domain: code. Tool filter: read, glob, grep, edit, write, shell."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "git-worker": {
+            "description": "Git-focused worker agent for version-control tasks.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the git-worker subagent. Capability domain: git. Tool filter: shell, read, glob, grep."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "media-worker": {
+            "description": "Media-focused worker agent for image and audio assets.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the media-worker subagent. Capability domain: media. Tool filter: read, glob, grep, write."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "verifier": {
+            "description": "Verification worker agent that checks output against acceptance criteria.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the verifier subagent. Capability domain: verification. Tool filter: read, glob, grep, shell."#,
+            "permissions": agent_permissions(profile, &[])
         }
     });
 

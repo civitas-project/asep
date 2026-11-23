@@ -1,4 +1,6 @@
+// @impl:FR-AMB-04
 //! Embedded canonical skills and default plugin manifests.
+// @impl:FR-AMB-03
 
 // @impl:FR-PACK-EMBED-01
 // @impl:FR-PACK-EMBED-02
@@ -17,6 +19,15 @@ const SKILL_REPOSITORY_GOVERNANCE: &str =
     include_str!("../../../repository-governance/skill/SKILL.md");
 const SKILL_DESIGN_TOKENS: &str = include_str!("../../../design-tokens/skill/SKILL.md");
 const SKILL_WORKFLOW_ROUTER: &str = include_str!("../../../workflow-router/skill/SKILL.md");
+const SKILL_USING_ASEP: &str = r#"---
+name: using-asep
+description: Use when the agent starts a session and must load the ASEP ambient skills listed in the pointer block, then apply capability routing to route each task to the correct skill.
+---
+
+# using-asep
+
+Load the ASEP ambient skills named in the session pointer block at startup. Each listed skill becomes available for capability routing, which routes tasks to the skill whose scope matches the task. Do not invent skills outside the pointer block. Follow Tier T capability routing; unmatched intents exit 3. When routing, match the task intent to a skill id, then execute that skill's procedure. If no skill matches, surface the gap instead of forcing a fit. Keep routing decisions traceable by recording the pointer block entry and the chosen skill id for each task.
+"#;
 
 const DEFAULT_PLUGIN_JSON: &str = r#"{
   "name": "asep",
@@ -33,6 +44,11 @@ const DEFAULT_MCP_CONFIG_JSON: &str = r#"{
 }"#;
 
 static EMBEDDED_SKILLS: &[EmbeddedSkill] = &[
+    EmbeddedSkill {
+        id: "using-asep",
+        directory: "using-asep",
+        content: SKILL_USING_ASEP,
+    },
     EmbeddedSkill {
         id: "workflow-router",
         directory: "workflow-router",

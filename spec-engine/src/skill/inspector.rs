@@ -1,4 +1,5 @@
 //! Status inspector comparing local skills against binary embedded originals.
+// @impl:FR-AMB-05
 
 use crate::pack::embedded::{get_embedded_skills, EmbeddedSkill};
 use crate::skill::model::{SkillEntry, SkillStatus};
@@ -87,6 +88,61 @@ pub fn detect_skill_drift(skills_dir: &Path) -> Vec<SkillDrift> {
 pub fn extract_skill_metadata(content: &str) -> (String, String) {
     let (name, desc, _, _) = extract_skill_full_metadata(content);
     (name, desc)
+}
+
+/// Extracts YAML frontmatter `requires` field: `[a, b]` inline list or
+/// `- item` dash list. Returns empty vec when `requires` is absent.
+pub fn extract_skill_requires(content: &str) -> Vec<String> {
+    let mut requires: Vec<String> = Vec::new();
+
+    // Guard-clause mandate: no if/else and no match guards; explicit matches
+    // with empty None arms replace if-let chains here.
+    #[allow(clippy::single_match)]
+    match content.strip_prefix("---") {
+        Some(rest) => {
+            #[allow(clippy::single_match)]
+            match rest.find("\n---") {
+                Some(end_idx) => {
+                    let frontmatter = &rest[..end_idx];
+                    let mut current_field: Option<&str> = None;
+
+                    for raw_line in frontmatter.lines() {
+                        let line = raw_line.trim_end();
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+
+                        let trimmed = line.trim();
+                        match (
+                            trimmed.starts_with("requires:"),
+                            trimmed.starts_with("- ") && current_field == Some("requires"),
+                        ) {
+                            (true, _) => {
+                                let v = trimmed["requires:".len()..].trim();
+                                parse_depends_list(v, &mut requires);
+                                current_field = Some("requires");
+                            }
+                            (_, true) => {
+                                let item = trimmed[2..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .trim();
+                                if !item.is_empty() {
+                                    requires.push(item.to_string());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+        None => {}
+    }
+
+    requires
 }
 
 /// Extracts full frontmatter metadata including version and depends.

@@ -1,6 +1,7 @@
 ---
 name: workflow-router
-description: Use at the start of any task to route intent, sequence phases, and orchestrate skills across the ASEP (Axiomatic Systems Engineering Protocol) ecosystem
+description: Use when routing intent, sequencing phases, or orchestrating skills across the ASEP ecosystem
+requires: []
 version: 2.2.0
 depends: [system-architecture, engineering-specs, code-contracts, repository-governance, design-tokens, spec-engine]
 ---

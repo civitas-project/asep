@@ -1,6 +1,7 @@
 ---
 name: design-tokens
 description: Use when authoring or auditing KDL design tokens, OKLCH color math, sRGB fallbacks, WCAG contrast, interactive UI states, or ergonomic layout bounds
+requires: []
 version: 2.1.0
 depends: []
 ---

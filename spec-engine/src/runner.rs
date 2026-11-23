@@ -1,6 +1,8 @@
 use crate::adr::create_new_adr;
 use crate::affected::affected;
-use crate::auditor::{audit_project_anti_slop, audit_project_docstrings};
+use crate::auditor::{
+    audit_ambient_skills, audit_project_anti_slop, audit_project_docstrings,
+};
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::{build_relation_graph, build_trace_graph};
@@ -170,6 +172,11 @@ pub fn run() -> ExitCode {
                 }
             };
 
+            // Ambient skills audit: opt-in gate; violations block outside T0,
+            // same tier rule as docstring contracts.
+            let ambient_violations = audit_ambient_skills(&target_path);
+            let has_ambient_failure = tier != TierId::T0 && !ambient_violations.is_empty();
+
             // Anti-slop audit: Error violations block outside T0; Warning
             // violations block only under --strict.
             let anti_slop_violations = match audit_project_anti_slop(&target_path) {
@@ -207,6 +214,7 @@ pub fn run() -> ExitCode {
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
             let mut passed = !has_must_failure
                 && !has_doc_contract_failure
+                && !has_ambient_failure
                 && !has_strict_failure
                 && !has_deny_drafts_failure
                 && !has_skill_drift
@@ -383,6 +391,23 @@ pub fn run() -> ExitCode {
                         }
                     }
 
+                    if !ambient_violations.is_empty() {
+                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        let header = match tier == TierId::T0 {
+                            true => "⚠️ Ambient Skills Warnings (Non-blocking in T0 Mode):".yellow().bold(),
+                            false => "❌ Ambient Skills Violations:".red().bold(),
+                        };
+                        println!("\n{header}");
+                        for v in &ambient_violations {
+                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            let message = match tier == TierId::T0 {
+                                true => v.yellow(),
+                                false => v.red(),
+                            };
+                            println!("   - {message}");
+                        }
+                    }
+
                     if !anti_errors.is_empty() {
                         #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
                         let header = match tier == TierId::T0 {
@@ -471,13 +496,14 @@ pub fn run() -> ExitCode {
                         "------------------------------------------------------------".dimmed()
                     );
                     println!(
-                        "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations",
+                        "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations | {} ambient skills violations",
                         tier.as_str().cyan().bold(),
                         report.must_satisfied.to_string().green().bold(),
                         report.must_broken.len().to_string().red().bold(),
                         report.should_pending.len().to_string().yellow().bold(),
                         report.draft_total.to_string().cyan().bold(),
                         violations.len().to_string().red().bold(),
+                        ambient_violations.len().to_string().red().bold(),
                     );
 
                     #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool

@@ -1,3 +1,4 @@
+// @test:FR-CAP-01 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-08
 use asep::config::settings::{load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig};
 use std::fs;
 use tempfile::tempdir;
@@ -78,4 +79,57 @@ fn test_capability_profile_missing_reports_disabled_only() {
         vec!["file_write"]
     );
     assert!(CapabilityProfile::default().missing(&["file_read", "web"]).is_empty());
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-01
+#[test]
+fn test_supports_media_empty_returns_true() {
+    let profile = CapabilityProfile::default();
+    assert!(profile.supports_media(""));
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-02
+#[test]
+fn test_supports_media_supported_returns_true() {
+    let profile = CapabilityProfile::default();
+    assert!(profile.supports_media("text"));
+    assert!(profile.supports_media("code"));
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-03
+#[test]
+fn test_supports_media_unsupported_returns_false() {
+    let profile = CapabilityProfile::default();
+    assert!(!profile.supports_media("image"));
+    assert!(!profile.supports_media("audio"));
+}
+
+// @test:FR-CONFIG-CAP-COVER-01
+#[test]
+fn test_covers_missing_capability_returns_err() {
+    let mut profile = CapabilityProfile::default();
+    profile.file_write = false;
+
+    let err = profile.covers(&["file_write"], None).unwrap_err();
+    assert_eq!(err, "BLOCKED: requires file_write");
+}
+
+// @test:FR-CONFIG-CAP-COVER-02
+#[test]
+fn test_covers_unsupported_media_returns_err() {
+    let profile = CapabilityProfile::default();
+
+    let err = profile.covers(&["file_read"], Some("image")).unwrap_err();
+    assert_eq!(err, "BLOCKED: requires media:image");
+}
+
+// @test:FR-CONFIG-CAP-COVER-03
+#[test]
+fn test_covers_all_satisfied_returns_ok() {
+    let profile = CapabilityProfile::default();
+
+    assert!(profile.covers(&["file_read", "web"], None).is_ok());
+    assert!(profile.covers(&["file_read", "web"], Some("text")).is_ok());
+    assert!(profile.covers(&[], Some("")).is_ok());
+    assert!(profile.covers(&[], None).is_ok());
 }

@@ -428,3 +428,56 @@ fn check_fails_on_guard_clause_violations() {
     cmd.arg("check").arg("--rigor").arg("T1").arg(root);
     cmd.assert().success().code(0);
 }
+
+// @test:FR-AMB-06
+#[test]
+fn test_ambient_skills_violations_fail_outside_t0() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed project so the exit code reflects ambient skills only.
+    write_t2_closed_project(root, "FR-AMBIENT-01");
+
+    // Malformed: missing pointer block, and description does not start with `Use when`.
+    fs::create_dir_all(root.join("skills").join("alpha")).expect("create skills dir");
+    fs::write(
+        root.join("skills").join("alpha").join("SKILL.md"),
+        "---\ndescription: Handles alpha routing\n---\n# Alpha\nBody text.\n",
+    )
+    .expect("write SKILL.md");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("Ambient Skills Violations"))
+        .stdout(predicate::str::contains("Use when"));
+}
+
+// @test:FR-AMB-06
+#[test]
+fn test_ambient_skills_valid_input_passes() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-AMBIENT-02");
+
+    // Valid: pointer block present, using-asep skill description + body budget OK.
+    fs::write(
+        root.join("AGENTS.md"),
+        "<!-- asep:start -->\nASEP ambient context.\n<!-- asep:end -->\n",
+    )
+    .expect("write AGENTS.md");
+    fs::create_dir_all(root.join("skills").join("using-asep")).expect("create skills dir");
+    fs::write(
+        root.join("skills").join("using-asep").join("SKILL.md"),
+        "---\ndescription: Use when the agent starts a session and loads ambient skills\n---\n\
+         # using-asep\nLoad ambient skills at startup.\n",
+    )
+    .expect("write SKILL.md");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert().success().code(0);
+}

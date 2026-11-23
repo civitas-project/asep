@@ -3,6 +3,7 @@
 //! File-based message store: envelopes live under `<run-dir>/messages/<id>.json`,
 //! bodies under `<run-dir>/messages/<id>.body.json`. Writes use a temp file +
 //! `rename` for atomicity. `validate_dir` audits every envelope in a run dir.
+// @impl:FR-CAP-05
 
 use std::collections::HashSet;
 use std::fs;
@@ -41,6 +42,10 @@ pub struct KindSchema {
     pub required: Vec<String>,
     #[serde(default)]
     pub array_fields: Vec<String>,
+    #[serde(default)]
+    pub optional_numeric: Vec<String>,
+    #[serde(default)]
+    pub optional_array: Vec<String>,
     #[serde(default)]
     pub nested: Vec<NestedField>,
     #[serde(default)]
@@ -390,6 +395,24 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
         obj.get(field)
             .and_then(Value::as_array)
             .ok_or_else(|| format!("{field} must be an array"))?;
+    }
+    for field in &kind_schema.optional_numeric {
+        let value = match obj.get(field) {
+            Some(value) => value,
+            None => continue,
+        };
+        if !matches!(value, Value::Number(_)) {
+            return Err(format!("{field} must be numeric"));
+        }
+    }
+    for field in &kind_schema.optional_array {
+        let value = match obj.get(field) {
+            Some(value) => value,
+            None => continue,
+        };
+        if !matches!(value, Value::Array(_)) {
+            return Err(format!("{field} must be an array"));
+        }
     }
     for nested in &kind_schema.nested {
         let parent = obj
