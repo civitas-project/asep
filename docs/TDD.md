@@ -106,3 +106,63 @@ Every audited source file in the repository is refactored to sequential guard cl
 - The self-compliance phase is the bulk of the work: 35 files, 212 `else` tokens plus nested `if` sites. It is split into one executor unit per file; each unit is independently verified.
 - Making the rules Error-severity means intermediate commits will fail `asep check . --rigor T1` until the cleanup phase finishes. The final gate is the acceptance point.
 - `.asepignore` already excludes `spec-engine/tests/`, `srcidx/tests/`, `vendor/`, and `harness/e2e/vendor-loom/`, so third-party and fixture code is out of scope.
+
+## Pilot optimasi build Rust
+
+<!-- @design:BUILD-PILOT-01 -->
+Bandingkan profil saat ini (A) dengan `debug = 0` hanya untuk dependensi non-workspace di profil `dev` dan `test` (B). Uji B dengan dua flag Cargo: `--config 'profile.dev.package."*".debug=0' --config 'profile.test.package."*".debug=0'`. Kode workspace tetap `line-tables-only`; profil release, incremental, fitur, linker, dan pin `nightly-2026-11-14` tidak berubah. Tidak perlu runner baru.
+
+Gunakan worktree sementara dari SHA yang sama, di filesystem yang sama dengan repo; `/tmp` lokal adalah tmpfs. Pakai satu direktori artefak khusus eksperimen, pada path yang sama untuk kedua varian. Kosongkan hanya direktori eksperimen saat ganti varian; jangan sentuh `target/` utama. Catat SHA, toolchain, linker, jumlah job, dan urutan uji. Jalankan serial. Hentikan pilot jika ruang kosong terukur mendekati 4 GiB. Pada audit awal, `target/` utama 3,3 GiB dan ruang kosong 8,7 GiB.
+
+Ukur wall time build awal dan build tanpa perubahan sebagai konteks. Setelah pemanasan, ulangi tiap skenario edit minimal tiga kali per varian. Terapkan perubahan identik dan pulihkan sumber di luar pengukuran; bangun ulang keadaan awal sebelum pengulangan berikutnya. Catat sampel waktu, median, disk puncak teramati dari sampel `du -s -B1` selama rangkaian, dan disk tersisa tepat setelah rangkaian yang sama. Sampling dapat melewatkan lonjakan singkat. Jangan laporkan p95 dari tiga sampel. Simpan hasil di luar direktori artefak eksperimen.
+
+<!-- @design:BUILD-PILOT-02 -->
+Adopsi kandidat hanya jika median kedua skenario edit turun, disk puncak teramati dan disk tersisa sama-sama turun, serta arah perbaikan waktu tidak bergantung pada satu pengukuran. Ulangi perbandingan bila hasil dekat dengan variasi sampel; jika tetap tidak jelas, pertahankan profil saat ini. Bandingkan daftar dan hasil test target yang sama. Full suite tidak dijalankan untuk pilot; gate penerimaan yang berlaku tidak berubah.
+
+### Urutan kerja pilot
+
+| Urutan | File dan simbol | Kriteria penerimaan | Perintah verifikasi |
+|---|---|---|---|
+| 1. Ukur edit fungsi | `spec-engine/src/harness/e2e.rs`, `now_rfc3339` | Terapkan edit body sementara (`duration.as_secs()` menjadi `duration.as_secs().saturating_add(1)`) di worktree eksperimen. Kedua varian membangun target yang sama; catat waktu pada setiap pengulangan dan pulihkan file. | `cargo build -p asep --bin asep --offline --locked --timings` |
+| 2. Ukur edit test dan disk | `spec-engine/tests/harness_e2e_test.rs`, `test_new_run_writes_manifest` | Ganti sementara assertion keberadaan seed dengan pemeriksaan seed `883735528`. Kedua varian memakai daftar test dan hasil yang sama; catat waktu, puncak teramati, dan ukuran akhir untuk rangkaian langkah 1–2. Pulihkan file. | `cargo test -p asep --test harness_e2e_test --offline --locked -- --list`; `cargo test -p asep --test harness_e2e_test --offline --locked` |
+| 3. Adopsi bila lolos | `Cargo.toml`, `profile.dev.package."*".debug` dan `profile.test.package."*".debug` | Hanya tambah kedua override. Jangan ubah konfigurasi global, test, atau gate. Jika kandidat tidak lolos, jangan ubah manifest. | `asep affected Cargo.toml`, lalu jalankan perintah dari hasilnya. Jika kosong, catat bahwa graph tidak memetakan profil Cargo; cek `cargo metadata --offline --locked --no-deps --format-version 1` dan ulangi test target pilot tanpa flag override di direktori eksperimen. |
+
+<!-- @impl:BUILD-PILOT-01 -->
+Pilot dijalankan di `446a0656` dengan 4 job, dalam urutan A lalu B dan B lalu A. Tiap run mengukur tiga edit fungsi dan tiga edit test. Wall time edit test mencakup kompilasi lewat `--list` dan eksekusi test. Interval sampel disk 1,5 detik; satu sampel baseline kedua gagal saat file sementara hilang.
+
+<!-- @impl:BUILD-PILOT-02 -->
+Kedua urutan memenuhi syarat adopsi. Konfigurasi kandidat menjadi dua override di `Cargo.toml`. Angka acuan belum tercapai. Gate penerimaan tidak berubah.
+
+## Lanjutan optimasi build Rust
+
+<!-- @design:BUILD-NEXT-01 -->
+Audit awal: `target/debug/build` memakai 1.205.305.344 byte. Hitungan blok file reguler deduplikasi inode: 919,0 MiB output unit kompilasi, 203,9 MiB executable/metadata build script, 20,0 MiB output build script, dan 6,6 MiB file lain. File `.a`/`.o` grammar bukan penyumbang utama. Empat build tanpa edit di pilot tidak melaporkan kompilasi ulang. Ini potret cache campuran, bukan ukuran profil baru maupun bukti semua perintah bebas invalidasi.
+
+<!-- @design:BUILD-NEXT-02 -->
+Mulai dari satu duplikasi versi: TOML 0.8.23 dipakai `srcdump`, sedangkan ASEP sudah menarik TOML 1.2.1 lewat batas versi `1.1.8`. Bandingkan unit kompilasi, bukan hanya baris `cargo tree`. Jangan menyatukan `syn` lintas versi atau mengganti backend TLS pada putaran ini.
+
+<!-- @design:BUILD-NEXT-03 -->
+Semua uji memakai pin nightly dan profil debug hasil pilot, offline, satu cache eksperimen di filesystem repo, ruang kosong minimal 4 GiB. Jangan bersihkan cache utama. Untuk A/B struktural, bangun dari direktori eksperimen kosong pada path sama; ukur build awal, tiga rebuild edit identik, disk puncak teramati dan akhir. Untuk jobs/antrean, samakan keadaan cache sebelum tiap percobaan dan balik urutan; catat wall time per proses dan sampai keduanya selesai, pesan lock Cargo, serta disk puncak dan akhir. Jangan klaim hasil jobs berlaku di mesin lain. Full suite dan gate penerimaan tidak berubah.
+
+### Urutan kerja
+
+| Urutan | File dan simbol | Kriteria penerimaan | Verifikasi |
+|---|---|---|---|
+| 1. Audit cache | `target/debug/build`, direktori unit dan output build script | Klasifikasi blok tanpa hitung hard link ganda, daftar komponen terbesar, bedakan artefak lama dari output aktif jika terbukti. Tidak ada penghapusan. | `du -s -B1 target/debug/build`; inventaris inode; log warm no-op pilot |
+| 2a. Gabung satu kelompok | `spec-engine/tests/lexer_test.rs`, modul `scanner` | Salin kasus `test_scan_project_tags_respects_gitignore` dari target `scanner_test` tanpa ubah fixture atau assertions. Pertahankan lima kasus lexer. | `cargo test -p asep --test lexer_test --offline --locked` |
+| 2b. Hapus target duplikat | `spec-engine/tests/scanner_test.rs`, target `scanner_test` | Hapus file hanya setelah enam kasus terbukti terdaftar dan lulus. Bandingkan dua target lama vs satu target baru; adopsi jika biaya turun dan feedback edit target tidak melambat di luar variasi sampel. | `cargo test -p asep --test lexer_test --offline --locked -- --list`; `cargo metadata --offline --locked --no-deps --format-version 1`; benchmark A/B |
+| 3a. Kunci perilaku konfigurasi | `srcdump/tests/config_test.rs`, `Config::from_file` | Uji fixture konfigurasi valid dan input TOML tidak valid sebelum ganti versi parser. | `cargo test -p srcdump --test config_test --offline --locked` |
+| 3b. Satukan versi | `Cargo.toml`, `workspace.dependencies.toml` | Samakan batas versi dengan ASEP; jangan ubah fitur lain. | `cargo metadata --offline --format-version 1` pada worktree eksperimen |
+| 3c. Perbarui resolusi | `Cargo.lock`, keluarga TOML 0.8 | Resolusi offline; tidak ada upgrade yang tidak terkait. Adopsi jika unit lama hilang, test konfigurasi tetap lulus, dan pilot tidak menunjukkan regresi feedback atau disk. | `cargo tree -p asep -d --offline --locked`; `cargo test -p asep --test lexer_test --unit-graph -Z unstable-options --offline --locked`; `cargo test -p srcdump --test config_test --offline --locked` |
+| 4. Uji jobs dan antrean | `spec-engine/tests/lexer_test.rs`, target `lexer_test`; `Cargo.toml`, konfigurasi `build.jobs` tidak diubah | Bandingkan 2 vs 4 job untuk build awal dan rebuild setelah edit yang sama. Pada cache eksperimen, bandingkan pasangan build/test identik secara serial dan serentak. Pisahkan waktu tunggu lock dari kerja kompilasi sejauh log mendukung. Laporkan, jangan ubah default. | `cargo build -p asep --bin asep --offline --locked --jobs <2-or-4> --timings`; `cargo test -p asep --test lexer_test --offline --locked --jobs <2-or-4>` |
+
+Setiap perubahan: `asep affected <changed-paths>` lebih dulu. Jika hasil kosong atau menyebut target Cargo yang tidak ada, catat dan gunakan verifikasi target pada tabel. Tinjau diff dan bukti per unit sebelum lanjut.
+
+<!-- @impl:BUILD-NEXT-01 -->
+Audit selesai. Konsolidasi `scanner_test` ke `lexer_test` tidak diadopsi. Putaran valid menghemat 19,9 MiB artefak tersisa (2,7%), tetapi semua sampel edit kandidat lebih lambat daripada semua sampel baseline. Kedua target tetap terpisah di worktree utama.
+
+<!-- @impl:BUILD-NEXT-02 -->
+Penyatuan TOML menghilangkan enam unit kompilasi lama tanpa menambah unit baru. Tidak diadopsi: dalam satu putaran, build awal lebih cepat dan disk lebih kecil, tetapi semua sampel edit kandidat lebih lambat daripada semua sampel baseline. Versi parser dan lockfile utama tetap; tiga tes konfigurasi `srcdump` dipertahankan.
+
+<!-- @impl:BUILD-NEXT-03 -->
+Pada mesin ini, 4 job menang pada satu putaran build dari cache kosong. Tiga sampel edit per jumlah job tumpang tindih. Jalankan build dan test bergantian bila berbagi target: uji serentak memunculkan tunggu lock tanpa keuntungan waktu total yang konsisten. Default Cargo tetap.
