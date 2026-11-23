@@ -779,10 +779,10 @@ pub fn run() -> ExitCode {
             global,
             agent,
             yes,
-            skills,
             dir,
             path,
             pos_dir,
+            ..
         }) => {
             let target_path = path
                 .or(dir)
@@ -891,7 +891,6 @@ pub fn run() -> ExitCode {
                 agents,
                 non_interactive: yes,
                 target_dir: Some(target_path),
-                skills_filter: skills,
             };
 
             match run_pack_installer(opts) {

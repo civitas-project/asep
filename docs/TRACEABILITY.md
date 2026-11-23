@@ -211,3 +211,6 @@ graph cross-kind test 1 pass.
 @rel:verifies:FR-AMB-04->FR-AMB-04 "embedded_test asserts description-first and token budget"
 @rel:verifies:FR-AMB-05->FR-AMB-05 "skill_status_test asserts extract_skill_requires parses inline and dash lists"
 @rel:verifies:FR-AMB-06->FR-AMB-06 "integration_check_test asserts ambient governance gate reports violations"
+
+@rel:satisfies:FR-CAP-09->FR-CAP-09
+@rel:verifies:FR-CAP-09->FR-CAP-09 "pack_test constructs PackOptions without skills_filter and pack writes no skills"

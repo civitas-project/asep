@@ -322,3 +322,124 @@ fn test_agent_send_rejects_legacy_lead_role() {
     let err = res.unwrap_err();
     assert!(err.contains("role"), "error must name role: {err}");
 }
+
+// @test:FR-CAP-03
+#[test]
+fn test_agent_send_blocks_unsupported_media() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let default_dir = tempfile::tempdir().unwrap();
+    let run_dir_s = run_dir.path().to_str().unwrap().to_string();
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "leader",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": json!({"task": "review image"}),
+            "media": "image",
+        }),
+        default_dir.path(),
+    )
+    .expect("asep_agent_send must return");
+
+    assert!(res["isError"].as_bool().unwrap(), "expected error: {res:?}");
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert_eq!(val["blocked"], true);
+    assert!(
+        val["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("BLOCKED: requires media:image"),
+        "unexpected reason: {:?}",
+        val["reason"]
+    );
+
+    // No message file must be written when blocked.
+    assert!(!run_dir.path().join("messages").exists());
+}
+
+// @test:FR-CAP-03
+#[test]
+fn test_agent_send_allows_supported_media() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let default_dir = tempfile::tempdir().unwrap();
+    let run_dir_s = run_dir.path().to_str().unwrap().to_string();
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "leader",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": json!({
+                "task": "review text",
+                "files": [],
+                "acceptance": "ok",
+                "verification_command": "cargo test -p asep"
+            }),
+            "media": "text",
+        }),
+        default_dir.path(),
+    )
+    .expect("asep_agent_send must succeed");
+
+    assert_eq!(res["isError"].as_bool(), Some(false));
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    let id = val["id"].as_str().expect("id is string");
+    assert!(
+        run_dir
+            .path()
+            .join("messages")
+            .join(format!("{id}.json"))
+            .exists(),
+        "message file must be written"
+    );
+}
+
+// @test:FR-CAP-08
+#[test]
+fn test_agent_send_blocks_missing_required_capability() {
+    let run_dir = tempfile::tempdir().unwrap();
+    let default_dir = tempfile::tempdir().unwrap();
+    let run_dir_s = run_dir.path().to_str().unwrap().to_string();
+
+    let config_dir = default_dir.path().join(".spec-engine");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.toml"), "[capabilities]\nweb = false\n")
+        .unwrap();
+
+    let res = execute_tool(
+        "asep_agent_send",
+        &json!({
+            "run_dir": run_dir_s,
+            "agent": "leader",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "body": json!({"task": "fetch"}),
+            "required_capabilities": ["web"],
+        }),
+        default_dir.path(),
+    )
+    .expect("asep_agent_send must return");
+
+    assert!(res["isError"].as_bool().unwrap(), "expected error: {res:?}");
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let val: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert_eq!(val["blocked"], true);
+    assert!(
+        val["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("BLOCKED: requires web"),
+        "unexpected reason: {:?}",
+        val["reason"]
+    );
+
+    // No message file must be written when blocked.
+    assert!(!run_dir.path().join("messages").exists());
+}
