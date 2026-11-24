@@ -383,6 +383,30 @@ Visited set + sorted output (by file, line, id) and dedup. Cycle-safe by constru
 | I5 | `spec-engine/src/runner.rs`, `Commands::Affected` | CLI text output shows ADRs and unmapped (additive); JSON includes new fields. | `cargo test -p asep --test affected_cli_test` |
 | I6 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Seven P3.1 requirements closed with relations. | `asep check . --rigor T2` after scoped acceptance |
 
+## P3.2 — ADR Annotation Coverage (RFC v0.2)
+
+Documentation-first, graph data-quality slice. Reuse existing graph builder, impact traversal, validators. No new engine, dependency, or abstraction.
+
+<!-- @design:FR-ADRCOV-01 -->
+### FR-ADRCOV-01 ADR start-node propagation
+`spec-engine/src/affected/mod.rs`: when an ADR node is a *start node* (changed path maps to it), allow incoming traversal (find sources that `Informs` it) so dependent requirements/implementations are reported. Outgoing traversal from an ADR remains disabled.
+
+<!-- @design:FR-ADRCOV-02 -->
+### FR-ADRCOV-02 Terminal-sink preservation
+`spec-engine/src/affected/mod.rs`: ADRs reached during traversal (non-start) remain terminal: no outgoing and no incoming traversal. Prevents false impact expansion through shared ADRs.
+
+<!-- @design:FR-ADRCOV-03 -->
+### FR-ADRCOV-03 Backward compatibility
+No change to non-ADR node traversal, impact report fields, coverage rules, or legacy fallback.
+
+### Ordered implementation plan (P3.2)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| A1 | `spec-engine/src/affected/mod.rs`, `affected()` | ADR start node propagates incoming Informs; non-start ADR stays sink. | `cargo test -p asep --test affected_test` |
+| A2 | `spec-engine/tests/affected_test.rs` | Test: changed ADR reports dependent reqs/impls; shared ADR does not propagate between sources. | `cargo test -p asep --test affected_test` |
+| A3 | `docs/TRACEABILITY.md` | Three P3.2 requirements closed with relations. | `asep check . --rigor T2` after scoped acceptance |
+
 ## Layer 5 — Agent Runtime (RFC v0.2)
 
 Constraint: new audited source must obey the strict policy — sequential guard clauses, no `else`, no nested `if`, no inline opt-out. Requirements are observable; no new engine is introduced because adapters already suffice. Reuse existing `Role`, `CapabilityProfile`, `Envelope`, `TraceEvent`, `TraceCollector`.
