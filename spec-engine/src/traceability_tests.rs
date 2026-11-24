@@ -4,6 +4,7 @@
 // @test:FR-ACC-05
 // @test:FR-ACC-02 @test:FR-ACC-03 @test:FR-ACC-04
 // @test:FR-CAP-09
+// @test:FR-IMPACT-01 // @test:FR-IMPACT-02 // @test:FR-IMPACT-03 // @test:FR-IMPACT-04 // @test:FR-IMPACT-05 // @test:FR-IMPACT-06 // @test:FR-IMPACT-07
 // @test:FR-CAP-01 // @test:FR-CAP-02 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-05 // @test:FR-CAP-06 // @test:FR-CAP-07 // @test:FR-CAP-08 // @test:FR-AMB-01 // @test:FR-AMB-02 // @test:FR-AMB-03 // @test:FR-AMB-04 // @test:FR-AMB-05 // @test:FR-AMB-06
 //! Unit tests for the 13 MUST requirements in docs/PRD.md.
 //! Each test carries one test-marker comment and asserts real behavior
@@ -16,6 +17,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
+use crate::affected::affected;
 use crate::auditor::anti_slop::{audit_anti_slop, audit_project_anti_slop, AntiSlopViolationKind};
 use crate::auditor::doc_contracts::{audit_doc_contracts, DocContractViolationKind};
 use crate::cli::{AdrCommands, Cli, Commands};

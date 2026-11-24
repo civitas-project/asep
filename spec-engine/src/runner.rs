@@ -694,6 +694,33 @@ pub fn run() -> ExitCode {
                 }
             }
 
+            println!("\n{}", "ADRs:".bold());
+            #[allow(clippy::match_bool)]
+            match report.adrs.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for adr in &report.adrs {
+                        println!(
+                            "  - {} ({}:{})",
+                            adr.id.bold(),
+                            adr.file.display(),
+                            adr.line
+                        );
+                    }
+                }
+            }
+
+            println!("\n{}", "Unmapped changes:".bold());
+            #[allow(clippy::match_bool)]
+            match report.unmapped.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for p in &report.unmapped {
+                        println!("  - {}", p.display());
+                    }
+                }
+            }
+
             println!("\n{}", "Verification commands:".bold());
             #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
             match report.commands.is_empty() {

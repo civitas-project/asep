@@ -87,6 +87,30 @@ Sumber: `ASEP_Architecture_Expansion_Proposal_Catalog.pdf` hal. 15. Review verdi
 <!-- @req:IN-01-FILE-EVIDENCE:MUST The collector shall compute a SHA-256 content hash for each in-scope file at span start and span end, and shall emit an NDJSON file-change event only for files whose hash changed, carrying the path, before/after hashes, task ID and span label. -->
 <!-- @req:IN-01-INTENT:MUST A write-ahead intent event carrying the target path and its pre-write hash shall be recorded before a controlled tool modifies a file; file-change and intent events shall always be recorded even when ordinary event recording is off, shall be marked as complete evidence, and reports shall state whether ordinary event coverage is on or off. -->
 
+## P3 — Knowledge Graph & Impact Analysis (RFC v0.2)
+
+Sumber: `ASEP_Adaptive_Architecture_v0.2.md` §5, §6, §8 (P3). Urutan: P3.1 transitive impact (sekarang), P3.2 ADR annotation coverage (terpisah), P3.3 graph export (conditional, tunggu konsumen).
+
+### P3.1 — Transitive Impact Analysis
+
+Reuse `build_relation_graph` (tanpa engine baru, database, atau dependency). Additive terhadap CLI/JSON existing.
+
+<!-- @req:FR-IMPACT-01:MUST `asep affected` shall perform cycle-safe transitive traversal of the relation graph from changed paths, following typed edges (`Satisfies`, `Verifies`, `Informs`, `Constrains`) in both directions. -->
+<!-- @req:FR-IMPACT-02:MUST The impact report shall include affected implementations, requirements, tests, and ADRs, each categorized by kind. -->
+<!-- @req:FR-IMPACT-03:MUST Each affected item shall carry provenance as an ordered list of node IDs forming the traversal path from a changed node. -->
+<!-- @req:FR-IMPACT-04:MUST Changed paths that map to no graph node shall be reported explicitly in an `unmapped` field, not silently ignored. -->
+<!-- @req:FR-IMPACT-05:MUST Existing CLI text output and JSON fields (`impls`, `requirements`, `tests`, `commands`) shall remain unchanged; new fields are additive only. -->
+<!-- @req:FR-IMPACT-06:MUST The legacy same-ID fallback (no `@rel` tags) shall remain functional. -->
+<!-- @req:FR-IMPACT-07:MUST Traversal shall be deterministic (sorted output) and shall not loop on cyclic graphs. -->
+
+### P3.2 — ADR annotation coverage (separate, not this slice)
+
+ADR-to-requirement links via `@rel:informs` and coverage. Deferred to next slice.
+
+### P3.3 — Graph export (conditional)
+
+`asep graph` export (JSON/DOT). Deferred until a real consumer exists.
+
 ## Layer 5 — Agent Runtime (RFC v0.2)
 
 Sumber: `ASEP_Adaptive_Architecture_v0.2.md` §3, §5, §6, §8 (P0–P5). Urutan: audit redundansi dulu, lalu Engineer Level, lalu resource budgeting, lalu ReAct contracts. Setiap slice additive; tidak ada engine baru.

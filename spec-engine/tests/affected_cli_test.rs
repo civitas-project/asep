@@ -101,3 +101,46 @@ fn test_cli_affected_reads_paths_from_stdin() {
         .stdout(predicate::str::contains("a_test.rs"))
         .stdout(predicate::str::contains("cargo test --test a_test"));
 }
+
+// @test:FR-CLI-AFFECTED-04
+#[test]
+fn test_cli_affected_json_contains_all_report_keys() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:FR-A:MUST\n@rel:satisfies:impl-a->FR-A\n@rel:verifies:test-a->FR-A \"note\"\n",
+    );
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:test-a\nfn verifies_a() {}\n",
+    );
+
+    let mut cmd = asep_bin();
+    cmd.arg("affected")
+        .arg("src/lib.rs")
+        .arg("--root")
+        .arg(root)
+        .arg("--json");
+    let output = cmd.assert().success().get_output().stdout.clone();
+    let json = String::from_utf8(output).expect("affected JSON output must be UTF-8");
+    let report: Value = serde_json::from_str(&json).expect("affected report must be valid JSON");
+    for key in [
+        "impls",
+        "requirements",
+        "tests",
+        "commands",
+        "adrs",
+        "unmapped",
+        "provenance",
+    ] {
+        assert!(
+            report.get(key).is_some(),
+            "affected JSON must contain key {key}"
+        );
+    }
+}
