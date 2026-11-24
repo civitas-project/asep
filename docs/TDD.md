@@ -266,3 +266,6 @@ Add a verification rule to the leader system prompt in `spec-engine/src/pack/man
 | I1 | `spec-engine/src/mcp/tools.rs`, `spec-engine/tests/mcp_test.rs` | `asep_accept_scoped` listed with typed schema; invalid commit returns error; success path uses ASEP_BWRAP shim in tests. | `cargo test -p asep --test mcp_test` |
 | I2 | `spec-engine/src/pack/manifest.rs`, `opencode.json`, global `opencode.json`, `workflow-router/skill/SKILL.md` | Leader prompt instructs T2 check + accept-scoped; other prompts and settings unchanged. | JSON parse; `cargo test -p asep --test targets_test` |
 | I3 | `docs/TRACEABILITY.md`, `CHANGELOG.md`, tags | FR-MCP-03/FR-INT-01 closed; changelog notes integration. | `asep check . --rigor T2` |
+
+<!-- @design:FR-LEADER-01 -->
+Use leader as the primary agent name in generated presets and global configuration.

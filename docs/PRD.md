@@ -62,3 +62,8 @@ Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk pu
 <!-- @req:FR-AMB-04:MUST Each SKILL.md shall use description-first discovery (`Use when...`) with a token budget (frequently-loaded skills <= 200 words; descriptions <= 500 chars). -->
 <!-- @req:FR-AMB-05:MUST Skills may declare `requires: [<capability>]` metadata; the router shall skip skills whose required capabilities are unavailable to the active agent/model. -->
 <!-- @req:FR-AMB-06:MUST `asep check` shall validate ambient skill structure (pointer block presence, flat skills directory, description-first frontmatter, token budget) as part of governance. -->
+
+## Leader protocol
+
+<!-- @req:FR-LEADER-01:MUST OpenCode presets and generated presets shall use leader as the primary role name. -->
+<!-- @req:FR-LEADER-02:MUST The role enum, wire value, and MCP tools shall use Leader/leader; the former lead value shall be rejected. -->

@@ -250,11 +250,11 @@ pub fn get_tools_list() -> serde_json::Value {
                         },
                         "agent": {
                             "type": "string",
-                            "description": "Caller role: lead, executor, judge, explorer"
+                            "description": "Caller role: leader, executor, judge, explorer"
                         },
                         "to": {
                             "type": "string",
-                            "description": "Recipient role: lead, executor, judge, explorer"
+                            "description": "Recipient role: leader, executor, judge, explorer"
                         },
                         "kind": {
                             "type": "string",
@@ -310,7 +310,7 @@ pub fn get_tools_list() -> serde_json::Value {
                         },
                         "agent": {
                             "type": "string",
-                            "description": "Recipient role: lead, executor, judge, explorer"
+                            "description": "Recipient role: leader, executor, judge, explorer"
                         }
                     },
                     "required": ["run_dir", "agent"]
@@ -346,7 +346,7 @@ pub fn get_tools_list() -> serde_json::Value {
                         },
                         "agent": {
                             "type": "string",
-                            "description": "Caller role: lead, executor, judge, explorer"
+                            "description": "Caller role: leader, executor, judge, explorer"
                         },
                         "id": {
                             "type": "string",
@@ -983,7 +983,7 @@ fn mcp_opt_i64(arguments: &serde_json::Value, key: &str) -> Result<Option<i64>, 
 
 fn mcp_role(value: &str) -> Result<Role, String> {
     match value {
-        "lead" => Ok(Role::Lead),
+        "leader" => Ok(Role::Leader),
         "executor" => Ok(Role::Executor),
         "judge" => Ok(Role::Judge),
         "explorer" => Ok(Role::Explorer),
