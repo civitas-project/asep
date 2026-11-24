@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use asep::acceptance_scoped::run_scoped_acceptance;
+use asep::acceptance_scoped::{bwrap_args, run_scoped_acceptance};
 
 #[test]
 fn scoped_acceptance_writes_accepted_evidence() {
@@ -94,6 +94,64 @@ fn scoped_acceptance_writes_accepted_evidence() {
         );
     }
     assert!(!semantic.join("REQ-GAMMA.md").exists(), "SHOULD must not have evidence");
+}
+
+#[test]
+fn bwrap_args_binds_evidence_files_when_present() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let root_path = root.path();
+    fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
+    fs::write(root_path.join(".spec-engine/behavioral.json"), "{}").expect("write behavioral.json");
+    fs::write(root_path.join(".spec-engine/verification.json"), "{}").expect("write verification.json");
+
+    let behavioral = root_path.join(".spec-engine/behavioral.json");
+    let verification = root_path.join(".spec-engine/verification.json");
+
+    let args = bwrap_args(root_path, Path::new("/toolchain"), Path::new("/workspace/target"));
+    let windows: Vec<Vec<String>> = args.windows(3).map(|w| w.to_vec()).collect();
+
+    assert!(
+        args.windows(2).any(|w| w == ["--tmpfs", "/workspace/.spec-engine"]),
+        "tmpfs hides .spec-engine"
+    );
+    assert!(
+        windows.contains(&vec![
+            "--ro-bind".to_string(),
+            behavioral.to_str().unwrap().to_string(),
+            "/workspace/.spec-engine/behavioral.json".to_string(),
+        ]),
+        "behavioral.json bind missing"
+    );
+    assert!(
+        windows.contains(&vec![
+            "--ro-bind".to_string(),
+            verification.to_str().unwrap().to_string(),
+            "/workspace/.spec-engine/verification.json".to_string(),
+        ]),
+        "verification.json bind missing"
+    );
+    let tmpfs_pos = args.iter().position(|a| a == "--tmpfs").expect("tmpfs flag present");
+    let behavioral_pos = args
+        .iter()
+        .position(|a| a == "/workspace/.spec-engine/behavioral.json")
+        .expect("behavioral bind target present");
+    assert!(tmpfs_pos < behavioral_pos, "binds must come after tmpfs overlay");
+    // The acceptance policy and the whole .spec-engine dir stay hidden.
+    assert!(!args.iter().any(|a| a == "acceptance.json" || a.ends_with("/acceptance.json")));
+    assert!(
+        !args
+            .windows(2)
+            .any(|w| w[0] == "--ro-bind" && w[1].ends_with("/.spec-engine")),
+        ".spec-engine dir must not be bound wholesale"
+    );
+
+    // Files absent => no binds.
+    let empty = tempfile::tempdir().expect("temp dir");
+    let empty_args = bwrap_args(empty.path(), Path::new("/toolchain"), Path::new("/workspace/target"));
+    assert!(
+        !empty_args.iter().any(|a| a.contains("behavioral.json") || a.contains("verification.json")),
+        "binds must not appear when evidence files are missing"
+    );
 }
 
 fn run(root: &Path, args: &[&str]) {

@@ -50,6 +50,7 @@ Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk pu
 <!-- @req:FR-ACC-02:MUST A trusted local runner shall operate without root: policy and evidence shall be user-owned (0600/0700), and candidate code shall execute inside unprivileged bubblewrap with the snapshot read-only and policy/evidence not mounted into the sandbox. -->
 <!-- @req:FR-ACC-03:MUST After all scoped gates pass, the runner shall write `evidence/semantic/<REQ-ID>.md` with `verdict: ACCEPTED` for every `@req:*:MUST`; `asep check` shall accept `--evidence-dir <path>` and read semantic evidence from that path. -->
 <!-- @req:FR-ACC-04:MUST The acceptance Tests gate shall run only tests derived from `asep affected <changed-paths>`; `cargo test --workspace --all-targets` shall not be a mandatory acceptance gate. BenchPreflight shall be opt-in. -->
+<!-- @req:FR-ACC-05:MUST `asep check` shall resolve the semantic evidence directory from `.spec-engine/config.toml` (`evidence_dir`) when `--evidence-dir` is absent, so `asep check --rigor T2` is proven after scoped acceptance without extra flags. -->
 
 ### Phase A — Ambient skill distribution (after Phase M)
 

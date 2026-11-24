@@ -145,7 +145,9 @@ pub fn run() -> ExitCode {
             let graph = build_relation_graph(&tags, &policy);
             let report = build_trace_graph(&tags);
 
-            let evidence_dir = evidence_dir.unwrap_or_else(|| target_path.join("evidence"));
+            let evidence_dir = evidence_dir
+                .or_else(|| config.evidence_dir.as_deref().map(|d| target_path.join(d)))
+                .unwrap_or_else(|| target_path.join("evidence"));
             let behavioral_path = behavioral_report
                 .unwrap_or_else(|| target_path.join(".spec-engine").join("behavioral.json"));
             let verification_report = evaluate(&graph, &evidence_dir, tier, &behavioral_path);

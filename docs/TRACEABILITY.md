@@ -167,3 +167,6 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-ACC-03->FR-ACC-03 "integration_check_test asserts --evidence-dir supplies T2 semantic evidence"
 @rel:satisfies:FR-ACC-04->FR-ACC-04
 @rel:verifies:FR-ACC-04->FR-ACC-04 "acceptance_scoped_test asserts no full-suite gate and scoped tests"
+
+@rel:satisfies:FR-ACC-05->FR-ACC-05
+@rel:verifies:FR-ACC-05->FR-ACC-05 "integration_check_test asserts config evidence_dir makes T2 pass without flag"

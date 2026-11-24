@@ -1,3 +1,4 @@
+// @impl:FR-ACC-05
 //! Persistent TOML configuration manager for spec-engine.
 // @impl:FR-CAP-01 // @impl:FR-CAP-03 // @impl:FR-CAP-04 // @impl:FR-CAP-08
 
@@ -136,6 +137,9 @@ pub struct EngineConfig {
 
     #[serde(default)]
     pub capabilities: CapabilityProfile,
+
+    #[serde(default)]
+    pub evidence_dir: Option<String>,
 }
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).

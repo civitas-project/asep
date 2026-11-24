@@ -97,6 +97,35 @@ fn test_check_uses_explicit_evidence_dir() {
     cmd_with.assert().success().code(0);
 }
 
+// @test:FR-ACC-05
+#[test]
+fn test_check_uses_config_evidence_dir() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project with evidence kept outside the default <root>/evidence
+    // dir, so `asep check --rigor T2` without --evidence-dir must resolve the
+    // evidence dir from config.toml (relative to target root) to pass.
+    write_t2_closed_project(root, "FR-ACC-05");
+    fs::remove_dir_all(root.join("evidence")).expect("remove default evidence dir");
+
+    let config_evidence = root.join("config-evidence");
+    fs::create_dir_all(config_evidence.join("semantic")).expect("create config evidence dir");
+    fs::write(
+        config_evidence.join("semantic").join("FR-ACC-05.md"),
+        "reviewer: qa\nverdict: ACCEPTED\nrationale: accepted\n",
+    )
+    .expect("write evidence");
+
+    let mut config = asep::config::load_config(root);
+    config.evidence_dir = Some("config-evidence".to_string());
+    asep::config::save_config(root, &config).expect("save config");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T2").arg(root);
+    cmd.assert().success().code(0);
+}
+
 // @test:FR-CLI-INIT-01
 #[test]
 fn test_cli_init_and_adr_commands() {

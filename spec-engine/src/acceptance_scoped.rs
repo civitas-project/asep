@@ -141,7 +141,7 @@ fn require_bwrap() -> Result<(), String> {
     }
 }
 
-fn bwrap_args(root: &Path, sysroot: &Path, target_dir: &Path) -> Vec<String> {
+pub fn bwrap_args(root: &Path, sysroot: &Path, target_dir: &Path) -> Vec<String> {
     let mut args = Vec::new();
     args.extend_from_slice(&[
         "--unshare-user".to_string(),
@@ -151,6 +151,20 @@ fn bwrap_args(root: &Path, sysroot: &Path, target_dir: &Path) -> Vec<String> {
         "/workspace".to_string(),
         "--tmpfs".to_string(),
         "/workspace/.spec-engine".to_string(),
+    ]);
+    // Re-expose only the evidence files over the tmpfs that hides the rest of
+    // <root>/.spec-engine (so acceptance.json stays hidden inside the sandbox).
+    for name in ["behavioral.json", "verification.json"] {
+        let src = root.join(".spec-engine").join(name);
+        if src.is_file() {
+            args.extend_from_slice(&[
+                "--ro-bind".to_string(),
+                src.display().to_string(),
+                format!("/workspace/.spec-engine/{name}"),
+            ]);
+        }
+    }
+    args.extend_from_slice(&[
         "--bind".to_string(),
         target_dir.display().to_string(),
         "/workspace/target".to_string(),

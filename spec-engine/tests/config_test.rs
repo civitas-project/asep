@@ -36,6 +36,33 @@ fn test_save_and_reload_config_toml() {
     assert_eq!(reloaded.editor.custom_command, "nvim");
 }
 
+// @test:FR-ACC-05-CONFIG-ROUNDTRIP
+#[test]
+fn test_evidence_dir_round_trip() {
+    let tmp = tempdir().unwrap();
+    let mut config = EngineConfig::default();
+    config.evidence_dir = Some("custom-evidence".to_string());
+
+    save_config(tmp.path(), &config).expect("Config save must succeed");
+
+    let config_file = tmp.path().join(".spec-engine").join("config.toml");
+    assert!(config_file.exists(), "config.toml must be written");
+
+    let raw_toml = fs::read_to_string(&config_file).unwrap();
+    assert!(raw_toml.contains("evidence_dir = \"custom-evidence\""));
+
+    let reloaded = load_config(tmp.path());
+    assert_eq!(reloaded.evidence_dir, Some("custom-evidence".to_string()));
+}
+
+// @test:FR-ACC-05-CONFIG-DEFAULT
+#[test]
+fn test_evidence_dir_defaults_to_none() {
+    let tmp = tempdir().unwrap();
+    let config = load_config(tmp.path());
+    assert_eq!(config.evidence_dir, None);
+}
+
 // @test:FR-CONFIG-LOAD-02
 #[test]
 fn test_corrupt_config_falls_back_to_defaults() {
