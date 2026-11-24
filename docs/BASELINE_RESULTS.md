@@ -101,6 +101,24 @@
 - No rework; judge PASS on first review.
 - Single sample; no conclusion on assurance benefit.
 
+## Controlled Round — identical task, balanced order ABCD/DCBA
+
+Task: add one line to this section describing the run. Acceptance: `asep check --rigor T1` PASS. Telemetry: off (provider token counts unavailable).
+
+| Run | Config | Order | Tool calls | Pass | Rework | Defects |
+|---|---|---|---|---|---|---|
+| R1 | A | 1 | 2 | yes | 0 | 0 |
+| R2 | B | 2 | 3 | yes | 0 | 0 |
+| R3 | C | 3 | exec 1 + judge 1 | yes | 0 | 0 |
+| R4 | D | 4 | exec 1 + judge 1 + T2 | yes | 0 | 0 |
+
+### Notes
+- R1/R2 executed directly; R3/R4 pending delegation. Same task content across all four.
+- R3 executed via executor unit + judge review; verdict PASS; no rework.
+- This is one sequence only; DCBA and two more repetitions pending.
+- No conclusion drawn.
+- R4 executed via executor + judge + T1/T2 scoped acceptance; verdict PASS; no rework.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
