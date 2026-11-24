@@ -65,6 +65,18 @@ Repeat trials where practical to account for model stochasticity. Use ablation p
 - Use real projects as evidence source; no synthetic-only claims.
 - Full suite reserved for merges to `main`.
 
-## 8. Next step
+## 8. Controlled round protocol
 
-Select 10 real tasks from the ASEP repository (or a pilot project) and run configuration A first as baseline. Record raw metrics. Then B, C, D in balanced order.
+Pilot samples (Tasks 01–04) used different tasks and sequential order; they are not comparable. A valid comparison requires:
+
+1. **Identical task** for all configurations (same file, same change, same acceptance criteria).
+2. **Balanced order**: ABCD then DCBA (and reverse on repeat) to cancel sequence effects.
+3. **Minimum 3 repetitions** per configuration.
+4. **Telemetry on** (IN-01) to capture token/tool/latency automatically where the provider exposes them.
+5. Record raw data per run; report medians only; no p95 from small samples (per BUILD-NEXT-03).
+
+Controlled task: add one line to the `Controlled Round` section of `docs/BASELINE_RESULTS.md` describing the run. Acceptance: `asep check --rigor T1` PASS.
+
+## 9. Next step
+
+Run the first balanced sequence (ABCD) on the controlled task, record raw metrics, then repeat with DCBA.
