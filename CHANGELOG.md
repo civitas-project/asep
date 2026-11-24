@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [4.0.0-alpha] - Unreleased
 
 ### Added
+- Agent Observability (IN-01): a versioned event/trace envelope, an NDJSON local collector with allowlist redaction, retention and purge, `asep trace status|report|purge` and the read-only MCP tool `asep_trace_report`, plus balanced metrics with denominators and no aggregate score. Telemetry is off by default.
+- File-change evidence: SHA-256 hashes are compared at span boundaries and only changed paths are logged (with before/after hashes); write-ahead intents survive crashes, and both bypass sampling so file evidence is never thinned. Reports state whether ordinary event coverage is full, partial or none.
 - Capability-aware delegation: `CapabilityProfile` now carries extensible `supported_media`, `tool_domains`, and `delegation_threshold`. `asep_agent_send` accepts optional capability/media fields and rejects tasks whose required capabilities or media are unsupported before any message is stored.
 - Ambient skill discovery: `asep init` injects a pointer block into `AGENTS.md`/`CLAUDE.md`/`GEMINI.md` and scaffolds a flat `skills/` tree, including the `using-asep` bootstrap skill. `asep check --rigor T1` validates ambient skill structure.
 - Capability-domain agent presets (`code-worker`, `git-worker`, `media-worker`, `verifier`) and judge trajectory review of `tool_call_count`/`duplicate_calls`.

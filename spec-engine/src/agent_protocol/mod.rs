@@ -525,7 +525,7 @@ fn validate_ref(dir: &Path, ref_: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn hash_file(path: &Path) -> Result<String, String> {
+pub fn hash_file(path: &Path) -> Result<String, String> {
     let data = fs::read(path).map_err(|e| format!("cannot read {path:?}: {e}"))?;
     let mut hasher = Sha256::new();
     hasher.update(&data);
@@ -583,7 +583,7 @@ fn civil_from_days(mut z: i64) -> (i64, u32, u32) {
     (y, m as u32, d as u32)
 }
 
-fn now_rfc3339() -> String {
+pub fn now_rfc3339() -> String {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch");

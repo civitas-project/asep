@@ -303,7 +303,7 @@ fn test_check_messages_rejects_bad_envelope() {
     fs::create_dir_all(&messages_dir).expect("create messages dir");
     fs::write(
         messages_dir.join("msg-bad.json"),
-        r#"{"v": 99, "id": "msg-bad", "from": "lead", "to": "executor", "kind": "TASK_DISPATCH", "reply_to": null, "ref": null, "status": "sent", "ts": "2026-11-20T10:00:00Z"}"#,
+        r#"{"v": 99, "id": "msg-bad", "from": "leader", "to": "executor", "kind": "TASK_DISPATCH", "reply_to": null, "ref": null, "status": "sent", "ts": "2026-11-20T10:00:00Z"}"#,
     )
     .expect("write bad envelope");
 
@@ -326,7 +326,7 @@ fn test_check_messages_accepts_valid_dir() {
     let store = asep::agent_protocol::MessageStore::new(dir.path());
     store
         .send(
-            asep::agent_protocol::Role::Lead,
+            asep::agent_protocol::Role::Leader,
             asep::agent_protocol::Role::Executor,
             asep::agent_protocol::Kind::TaskDispatch,
             serde_json::json!({

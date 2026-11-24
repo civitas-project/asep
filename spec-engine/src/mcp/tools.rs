@@ -9,12 +9,14 @@ use crate::auditor::audit_project_docstrings;
 use crate::config::settings::load_config;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
+use crate::observability::TraceCollector;
 use crate::scanner::scan_project_tags;
 use serde_json::json;
 use srcdump::config::{Config as DumpConfig, OutputFormat, OutputMode};
 use srcdump::formatter::Formatter;
 use srcdump::walker::walk_files;
 use srcidx::parser::ParserRegistry;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 // @impl:FR-MCP-PROTO-02-B @impl:FR-MCP-02
@@ -236,6 +238,24 @@ pub fn get_tools_list() -> serde_json::Value {
                         }
                     },
                     "required": ["commit"]
+                }
+            },
+            {
+                "name": "asep_trace_report",
+                "description": "Report a recorded agent trace as NDJSON summary",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "trace_id": {
+                            "type": "string",
+                            "description": "Trace id: [A-Za-z0-9._-]"
+                        },
+                        "dir": {
+                            "type": "string",
+                            "description": "Repository root (defaults to current directory)"
+                        }
+                    },
+                    "required": ["trace_id"]
                 }
             },
             {
@@ -914,6 +934,46 @@ pub fn execute_tool(
             }
         }
 
+        "asep_trace_report" => {
+            let trace_id = mcp_require_str(arguments, "trace_id")?;
+            let valid_id = !trace_id.is_empty()
+                && trace_id.bytes().all(
+                    |b| matches!(b, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' | b'-'),
+                );
+            if !valid_id {
+                return Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "invalid trace_id '{trace_id}': must be non-empty [A-Za-z0-9._-]"
+                            )
+                        }
+                    ],
+                    "isError": true
+                }));
+            }
+
+            let dir = arguments
+                .get("dir")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_dir.to_path_buf());
+
+            match build_trace_summary(&dir, trace_id) {
+                Ok(summary) => mcp_text(summary),
+                Err(diagnostic) => Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": diagnostic
+                        }
+                    ],
+                    "isError": true
+                })),
+            }
+        }
+
         other => Err(format!("Unknown tool: {other}")),
     }
 }
@@ -924,6 +984,85 @@ fn is_scoped_commit(commit: &str) -> bool {
         && commit
             .bytes()
             .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+// Read-only trace report: groups parsed NDJSON lines by task_id/event and
+// adds reconciliation status from .spec-engine/verification.json.
+fn build_trace_summary(dir: &Path, trace_id: &str) -> Result<serde_json::Value, String> {
+    let config = load_config(dir);
+    let _collector = TraceCollector::new(dir, &config.telemetry);
+    let trace_dir = dir.join(&config.telemetry.dir);
+
+    let mut events: Vec<serde_json::Value> = Vec::new();
+    let mut trace_found = false;
+
+    let entries: Vec<std::fs::DirEntry> = match trace_dir.exists() {
+        true => fs::read_dir(&trace_dir)
+            .map_err(|e| format!("Failed to read trace dir: {e}"))?
+            .filter_map(|entry| entry.ok())
+            .collect(),
+        false => Vec::new(),
+    };
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(trace_id) || !name.ends_with(".ndjson") {
+            continue;
+        }
+        trace_found = true;
+        let content = fs::read_to_string(entry.path())
+            .map_err(|e| format!("Failed to read trace file '{name}': {e}"))?;
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let value: serde_json::Value = serde_json::from_str(line)
+                .map_err(|e| format!("Failed to parse trace line in '{name}': {e}"))?;
+            events.push(value);
+        }
+    }
+
+    let mut by_task: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    for event in &events {
+        let task_id = event
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+        let event_name = event
+            .get("event")
+            .and_then(|v| v.as_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+        let group = by_task
+            .entry(task_id)
+            .or_insert_with(|| serde_json::json!({}));
+        let counts = group.as_object_mut().expect("by_task group is object");
+        let count = counts
+            .get(&event_name)
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        counts.insert(event_name, json!(count + 1));
+    }
+
+    let verification_path = dir.join(".spec-engine").join("verification.json");
+    let reconciliation = fs::read_to_string(&verification_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+        .and_then(|value| {
+            value
+                .get("status")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+
+    Ok(serde_json::json!({
+        "trace_id": trace_id,
+        "trace_found": trace_found,
+        "events": events,
+        "by_task": by_task,
+        "reconciliation": reconciliation,
+    }))
 }
 
 /// Run directory for agent tools: explicit `run_dir` argument, `ASEP_RUN_DIR` env fallback only.

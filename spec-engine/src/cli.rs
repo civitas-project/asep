@@ -250,6 +250,31 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Inspect and manage telemetry trace segments
+    Trace {
+        /// Project root (default: current directory)
+        dir: Option<PathBuf>,
+
+        #[command(subcommand)]
+        action: TraceAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TraceAction {
+    /// Show whether telemetry is enabled and summarize trace segments
+    Status,
+    /// Print a summary of a trace grouped by task_id and event
+    Report {
+        /// Trace identifier to report on
+        trace_id: String,
+    },
+    /// Remove all segment files for a trace
+    Purge {
+        /// Trace identifier to purge
+        trace_id: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

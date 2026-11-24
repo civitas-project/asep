@@ -15,6 +15,7 @@ pub mod graph;
 pub mod harness;
 pub mod init;
 pub mod mcp;
+pub mod observability;
 pub mod pack;
 pub mod policy;
 pub mod runner;
@@ -24,6 +25,10 @@ pub mod skill;
 pub mod snapshot;
 pub mod verification;
 pub mod watch;
+
+// @impl:IN-01-COMPAT
+// The observability module is additive: existing modules, config fields and
+// MCP tools keep their names and behavior.
 
 #[cfg(test)]
 mod traceability_tests;

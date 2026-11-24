@@ -48,6 +48,35 @@ impl Default for EditorSettings {
     }
 }
 
+// @impl:IN-01-OVERHEAD
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TelemetryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    pub allowlist: Vec<String>,
+    pub redact_patterns: Vec<String>,
+    pub ttl_secs: u64,
+    pub max_bytes: u64,
+    #[serde(default)]
+    pub max_buffer_events: usize,
+    pub dir: String,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            allowlist: Vec::new(),
+            redact_patterns: Vec::new(),
+            ttl_secs: 86_400,
+            max_bytes: 10_485_760,
+            max_buffer_events: 1000,
+            dir: ".spec-engine/trace".to_string(),
+        }
+    }
+}
+
 /// Agent capability profile: fail-closed ceiling applied to scaffolded
 /// OpenCode agent permissions. Default is all capabilities enabled with a
 /// 200k context window, preserving existing scaffold behavior.
@@ -140,6 +169,9 @@ pub struct EngineConfig {
 
     #[serde(default)]
     pub evidence_dir: Option<String>,
+
+    #[serde(default)]
+    pub telemetry: TelemetryConfig,
 }
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).

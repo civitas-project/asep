@@ -269,3 +269,70 @@ Add a verification rule to the leader system prompt in `spec-engine/src/pack/man
 
 <!-- @design:FR-LEADER-01 -->
 Use leader as the primary agent name in generated presets and global configuration.
+
+## IN-01 — Agent Observability Protocol (Layer 05)
+
+Review verdict REVISE. Round 1 folds the shared event/trace envelope (catalog step A: stable ID, schema/version, evidence format, authorization boundary, event envelope) into IN-01 because IN-01 consumes it; skipping A would lock a schema that later has to be replaced. Existing primitives are extended, never rebuilt: `Envelope.reply_to`/`ref` for correlation, `GateResult.duration_ms` for latency, `write_json_atomic` for metadata, evidence dir permissions for access control.
+
+Constraint: new audited source must obey the existing strict policy — sequential guard clauses, no `else`, no nested `if`, no inline opt-out. Requirements are observable; no new engine is introduced because adapters already suffice.
+
+<!-- @design:IN-01-CONTRACT -->
+`spec-engine/src/observability.rs` defines `TraceEvent { schema_version, trace_id, parent_id: Option<String>, task_id, seq: u64, ts_wall: String, duration_ms: Option<u128>, ... }`, `TraceSpan` and `SpanGuard`. IDs are caller-supplied; `seq` is assigned by the collector. `duration_ms` is measured with `Instant::elapsed()` and never derived from `ts_wall`. Fact: `now_rfc3339()` in `agent_protocol/mod.rs:586` has second precision and uses wall clock, so it is unsuitable for ordering sub-second events — it is human-readable metadata only.
+
+<!-- @design:IN-01-COMPAT -->
+Additive only. No edits to `Envelope` (`agent_protocol/mod.rs:120`), `GateResult` (`ci/mod.rs:24`), `CheckJsonReport` (`runner.rs:28`) or the 11 existing MCP tools. Config gains a `telemetry` table with `#[serde(default)]` in `config/settings.rs`, resolved through `config::load_config`.
+
+<!-- @design:IN-01-COLLECT -->
+`TraceCollector` appends NDJSON (one JSON object per line) to `<root>/.spec-engine/trace/<trace_id>.ndjson` (dir configurable). This matches the existing ASEP convention: `srcdump::OutputFormat::Ndjson` is the default (`srcdump/src/config.rs:10,131`, `srcdump/src/main.rs:56`) and MCP `srcidx`/`srcdump` advertise `format: "ndjson"` (`mcp/tools.rs:109,157,172`). Buffered writes flush on span end and on `Drop`; with sampling `off` no file is created. Reuse the atomic-write convention for metadata only, not for the append stream.
+
+<!-- @design:IN-01-COST -->
+`CostMetadata { value: Option<f64>, currency: Option<String>, source: CostSource, missing: Vec<String> }`; `CostSource` serializes lowercase (`measured`, `estimated`, `provider_reported`, `unavailable`). `None` is never coerced to `0`.
+
+<!-- @design:IN-01-REPORT -->
+`Commands::Trace { action }` in `cli.rs` with `status|report|purge`; `asep_trace_report` added to `get_tools_list` and `execute_tool` in `mcp/tools.rs` (tool count 11 -> 12; keep `test_tool_descriptions_are_compact` at <= 60 chars). Report joins NDJSON events with `CiReport`/`CheckJsonReport` by task/gate id; missing values stay visible.
+
+<!-- @design:IN-01-PRIVACY -->
+Config fields `allowlist: Vec<String>` and `redact_patterns: Vec<String>`; persist only allowlisted fields and redact before write. `asep trace purge <trace_id>` rewrites/removes the segment and derived report. Files use the 0600 permission precedent from FR-ACC-02. Fixture asserts a secret string never appears in trace output.
+
+<!-- @design:IN-01-RETENTION -->
+Config fields `ttl_secs` and `max_bytes`; rotation starts a new segment and expired segments are deleted. Document that purge/rotation means absolute append-only is not claimed (consistent with KN-03-D04).
+
+<!-- @design:IN-01-OVERHEAD -->
+`TelemetryConfig.enabled: bool` in config, default `false`. No sampled mode: ordinary event recording is either on or off. Benchmark on the same pinned commit, telemetry on/off, balanced order, at least three samples, median only; no p95 from three samples and no claim beyond this machine (per BUILD-NEXT-03).
+
+Measured on this machine with a debug build, 10,000 synthetic events, three balanced samples (off/full, full/off, off/full): off = [5, 5, 6] ms (median 5 ms, 0 bytes written); full = [451, 465, 483] ms (median 465 ms, 1,787,780 bytes ≈ 1.7 MiB). Full telemetry is therefore ~93x slower than off for this synthetic workload; the default remains `Off` and no non-off default is adopted. This is a local debug-build measurement, not a universal claim.
+
+<!-- @design:IN-01-METRIC -->
+`TraceReport` carries each metric with its denominator, `skipped[]`, failures and a `baseline_commit`; no single aggregate score. Reuse `VerificationReport.skipped` and `CheckJsonReport` totals rather than re-deriving them.
+
+### Ordered implementation plan (one file or one function per unit)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| O1 | `spec-engine/src/observability.rs`, `TraceEvent`/`TraceSpan`/`SpanGuard` | Envelope serializes with schema_version, explicit IDs, seq, ts_wall and Instant-based duration; caller IDs are required; no field inferred. | `cargo test -p asep --lib observability` then `asep affected spec-engine/src/observability.rs` and run its listed commands. |
+| O2 | `spec-engine/src/config/settings.rs`, `TelemetryConfig` | `telemetry` table loads with defaults; sampling defaults to off; allowlist, redact_patterns, ttl_secs, max_bytes parse and reject wrong types. | `cargo test -p asep --test config_test` then `asep affected spec-engine/src/config/settings.rs`. |
+| O3 | `spec-engine/src/observability.rs`, `TraceCollector` | NDJSON append with bounded buffer and flush on span end/Drop; no file when off; purge removes a trace. | `cargo test -p asep --lib observability` then `asep affected spec-engine/src/observability.rs`. |
+| O4 | `spec-engine/src/cli.rs` + `spec-engine/src/runner.rs`, `Commands::Trace` | `asep trace status|report|purge` dispatch and exit codes; no change to other commands. | `cargo test -p asep --test integration_check_test` then `asep affected spec-engine/src/cli.rs spec-engine/src/runner.rs`. |
+| O5 | `spec-engine/src/mcp/tools.rs`, `asep_trace_report` | Tool listed with typed schema; invalid trace_id returns `isError`; output reconciles with the CLI report; `test_tool_descriptions_are_compact` still passes at 12 tools. | `cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx` then `asep affected spec-engine/src/mcp/tools.rs`. |
+| O6 | `spec-engine/src/observability.rs` + `spec-engine/tests/observability_test.rs`, reconciliation and privacy | Synthetic trace with measured/estimated/unavailable, nested call, retry, resume and secret fixture; no guessed values, no secret in log, report matches CiReport/CheckJsonReport. | `cargo test -p asep --test observability_test` then `asep affected spec-engine/tests/observability_test.rs`. |
+| O7 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Add `@rel:satisfies`/`@rel:verifies` for all nine IN-01 requirements; changelog notes observability MVP. | `asep check . --rigor T1`, then `asep check . --rigor T2` after scoped acceptance. |
+| O8 | Overhead benchmark result (recorded in TDD, not a code unit) | On/off overhead measured on the same commit with balanced order and >=3 samples; default remains off. | Record command output and median; no default change. |
+
+### File-change evidence (added after review discussion)
+
+<!-- @design:IN-01-FILE-EVIDENCE -->
+`FileChangeTracker` in `spec-engine/src/observability.rs` holds the root, the in-scope paths supplied by the caller (from `asep affected` / acceptance `changed_paths`), and a `path -> sha256` map. `baseline()` hashes once; `checkpoint(collector, task_id, span_label)` hashes again and emits one `file_change` `TraceEvent` per changed path only. Hashing reuses `agent_protocol::hash_file` (SHA-256 already a dependency) and `now_rfc3339` for the wall stamp; both become public. Structured before/after data lives in a new optional `detail: serde_json::Value` field on `TraceEvent` (`#[serde(default)]`, additive to existing NDJSON). Hashing happens twice per span, not once per edit, so its cost scales with spans rather than with events.
+
+<!-- @design:IN-01-INTENT -->
+`FileChangeTracker::intent(collector, path, task_id)` emits a `write_intent` event with the pre-write hash before a controlled tool writes. `TraceCollector::record_evidence()` buffers these events even when ordinary event recording is off, so file-change evidence is never thinned. `TraceReport` gains `event_coverage: String` (`on` or `off`) supplied by the caller from `TelemetryConfig.enabled`; file-change/intent events are always counted as complete. Reports thereby state whether ordinary event coverage was on or off.
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| F1 | `spec-engine/src/observability.rs`, `spec-engine/src/agent_protocol/mod.rs` | `TraceEvent.detail` added additively; `record_evidence` bypasses sampling; `FileChangeTracker` baseline/checkpoint emits only changed paths with before/after hashes and span label; `intent` emits pre-write hash. | `cargo test -p asep --lib observability --offline --locked` |
+| F2 | `spec-engine/tests/observability_test.rs` | Synthetic file edits: unchanged path emits nothing, changed path emits exactly one event with correct hashes, intent precedes change, all file evidence survives Sampled mode, report coverage label correct. | `cargo test -p asep --test observability_test --offline --locked` |
+| F3 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Two new requirements closed with relations; changelog notes file-change evidence. | `asep check . --rigor T2` after scoped acceptance |
+
+### Known consequences of this plan
+- Adding the nine `@req` tags before `@impl`/`@test`/`@rel` exist makes `asep check --rigor T1` fail COV-04/COV-05. This is expected and identical to the earlier scoped-acceptance rollout; the final gate after O7 is the acceptance point.
+- `asep affected` cannot map a new file until its `@impl`/`@test` tags land, so O1–O3 rely on the targeted `cargo test` commands; if `asep affected` returns empty, record that explicitly and use the listed targets.
+- Full suite remains reserved for merges to `main`.

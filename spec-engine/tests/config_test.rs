@@ -171,3 +171,56 @@ fn test_covers_all_satisfied_returns_ok() {
     assert!(profile.covers(&[], Some("")).is_ok());
     assert!(profile.covers(&[], None).is_ok());
 }
+
+// @test:IN-01-OVERHEAD
+#[test]
+fn test_telemetry_defaults() {
+    let tmp = tempdir().unwrap();
+    let config = load_config(tmp.path());
+
+    assert_eq!(config.telemetry.enabled, false);
+    assert_eq!(config.telemetry.dir, ".spec-engine/trace");
+    assert_eq!(config.telemetry.ttl_secs, 86_400);
+    assert_eq!(config.telemetry.max_bytes, 10_485_760);
+    assert_eq!(config.telemetry.max_buffer_events, 1000);
+    assert!(config.telemetry.allowlist.is_empty());
+    assert!(config.telemetry.redact_patterns.is_empty());
+}
+
+// @test:IN-01-OVERHEAD
+#[test]
+fn test_telemetry_round_trip_toml() {
+    let tmp = tempdir().unwrap();
+    let mut config = EngineConfig::default();
+    config.telemetry.enabled = true;
+    config.telemetry.allowlist = vec!["span".to_string(), "event".to_string()];
+    config.telemetry.redact_patterns = vec!["token".to_string()];
+    config.telemetry.ttl_secs = 3600;
+    config.telemetry.max_bytes = 5242880;
+    config.telemetry.max_buffer_events = 5000;
+    config.telemetry.dir = ".spec-engine/custom-trace".to_string();
+
+    save_config(tmp.path(), &config).expect("Config save must succeed");
+
+    let reloaded = load_config(tmp.path());
+    assert_eq!(reloaded.telemetry.enabled, true);
+    assert_eq!(reloaded.telemetry.allowlist, vec!["span", "event"]);
+    assert_eq!(reloaded.telemetry.redact_patterns, vec!["token"]);
+    assert_eq!(reloaded.telemetry.ttl_secs, 3600);
+    assert_eq!(reloaded.telemetry.max_bytes, 5242880);
+    assert_eq!(reloaded.telemetry.max_buffer_events, 5000);
+    assert_eq!(reloaded.telemetry.dir, ".spec-engine/custom-trace");
+}
+
+// @test:IN-01-OVERHEAD
+#[test]
+fn test_telemetry_enabled_round_trip() {
+    let tmp = tempdir().unwrap();
+    let dir = tmp.path().join(".spec-engine");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("config.toml"), "[telemetry]\nenabled = true\n").unwrap();
+
+    let config = load_config(tmp.path());
+    assert!(config.telemetry.enabled);
+    assert_eq!(config.telemetry.dir, ".spec-engine/trace");
+}

@@ -289,29 +289,46 @@ fn matches_path(node_file: &Path, changed: &Path) -> bool {
     node_file == changed || node_file.starts_with(&changed)
 }
 
-/// Returns the `cargo test` target fragment for a test file: `--test <stem>`
-/// for integration tests under `tests/`, `--bin <name>` for binary crate
-/// sources (the `name` from a `[[bin]] entry in `Cargo.toml`, falling back
-/// to the `src/bin/` convention stem), `--lib` for anything else under
-/// `src/`, and `--test <stem>` as the fallback.
+// Returns the `cargo test` target fragment for a test file: `--test <stem>`
+// when a `tests` component appears anywhere in the path, `--bin <name>` for
+// `src/bin/...` sources (the `name` from a `[[bin]] entry in `Cargo.toml`,
+// falling back to the `src/bin/` convention stem), `--lib` for any other
+// `src/...` source, and `--test <stem>` as the fallback.
 fn cargo_test_base(root: &Path, file: &Path) -> String {
     let norm = normalize_components(file);
     let stem = norm.file_stem().and_then(|s| s.to_str()).unwrap_or("test");
-    let mut components = norm.components();
-    let base = match (components.next(), components.next()) {
-        (Some(Component::Normal(dir)), _) if dir == "tests" => {
-            format!("cargo test --test {stem}")
+    let mut has_tests = false;
+    let mut has_src = false;
+    let mut src_followed_by_bin = false;
+    let mut prev_was_src = false;
+    for component in norm.components() {
+        match component {
+            Component::Normal(dir) => {
+                if dir == "tests" {
+                    has_tests = true;
+                }
+                if prev_was_src && dir == "bin" {
+                    src_followed_by_bin = true;
+                }
+                prev_was_src = dir == "src";
+                if dir == "src" {
+                    has_src = true;
+                }
+            }
+            _ => prev_was_src = false,
         }
-        (Some(Component::Normal(dir)), Some(Component::Normal(sub)))
-            if dir == "src" && sub == "bin" =>
-        {
-            let name = bin_name_from_cargo_toml(root, &norm).unwrap_or_else(|| stem.to_string());
-            format!("cargo test --bin {name}")
-        }
-        (Some(Component::Normal(dir)), _) if dir == "src" => "cargo test --lib".to_string(),
-        _ => format!("cargo test --test {stem}"),
-    };
-    base
+    }
+    if has_tests {
+        return format!("cargo test --test {stem}");
+    }
+    if has_src && src_followed_by_bin {
+        let name = bin_name_from_cargo_toml(root, &norm).unwrap_or_else(|| stem.to_string());
+        return format!("cargo test --bin {name}");
+    }
+    if has_src {
+        return "cargo test --lib".to_string();
+    }
+    format!("cargo test --test {stem}")
 }
 
 /// Detects a binary crate source from `[[bin]] entries in `Cargo.toml`,

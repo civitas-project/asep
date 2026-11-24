@@ -45,7 +45,7 @@ fn test_mcp_tools_list() {
 fn test_tool_descriptions_are_compact() {
     let tools = get_tools_list();
     let tool_list = tools["tools"].as_array().expect("tools array");
-    assert_eq!(tool_list.len(), 11, "expected exactly 11 tools");
+    assert_eq!(tool_list.len(), 12, "expected exactly 12 tools");
     for tool in tool_list {
         let name = tool["name"].as_str().unwrap_or("<unnamed>");
         let desc = tool["description"].as_str().expect("description string");
@@ -541,6 +541,133 @@ fn test_accept_scoped_success_writes_evidence() {
     let content = fs::read_to_string(&evidence).unwrap();
     assert!(content.contains("reviewer: scoped-trusted-runner"));
     assert!(content.contains("verdict: ACCEPTED"));
+}
+
+// @test:IN-01-REPORT
+#[test]
+fn test_trace_report_tool_listed() {
+    let tools = get_tools_list();
+    let tool_list = tools["tools"].as_array().expect("tools array");
+    let tool = tool_list
+        .iter()
+        .find(|t| t["name"] == "asep_trace_report")
+        .expect("asep_trace_report must be listed");
+    let desc = tool["description"].as_str().expect("description string");
+    assert!(desc.chars().count() <= 60, "description too long: {desc}");
+    let props = tool["inputSchema"]["properties"]
+        .as_object()
+        .expect("properties object");
+    assert!(props.contains_key("trace_id"));
+    assert!(props.contains_key("dir"));
+    assert_eq!(props["trace_id"]["type"], "string");
+    assert_eq!(props["dir"]["type"], "string");
+    let required: Vec<&str> = tool["inputSchema"]["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(required.contains(&"trace_id"), "trace_id is required");
+    assert!(!required.contains(&"dir"), "dir is optional");
+}
+
+// @test:IN-01-REPORT
+#[test]
+fn test_trace_report_rejects_invalid_trace_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_s = dir.path().to_str().unwrap().to_string();
+    for trace_id in ["", "../escape", "bad id", "a/b"] {
+        let res = execute_tool(
+            "asep_trace_report",
+            &json!({"trace_id": trace_id, "dir": dir_s}),
+            Path::new(""),
+        )
+        .expect("asep_trace_report must return");
+        assert!(
+            res["isError"].as_bool() == Some(true),
+            "expected isError=true for trace_id '{trace_id}': {res:?}"
+        );
+    }
+}
+
+// @test:IN-01-REPORT
+#[test]
+fn test_trace_report_success_returns_summary() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_path = dir.path();
+    let trace_dir = dir_path.join(".spec-engine").join("trace");
+    fs::create_dir_all(&trace_dir).unwrap();
+
+    let trace_id = "trace.alpha-1";
+    fs::write(
+        trace_dir.join(format!("{trace_id}.ndjson")),
+        r#"{"task_id":"task-alpha","event":"run"}
+{"task_id":"task-alpha","event":"finish"}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dir_path.join(".spec-engine").join("verification.json"),
+        r#"{"status":"reconciled"}"#,
+    )
+    .unwrap();
+
+    let res = execute_tool(
+        "asep_trace_report",
+        &json!({"trace_id": trace_id, "dir": dir_path.to_str().unwrap()}),
+        Path::new(""),
+    )
+    .expect("asep_trace_report must return");
+
+    assert_eq!(
+        res["isError"].as_bool(),
+        Some(false),
+        "unexpected error: {res:?}"
+    );
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let summary: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert_eq!(
+        summary["trace_found"].as_bool(),
+        Some(true),
+        "trace must be found: {text}"
+    );
+    assert_eq!(summary["reconciliation"].as_str(), Some("reconciled"));
+    assert!(
+        text.contains("task-alpha"),
+        "summary must name task_id: {text}"
+    );
+    assert!(
+        text.contains("\"run\""),
+        "summary must name run event: {text}"
+    );
+    assert!(
+        text.contains("\"finish\""),
+        "summary must name finish event: {text}"
+    );
+    assert!(
+        !text.contains("\"isError\": true"),
+        "read-only report must not be an error: {text}"
+    );
+}
+
+// @test:IN-01-REPORT
+#[test]
+fn test_trace_report_missing_trace_is_not_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_s = dir.path().to_str().unwrap().to_string();
+
+    let res = execute_tool(
+        "asep_trace_report",
+        &json!({"trace_id": "trace.does-not-exist", "dir": dir_s}),
+        Path::new(""),
+    )
+    .expect("asep_trace_report must return");
+
+    assert_eq!(res["isError"].as_bool(), Some(false));
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let summary: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+    assert_eq!(summary["trace_found"].as_bool(), Some(false));
+    assert!(summary["events"].as_array().unwrap().is_empty());
 }
 
 fn git(root: &Path, args: &[&str]) {
