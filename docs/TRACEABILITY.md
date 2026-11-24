@@ -203,3 +203,27 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:IN-01-FILE-EVIDENCE->IN-01-FILE-EVIDENCE "observability tests assert hash checkpoints emit only changed paths with before/after hashes"
 @rel:satisfies:IN-01-INTENT->IN-01-INTENT
 @rel:verifies:IN-01-INTENT->IN-01-INTENT "observability tests assert write-ahead intent precedes change, bypasses sampling and report states coverage"
+
+# Traceability relations (@rel:satisfies) — Layer 5 Agent Runtime
+@rel:satisfies:FR-AUDIT-01->FR-AUDIT-01
+@rel:satisfies:FR-LEVEL-01->FR-LEVEL-01
+@rel:satisfies:FR-LEVEL-02->FR-LEVEL-02
+@rel:satisfies:FR-LEVEL-03->FR-LEVEL-03
+@rel:satisfies:FR-BUDGET-01->FR-BUDGET-01
+@rel:satisfies:FR-BUDGET-02->FR-BUDGET-02
+@rel:satisfies:FR-BUDGET-03->FR-BUDGET-03
+@rel:satisfies:FR-REACT-01->FR-REACT-01
+@rel:satisfies:FR-REACT-02->FR-REACT-02
+@rel:satisfies:FR-REACT-03->FR-REACT-03
+
+# Traceability relations (@rel:verifies) — Layer 5 Agent Runtime
+@rel:verifies:FR-AUDIT-01->FR-AUDIT-01 "runtime_audit_test asserts docs/AUDIT.md has required sections"
+@rel:verifies:FR-LEVEL-01->FR-LEVEL-01 "level tests assert round-trip, default L1 and scope"
+@rel:verifies:FR-LEVEL-02->FR-LEVEL-02 "config_test asserts engineer_level default L1 and round-trip"
+@rel:verifies:FR-LEVEL-03->FR-LEVEL-03 "agent_protocol tests assert Envelope.level round-trip and absent default"
+@rel:verifies:FR-BUDGET-01->FR-BUDGET-01 "runtime tests assert ResourceBudget round-trip and None unlimited"
+@rel:verifies:FR-BUDGET-02->FR-BUDGET-02 "runtime tests assert BudgetTracker exceeded first dimension"
+@rel:verifies:FR-BUDGET-03->FR-BUDGET-03 "runtime tests assert blocked_message exact string"
+@rel:verifies:FR-REACT-01->FR-REACT-01 "runtime tests assert Action/Observation round-trip"
+@rel:verifies:FR-REACT-02->FR-REACT-02 "runtime tests assert ActionContract rejects missing and capability mismatch"
+@rel:verifies:FR-REACT-03->FR-REACT-03 "runtime tests assert Observation converts to TraceEvent"

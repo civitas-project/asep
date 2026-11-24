@@ -19,6 +19,7 @@ pub mod observability;
 pub mod pack;
 pub mod policy;
 pub mod runner;
+pub mod runtime;
 pub mod scanner;
 pub mod self_update;
 pub mod skill;

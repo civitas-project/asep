@@ -475,3 +475,27 @@ fn test_trace_cli_and_mcp_report_are_registered() {
     let names = tools["tools"].as_array().expect("tools array");
     assert!(names.iter().any(|t| t["name"] == "asep_trace_report"));
 }
+
+// @test:FR-AUDIT-01
+#[test]
+fn test_audit_doc_has_required_sections() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = manifest.parent().unwrap().join("docs").join("AUDIT.md");
+    let content = fs::read_to_string(&path).expect("docs/AUDIT.md must exist");
+    for heading in [
+        "## Existing mechanisms",
+        "## Consumers",
+        "## Overlap with native runtime",
+        "## Baseline measurement plan",
+    ] {
+        assert!(content.contains(heading), "missing section: {heading}");
+    }
+}
+
+// @test:FR-LEVEL-02
+#[test]
+fn test_engineer_level_default_in_profile() {
+    use crate::runtime::EngineerLevel;
+    let profile = crate::config::settings::CapabilityProfile::default();
+    assert_eq!(profile.engineer_level, EngineerLevel::L1);
+}
