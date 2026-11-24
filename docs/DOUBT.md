@@ -1,7 +1,7 @@
 # Doubts — ASEP Adaptive Architecture
 
 > Status tracker for technical doubts (RFC v0.2 §9, plus operational doubts raised during implementation).  
-> Each entry: ID, doubt, required evaluation, verdict (`OPEN` / `RESOLVED` / `DEFERRED` / `REJECTED`).
+> Each entry: ID, doubt, required evaluation, verdict (`OPEN` / `RESOLVED` / `DEFERRED` / `REJECTED` / `DECIDED`).
 
 ## From RFC v0.2 §9 (AD-D01..AD-D12)
 
@@ -31,7 +31,7 @@
 
 ## Layer 5 (Agent Runtime) — open doubts
 
-- Engineer level (L1/L2/L3) is a scope classification, not a model size or permission grant (RFC §3.2). Need capability evidence to calibrate (AD-D03).
-- ReAct loop: reuse native runtime loop; ASEP adds action contracts, observation, budget, evidence (RFC §5.1). Risk of duplicating runtime (AD-D01).
+- Engineer level (L1/L2/L3) is a scope classification, not a model size or permission grant (RFC §3.2). Calibration rules defined (AD-D03 DECIDED, see `docs/LEVEL_CALIBRATION.md` §1).
+- ReAct loop: reuse native runtime loop; ASEP adds action contracts, observation, budget, evidence (RFC §5.1). No duplicate runtime (AD-D01 DECIDED).
 - Resource budgeting: thresholds and escalation need empirical tuning; default values are provisional.
 - Audit redundancy (P0) must precede new capability work to avoid duplicating existing mechanisms (FR-CAP, agent_protocol).
