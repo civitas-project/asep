@@ -65,9 +65,56 @@ Rigor is **independent of level**. A single-line change in auth can be High Assu
 | Add optional CLI flag | L2 | Lightweight | Reversible, clear scope |
 | Migrate DB schema | L3 | High Assurance | Data loss risk |
 
-## 4. Governance
+## 4. Execution Topology
 
-- Leader assigns level + rigor before delegation; documents in task objective.
+A role is a responsibility, not a permanent agent identity. One agent may fulfill multiple roles, provided mandatory independence constraints remain satisfied.
+
+### Topologies
+- **Single Agent (default):** one agent performs Leader/Explorer/Executor/Judge. No separate role instance is created merely to satisfy a nominal workflow.
+- **Independent Review (risk-based):** Judge does not implement the change being reviewed; receives requirements, artifacts, and evidence in a separate review context. Different model not mandatory; separation of responsibility is.
+- **Selective Delegation (complexity-based):** delegate only when specialization, parallelism, or context separation is expected to provide value. Activating one delegated role does not require activating all others.
+
+### Decision rules
+| Condition | Behavior |
+|---|---|
+| Routine, low-risk, reversible change | Prefer single agent |
+| Material uncertainty | Explorer responsibilities; delegate only if beneficial |
+| Independently partitionable work | Delegate Executor when expected benefits justify coordination |
+| High-risk auth/authorization/payment/data-deletion | Require independent Judge |
+| High Assurance workflow | Require independent Judge |
+| Explicit independent acceptance requirement | Require independent Judge |
+| Mandatory independent Judge unavailable | Acceptance remains unverified; do not claim acceptance |
+
+Rules requiring independent review take precedence over the single-agent default.
+
+### Verification semantics
+- Acceptance evidence does not automatically require an independent Judge; deterministic checks (compiler, tests, linters) can suffice where independent review is not mandatory.
+- Judge independence requires separation from implementation responsibility and a separate review context.
+- A mandatory independent review must not be bypassed due to time, budget, or runtime limitations.
+
+## 5. Resource Budget
+
+ASEP does not replace native runtime resource management; it may express optional additional constraints.
+
+| Parameter | Default | Conservative preset |
+|---|---:|---:|
+| Token budget | `None` (no ASEP limit) | 100,000 |
+| Tool call budget | `None` | 50 |
+| ASEP enforcement | Disabled | Requested, subject to runtime capability |
+
+`None` means no additional ASEP-imposed limit; native runtime and provider limits still apply.
+
+### Behavioral contract
+- Without an explicit budget, rely on native runtime limits.
+- When configured, enforce through available native mechanisms or supported measurement capabilities.
+- On exhaustion, stop initiating new work and persist progress where possible.
+- When measurement/enforcement is unavailable, report the limitation as unsupported; do not claim a hard cap was enforced.
+- Budget exhaustion must not waive mandatory verification; if verification cannot finish, record acceptance as incomplete/unverified.
+- Preset values are provisional and require empirical calibration.
+
+## 6. Governance
+
+- Leader assigns level + rigor + topology before delegation; documents in task objective.
 - Judge verifies assignment against diff and triggers; mismatch → blocking finding.
 - Default: single agent, Lightweight, relevant verification. Add mechanism only when benefit is provable (AX-05).
 - This document is additive; it does not change existing CLI, MCP, or schema (IN-01-COMPAT precedent).
