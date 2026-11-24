@@ -290,7 +290,11 @@ impl MessageStore {
         let is_leader_rejecting_own =
             agent == Role::Leader && envelope.from == Role::Leader && status == "rejected";
         if !is_recipient && !is_leader_rejecting_own {
-            return Err(format!("only recipient {} may ack {}", envelope.to.as_str(), id));
+            return Err(format!(
+                "only recipient {} may ack {}",
+                envelope.to.as_str(),
+                id
+            ));
         }
         envelope.status = status.to_string();
         write_json_atomic(&env_path, &envelope)?;

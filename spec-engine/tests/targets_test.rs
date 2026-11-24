@@ -261,8 +261,7 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
         parsed["agents"]["leader"]["customField"].as_str(),
         Some("preserved")
     );
-    let leader_perms = parsed["agents"]["leader"]
-        ["permissions"]
+    let leader_perms = parsed["agents"]["leader"]["permissions"]
         .as_array()
         .expect("permissions must be an array");
     assert!(
@@ -288,7 +287,10 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
     assert_eq!(parsed["agents"]["leader"]["mode"], "primary");
     assert_eq!(parsed["agents"]["leader"]["steps"], 60);
     let leader_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
-    assert!(leader_system.contains("docs/PRD.md"), "leader system must reference PRD");
+    assert!(
+        leader_system.contains("docs/PRD.md"),
+        "leader system must reference PRD"
+    );
     assert_eq!(
         parsed["agents"]["executor"]["description"],
         "Fast coding executor in a bounded executor-judge pipeline."
@@ -572,8 +574,14 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     );
 
     // Lead and executor keep capability-derived allows under default profile.
-    assert!(has("leader", "edit", "allow"), "leader: edit must be allowed");
-    assert!(has("leader", "shell", "allow"), "leader: shell must be allowed");
+    assert!(
+        has("leader", "edit", "allow"),
+        "leader: edit must be allowed"
+    );
+    assert!(
+        has("leader", "shell", "allow"),
+        "leader: shell must be allowed"
+    );
     assert!(
         has("executor", "edit", "allow"),
         "executor: edit must be allowed"
