@@ -1,7 +1,7 @@
 # Level Calibration & Rigor Indicators
 
 > Operational rules for assigning Engineer Level (L1/L2/L3) and Engineering Rigor (Lightweight/Structured/High Assurance).  
-> Source: RFC v0.2 §3.2, §3.3, §4, §7. Doubts: AD-D03, AD-D04.
+> Source: RFC v0.2 §3.2, §3.3, §4, §7. Doubts: AD-D02, AD-D03, AD-D04.
 
 ## 1. Engineer Level — scope of competence
 
@@ -90,6 +90,7 @@ Rules requiring independent review take precedence over the single-agent default
 ### Verification semantics
 - Acceptance evidence does not automatically require an independent Judge; deterministic checks (compiler, tests, linters) can suffice where independent review is not mandatory.
 - Judge independence requires separation from implementation responsibility and a separate review context.
+- The Judge gives an advisory verdict only; only the trusted local runner grants `ACCEPTED` (AD-D09).
 - A mandatory independent review must not be bypassed due to time, budget, or runtime limitations.
 
 ## 5. Resource Budget
