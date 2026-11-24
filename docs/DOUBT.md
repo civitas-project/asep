@@ -7,14 +7,14 @@
 
 | ID | Doubt | Required evaluation | Verdict |
 |---|---|---|---|
-| AD-D01 | Redundansi dengan runtime native | Petakan capability yang sudah tersedia pada runtime dan ASEP; identifikasi gap aktual. | OPEN |
+| AD-D01 | Redundansi dengan runtime native | Petakan capability yang sudah tersedia pada runtime dan ASEP; identifikasi gap aktual. | DECIDED — reuse native runtime (ReAct, tools, memory); ASEP only adds contracts, budget, evidence. Guardrail for every new slice. |
 | AD-D02 | Role overlap | Tentukan kapan satu agent cukup dan kapan independensi Judge memberikan manfaat. | OPEN |
-| AD-D03 | Level calibration | Rumuskan task scope dan capability evidence tanpa mengandalkan nama/ukuran model. | OPEN |
-| AD-D04 | Rigor misclassification | Tentukan indikator risiko, uncertainty, dan escalation; uji kasus task kecil berisiko tinggi. | OPEN |
+| AD-D03 | Level calibration | Rumuskan task scope dan capability evidence tanpa mengandalkan nama/ukuran model. | DECIDED — rules in `docs/LEVEL_CALIBRATION.md` §1; Leader assigns, Judge verifies. |
+| AD-D04 | Rigor misclassification | Tentukan indikator risiko, uncertainty, dan escalation; uji kasus task kecil berisiko tinggi. | DECIDED — triggers in `docs/LEVEL_CALIBRATION.md` §2. |
 | AD-D05 | Orchestration overhead | Ukur biaya koordinasi dan kualitas terhadap single-agent baseline. | OPEN |
 | AD-D06 | Memory and context overlap | Tetapkan ownership state, retrieval, source of truth, dan mekanisme invalidasi. | OPEN |
 | AD-D07 | Lifecycle hook limitations | Audit dukungan compaction/session hooks; rancang fallback yang tidak menjanjikan checkpoint saat crash. | OPEN |
-| AD-D08 | Graph duplication | Evaluasi apakah traceability dan source index yang sudah ada dapat menjadi fondasi graph bersama. | OPEN |
+| AD-D08 | Graph duplication | Evaluasi apakah traceability dan source index yang sudah ada dapat menjadi fondasi graph bersama. | DECIDED — reuse `build_relation_graph` and `@rel`; no new graph engine. |
 | AD-D09 | Verification independence | Bedakan objective checks, judgement subjektif, dan acceptance manusia; hindari self-certification. | RESOLVED — trusted local runner grants ACCEPTED; agent never grants it (FR-ACC-02..05, FR-INT-01). |
 | AD-D10 | Formal methods applicability | Identifikasi properti yang benar-benar membutuhkan model checking, bukan sekadar test biasa. | OPEN |
 | AD-D11 | Visual backend cost | Ukur akurasi, toleransi, portability, dan overhead CV terhadap DOM/native screenshot tools. | OPEN |
