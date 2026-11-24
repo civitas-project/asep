@@ -19,10 +19,7 @@ pub fn match_version_constraint(version_str: &str, req_str: &str) -> bool {
 }
 
 /// Resolves the highest compatible version from a list of available versions for a given constraint.
-pub fn resolve_skill_dependency_version(
-    available: &[String],
-    req_str: &str,
-) -> Option<String> {
+pub fn resolve_skill_dependency_version(available: &[String], req_str: &str) -> Option<String> {
     let req = VersionReq::parse(req_str.trim()).ok()?;
 
     let mut matched_versions: Vec<Version> = available

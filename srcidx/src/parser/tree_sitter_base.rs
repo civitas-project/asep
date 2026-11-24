@@ -34,7 +34,12 @@ pub struct TreeSitterParser {
 
 impl TreeSitterParser {
     pub fn new(mut config: TreeSitterConfig) -> Result<Self> {
-        let capture_names: Vec<String> = config.query.capture_names().iter().map(|s| s.to_string()).collect();
+        let capture_names: Vec<String> = config
+            .query
+            .capture_names()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         config.capture_names = capture_names;
         let mut parser = Parser::new();
         parser.set_language(&config.language)?;
@@ -59,7 +64,13 @@ impl TreeSitterParser {
             .to_string()
     }
 
-    fn node_to_symbol(&self, node: Node, source: &str, captures: &[(Node, &str)], pattern_index: usize) -> Option<Symbol> {
+    fn node_to_symbol(
+        &self,
+        node: Node,
+        source: &str,
+        captures: &[(Node, &str)],
+        pattern_index: usize,
+    ) -> Option<Symbol> {
         let mut kind = SymbolKind::Other(self.config.language_id.to_string());
         let mut name = String::new();
         let mut signature = String::new();
@@ -91,19 +102,33 @@ impl TreeSitterParser {
         for (capture_node, capture_name) in captures {
             let capture_name_str = *capture_name;
             if capture_name_str == self.config.name_capture {
-                name = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                name = capture_node
+                    .utf8_text(source.as_bytes())
+                    .unwrap_or("")
+                    .to_string();
                 continue;
             }
             if self.config.signature_capture == Some(capture_name_str) {
-                signature = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                signature = capture_node
+                    .utf8_text(source.as_bytes())
+                    .unwrap_or("")
+                    .to_string();
                 continue;
             }
             if self.config.return_type_capture == Some(capture_name_str) {
-                return_type = capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+                return_type = capture_node
+                    .utf8_text(source.as_bytes())
+                    .unwrap_or("")
+                    .to_string();
                 continue;
             }
             if self.config.doc_capture == Some(capture_name_str) {
-                doc = Some(capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string());
+                doc = Some(
+                    capture_node
+                        .utf8_text(source.as_bytes())
+                        .unwrap_or("")
+                        .to_string(),
+                );
                 continue;
             }
             if self.config.visibility_capture == Some(capture_name_str) {
@@ -111,7 +136,12 @@ impl TreeSitterParser {
                 continue;
             }
             if self.config.attrs_capture == Some(capture_name_str) {
-                attrs.push(capture_node.utf8_text(source.as_bytes()).unwrap_or("").to_string());
+                attrs.push(
+                    capture_node
+                        .utf8_text(source.as_bytes())
+                        .unwrap_or("")
+                        .to_string(),
+                );
             }
         }
 
@@ -178,7 +208,11 @@ impl TreeSitterParser {
     fn node_kind_to_symbol_kind(&self, node: Node) -> SymbolKind {
         let kind = node.kind();
         match kind {
-            "function_declaration" | "function_definition" | "method_definition" | "arrow_function" | "function_signature" => SymbolKind::Fn,
+            "function_declaration"
+            | "function_definition"
+            | "method_definition"
+            | "arrow_function"
+            | "function_signature" => SymbolKind::Fn,
             "class_declaration" | "class_definition" => SymbolKind::Class,
             "interface_declaration" | "interface_definition" => SymbolKind::Interface,
             "enum_declaration" | "enum_definition" => SymbolKind::Enum,
@@ -247,7 +281,10 @@ impl TreeSitterParser {
         };
         for line in doc.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
+            if trimmed.starts_with("@impl:")
+                || trimmed.starts_with("@test:")
+                || trimmed.starts_with("@criticality:")
+            {
                 tags.push(trimmed.to_string());
             }
         }
@@ -339,26 +376,35 @@ impl SourceParser for TreeSitterParser {
         };
 
         let mut query_cursor = QueryCursor::new();
-        let mut matches_iter = query_cursor.matches(&self.config.query, tree.root_node(), content.as_bytes());
+        let mut matches_iter =
+            query_cursor.matches(&self.config.query, tree.root_node(), content.as_bytes());
 
         let capture_names = &self.config.capture_names;
         let mut match_data = Vec::new();
 
         while let Some(match_) = matches_iter.next() {
-            let captures: Vec<(Node, &str)> = match_.captures().iter()
+            let captures: Vec<(Node, &str)> = match_
+                .captures()
+                .iter()
                 .map(|c| {
                     let capture_name = &capture_names[c.index as usize];
                     (c.node, capture_name.as_str())
                 })
                 .collect();
 
-            let pattern_node = match_.captures().first().map(|c| c.node).unwrap_or_else(|| tree.root_node());
+            let pattern_node = match_
+                .captures()
+                .first()
+                .map(|c| c.node)
+                .unwrap_or_else(|| tree.root_node());
             match_data.push((pattern_node, captures, match_.pattern_index));
         }
 
         let mut symbols = Vec::new();
         for (pattern_node, captures, pattern_index) in match_data {
-            if let Some(symbol) = self.node_to_symbol(pattern_node, content, &captures, pattern_index) {
+            if let Some(symbol) =
+                self.node_to_symbol(pattern_node, content, &captures, pattern_index)
+            {
                 symbols.push(symbol);
             }
         }
@@ -414,7 +460,10 @@ mod tests {
         let root = Path::new("/project");
 
         parser.set_context(root, Path::new("/project/src/components/button.tsx"));
-        assert_eq!(parser.qualified_name("Button"), "src::components::button::Button");
+        assert_eq!(
+            parser.qualified_name("Button"),
+            "src::components::button::Button"
+        );
 
         parser.set_context(root, Path::new("/project/src/utils.ts"));
         assert_eq!(parser.qualified_name("helper"), "src::utils::helper");

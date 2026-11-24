@@ -38,7 +38,11 @@ enum CliOutputMode {
 
 /// Configuration options.
 #[derive(Parser, Debug)]
-#[command(name = "srcdump", version, about = "Source code dumper for LLM consumption")]
+#[command(
+    name = "srcdump",
+    version,
+    about = "Source code dumper for LLM consumption"
+)]
 struct Cli {
     /// Root directory to dump
     #[arg(default_value = ".")]

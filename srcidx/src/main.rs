@@ -10,13 +10,13 @@
 #![deny(missing_docs)]
 
 use clap::{Parser, ValueEnum};
+use srcwalk::build_walker;
 use std::path::PathBuf;
 use tracing::{info, warn, Level};
-use srcwalk::build_walker;
 
+use srcidx::emitter::{EmitterRegistry, IndexEmitter};
 use srcidx::index::SymbolIndex;
 use srcidx::parser::ParserRegistry;
-use srcidx::emitter::{EmitterRegistry, IndexEmitter};
 
 /// Output format.
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -131,7 +131,11 @@ fn main() -> anyhow::Result<()> {
 
         files_processed += 1;
         if files_processed % 100 == 0 {
-            info!("Processed {} files, {} symbols", files_processed, index.symbols.len());
+            info!(
+                "Processed {} files, {} symbols",
+                files_processed,
+                index.symbols.len()
+            );
         }
     }
 
@@ -139,7 +143,11 @@ fn main() -> anyhow::Result<()> {
     index.header.files = files_processed;
     index.header.skipped = files_skipped;
 
-    info!("Indexing complete: {} files, {} symbols", files_processed, index.symbols.len());
+    info!(
+        "Indexing complete: {} files, {} symbols",
+        files_processed,
+        index.symbols.len()
+    );
 
     // Emit output
     let emitter = srcidx::emitter::ndjson::NdjsonEmitter::new();

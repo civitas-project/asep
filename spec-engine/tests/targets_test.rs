@@ -1,7 +1,6 @@
+// @test:FR-CAP-06 // @test:FR-CAP-07
 use asep::config::settings::CapabilityProfile;
-use asep::pack::manifest::{
-    generate_plugin_json, scaffold_opencode_agents, update_opencode_json,
-};
+use asep::pack::manifest::{generate_plugin_json, scaffold_opencode_agents, update_opencode_json};
 use asep::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
 use std::collections::HashSet;
 use std::fs;
@@ -168,10 +167,17 @@ fn test_update_opencode_json_preserves_existing_keys_and_merges_mcp() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
-    // Existing user config with custom plugin and settings
+    // Existing user config with custom plugin, settings, a legacy `mcp.asep`
+    // entry from a previous merge, and another pre-existing mcp.servers entry.
     let initial_json = r#"{
         "plugin": ["some-existing-plugin"],
-        "customSetting": true
+        "customSetting": true,
+        "mcp": {
+            "asep": {"command": "asep", "args": ["mcp"]},
+            "servers": {
+                "other": {"type": "sse", "url": "http://example.com/mcp"}
+            }
+        }
     }"#;
     fs::write(&config_file, initial_json).unwrap();
 
@@ -184,12 +190,26 @@ fn test_update_opencode_json_preserves_existing_keys_and_merges_mcp() {
     assert_eq!(parsed["customSetting"], true);
     assert_eq!(parsed["plugin"][0], "some-existing-plugin");
 
-    // Verify MCP config is properly added
-    assert!(parsed["mcp"]["asep"].is_object());
-    assert_eq!(parsed["mcp"]["asep"]["type"], "local");
-    assert_eq!(parsed["mcp"]["asep"]["command"], "asep");
-    assert_eq!(parsed["mcp"]["asep"]["args"][0], "mcp");
-    assert_eq!(parsed["mcp"]["asep"]["enabled"], true);
+    // Pre-existing mcp.servers entries are preserved.
+    assert_eq!(parsed["mcp"]["servers"]["other"]["type"], "sse");
+    assert_eq!(
+        parsed["mcp"]["servers"]["other"]["url"],
+        "http://example.com/mcp"
+    );
+
+    // MCP config is added in OpenCode v2 shape under mcp.servers.asep with
+    // command array [command, "mcp"].
+    assert!(parsed["mcp"]["servers"]["asep"].is_object());
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["type"], "local");
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["command"][0], "asep");
+    assert_eq!(parsed["mcp"]["servers"]["asep"]["command"][1], "mcp");
+
+    // Legacy top-level mcp.asep entry must be absent.
+    let mcp_obj = parsed["mcp"].as_object().expect("mcp must be an object");
+    assert!(
+        !mcp_obj.contains_key("asep"),
+        "legacy mcp.asep must be removed"
+    );
 }
 
 // @test:ARCH-06
@@ -263,17 +283,35 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
 
     for name in ["lead", "executor", "judge", "explorer"] {
         let agent = &parsed["agents"][name];
-        assert!(agent["system"].as_str().is_some_and(|s| !s.is_empty()), "{name}: system missing");
+        assert!(
+            agent["system"].as_str().is_some_and(|s| !s.is_empty()),
+            "{name}: system missing"
+        );
         assert!(agent["steps"].is_u64(), "{name}: steps missing");
-        assert!(agent["permissions"].is_array(), "{name}: permissions missing");
+        assert!(
+            agent["permissions"].is_array(),
+            "{name}: permissions missing"
+        );
     }
 
     // Lead must know when to delegate mapping to the explorer.
     let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
-    assert!(lead_system.contains("`explorer` subagent"), "lead prompt lacks explorer rule");
-    assert!(lead_system.contains("docs/PRD.md"), "lead prompt lacks PRD reference");
-    assert!(lead_system.contains("docs/TDD.md"), "lead prompt lacks TDD reference");
-    assert!(lead_system.contains(".superpowers/"), "lead prompt lacks superpowers prohibition");
+    assert!(
+        lead_system.contains("`explorer` subagent"),
+        "lead prompt lacks explorer rule"
+    );
+    assert!(
+        lead_system.contains("docs/PRD.md"),
+        "lead prompt lacks PRD reference"
+    );
+    assert!(
+        lead_system.contains("docs/TDD.md"),
+        "lead prompt lacks TDD reference"
+    );
+    assert!(
+        lead_system.contains(".superpowers/"),
+        "lead prompt lacks superpowers prohibition"
+    );
 
     // Executor and judge carry their own scope and step rules.
     let exec_system = parsed["agents"]["executor"]["system"].as_str().unwrap();
@@ -282,15 +320,28 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     assert!(judge_system.contains("at most 20 steps"));
 
     // Explorer must stay read-only while keeping read + srcdump/srcidx access.
-    let explorer_perms = parsed["agents"]["explorer"]["permissions"].as_array().unwrap();
-    let has = |action: &str, effect: &str| explorer_perms.iter().any(|r| {
-        r["action"].as_str() == Some(action) && r["effect"].as_str() == Some(effect)
-    });
+    let explorer_perms = parsed["agents"]["explorer"]["permissions"]
+        .as_array()
+        .unwrap();
+    let has = |action: &str, effect: &str| {
+        explorer_perms
+            .iter()
+            .any(|r| r["action"].as_str() == Some(action) && r["effect"].as_str() == Some(effect))
+    };
     assert!(has("*", "deny"), "explorer must have a broad deny rule");
-    assert!(has("execute", "allow"), "explorer needs execute for srcdump");
-    assert!(has("asep_srcdump", "allow"), "explorer needs srcdump access");
+    assert!(
+        has("execute", "allow"),
+        "explorer needs execute for srcdump"
+    );
+    assert!(
+        has("asep_srcdump", "allow"),
+        "explorer needs srcdump access"
+    );
     assert!(has("asep_srcidx", "allow"), "explorer needs srcidx access");
-    assert!(!has("asep_adr_new", "allow"), "explorer must not be allowed to write ADRs");
+    assert!(
+        !has("asep_adr_new", "allow"),
+        "explorer must not be allowed to write ADRs"
+    );
 }
 
 // @test:FR-PACK-MANIFEST-03
@@ -308,8 +359,7 @@ fn test_scaffold_opencode_agents_denies_disabled_capabilities() {
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
 
     let has = |agent: &str, action: &str, effect: &str| {
-        parsed["agents"][agent]
-            ["permissions"]
+        parsed["agents"][agent]["permissions"]
             .as_array()
             .unwrap()
             .iter()
@@ -355,14 +405,31 @@ fn test_scaffold_opencode_agents_scopes_agent_message_tools_per_role() {
 
     // Lead may send/recv/read/ack, no kind restriction.
     let lead = perms("lead");
-    assert!(has(lead, "asep_agent_send", "*", "allow"), "lead: asep_agent_send allow");
-    assert!(has(lead, "asep_agent_recv", "*", "allow"), "lead: asep_agent_recv allow");
-    assert!(has(lead, "asep_agent_read", "*", "allow"), "lead: asep_agent_read allow");
-    assert!(has(lead, "asep_agent_ack", "*", "allow"), "lead: asep_agent_ack allow");
+    assert!(
+        has(lead, "asep_agent_send", "*", "allow"),
+        "lead: asep_agent_send allow"
+    );
+    assert!(
+        has(lead, "asep_agent_recv", "*", "allow"),
+        "lead: asep_agent_recv allow"
+    );
+    assert!(
+        has(lead, "asep_agent_read", "*", "allow"),
+        "lead: asep_agent_read allow"
+    );
+    assert!(
+        has(lead, "asep_agent_ack", "*", "allow"),
+        "lead: asep_agent_ack allow"
+    );
 
     // Executor: send only TASK_REPORT and recv; no read/ack; subagent stays denied.
     let executor = perms("executor");
-    assert!(has(executor, "asep_agent_send", "kind=TASK_REPORT", "allow"));
+    assert!(has(
+        executor,
+        "asep_agent_send",
+        "kind=TASK_REPORT",
+        "allow"
+    ));
     assert!(has(executor, "asep_agent_recv", "*", "allow"));
     assert!(!has(executor, "asep_agent_read", "*", "allow"));
     assert!(!has(executor, "asep_agent_ack", "*", "allow"));
@@ -399,8 +466,7 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
 
     let has = |agent: &str, action: &str, effect: &str| {
-        parsed["agents"][agent]
-            ["permissions"]
+        parsed["agents"][agent]["permissions"]
             .as_array()
             .unwrap()
             .iter()
@@ -408,7 +474,15 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     };
 
     // Judge stays read-only: deny write-like actions, keep read/glob/grep.
-    for action in ["edit", "write", "shell", "subagent", "webfetch", "websearch", "mcp"] {
+    for action in [
+        "edit",
+        "write",
+        "shell",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "mcp",
+    ] {
         assert!(
             has("judge", action, "deny"),
             "judge: {action} must be denied under default profile"
@@ -419,15 +493,32 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     assert!(has("judge", "grep", "allow"), "judge: grep must be allowed");
 
     // Explorer stays read-only: deny write-like actions, keep its tools.
-    for action in ["edit", "write", "shell", "subagent", "webfetch", "websearch", "mcp"] {
+    for action in [
+        "edit",
+        "write",
+        "shell",
+        "subagent",
+        "webfetch",
+        "websearch",
+        "mcp",
+    ] {
         assert!(
             has("explorer", action, "deny"),
             "explorer: {action} must be denied under default profile"
         );
     }
-    assert!(has("explorer", "read", "allow"), "explorer: read must be allowed");
-    assert!(has("explorer", "glob", "allow"), "explorer: glob must be allowed");
-    assert!(has("explorer", "grep", "allow"), "explorer: grep must be allowed");
+    assert!(
+        has("explorer", "read", "allow"),
+        "explorer: read must be allowed"
+    );
+    assert!(
+        has("explorer", "glob", "allow"),
+        "explorer: glob must be allowed"
+    );
+    assert!(
+        has("explorer", "grep", "allow"),
+        "explorer: grep must be allowed"
+    );
     assert!(
         has("explorer", "execute", "allow"),
         "explorer: execute must be allowed"
@@ -444,8 +535,14 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     // Lead and executor keep capability-derived allows under default profile.
     assert!(has("lead", "edit", "allow"), "lead: edit must be allowed");
     assert!(has("lead", "shell", "allow"), "lead: shell must be allowed");
-    assert!(has("executor", "edit", "allow"), "executor: edit must be allowed");
-    assert!(has("executor", "shell", "allow"), "executor: shell must be allowed");
+    assert!(
+        has("executor", "edit", "allow"),
+        "executor: edit must be allowed"
+    );
+    assert!(
+        has("executor", "shell", "allow"),
+        "executor: shell must be allowed"
+    );
 }
 
 // @test:FR-PACK-MANIFEST-06
@@ -493,7 +590,9 @@ fn test_scaffold_opencode_agents_merges_missing_permissions_into_existing_agent(
         "system must be the canonical default"
     );
 
-    let perms = executor["permissions"].as_array().expect("permissions must be an array");
+    let perms = executor["permissions"]
+        .as_array()
+        .expect("permissions must be an array");
     let has = |action: &str, resource: &str, effect: &str| -> bool {
         perms.iter().any(|r| {
             r["action"].as_str() == Some(action)
@@ -557,14 +656,19 @@ fn test_scaffold_updates_existing_agent_system() {
     let system = lead["system"].as_str().unwrap();
     assert!(system.contains("docs/PRD.md"), "system must reference PRD");
     assert!(system.contains("docs/TDD.md"), "system must reference TDD");
-    assert!(system.contains(".superpowers/"), "system must prohibit superpowers");
+    assert!(
+        system.contains(".superpowers/"),
+        "system must prohibit superpowers"
+    );
     assert!(
         system.contains("After PRD/TDD approval"),
         "system must contain the approval gate"
     );
 
     // Custom permission rule preserved.
-    let perms = lead["permissions"].as_array().expect("permissions must be an array");
+    let perms = lead["permissions"]
+        .as_array()
+        .expect("permissions must be an array");
     assert!(
         perms.iter().any(|r| {
             r["action"].as_str() == Some("read")
@@ -585,7 +689,10 @@ fn test_scaffold_updates_existing_agent_system() {
     );
 
     // Protocol fields refreshed from the canonical default preset.
-    assert_eq!(lead["description"], "Orchestrator for the bounded executor-judge workflow.");
+    assert_eq!(
+        lead["description"],
+        "Orchestrator for the bounded executor-judge workflow."
+    );
     assert_eq!(lead["mode"], "primary");
     assert_eq!(lead["steps"], 60);
 
@@ -615,4 +722,23 @@ fn test_lead_system_defaults_to_targeted_verification() {
         normalized.contains("full suite is reserved for merges to main"),
         "lead system must reserve the full suite for merges to main"
     );
+}
+
+// @test:ARCH-06
+#[test]
+fn test_scaffold_opencode_agents_includes_worker_presets() {
+    let tmp = tempdir().unwrap();
+    let config_file = tmp.path().join("opencode.json");
+
+    scaffold_opencode_agents(&config_file, &CapabilityProfile::default()).unwrap();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+
+    for name in ["code-worker", "git-worker", "media-worker", "verifier"] {
+        let agent = &parsed["agents"][name];
+        assert!(agent.is_object(), "{name} agent missing");
+        assert_eq!(agent["mode"], "subagent", "{name} mode must be subagent");
+        assert_eq!(agent["steps"], 20, "{name} steps must be 20");
+    }
 }

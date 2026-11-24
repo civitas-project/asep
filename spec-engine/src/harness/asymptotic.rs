@@ -129,7 +129,9 @@ mod tests {
     fn linear_complexity_passes() {
         let analyzer = AsymptoticAnalyzer::new();
         let sizes = [100, 200, 400, 800, 1600];
-        let slope = analyzer.assert_complexity(&sizes, |n| n as u64, 1.2).unwrap();
+        let slope = analyzer
+            .assert_complexity(&sizes, |n| n as u64, 1.2)
+            .unwrap();
         assert!((slope - 1.0).abs() < 1e-9);
     }
 

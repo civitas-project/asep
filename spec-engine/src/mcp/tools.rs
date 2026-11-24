@@ -1,8 +1,12 @@
+// @impl:FR-MCP-03
 //! Tool definitions and execution dispatch for MCP.
+// @impl:FR-CAP-02
 
+use crate::acceptance_scoped::run_scoped_acceptance;
 use crate::adr::create_new_adr;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
+use crate::config::settings::load_config;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
 use crate::scanner::scan_project_tags;
@@ -217,6 +221,24 @@ pub fn get_tools_list() -> serde_json::Value {
                 }
             },
             {
+                "name": "asep_accept_scoped",
+                "description": "Runs scoped non-root acceptance via the trusted runner.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "commit": {
+                            "type": "string",
+                            "description": "Commit to accept (40 lowercase hex characters)"
+                        },
+                        "dir": {
+                            "type": "string",
+                            "description": "Repository root (defaults to current directory)"
+                        }
+                    },
+                    "required": ["commit"]
+                }
+            },
+            {
                 "name": "asep_agent_send",
                 "description": "Sends an agent message envelope; returns id and path only.",
                 "inputSchema": {
@@ -249,6 +271,28 @@ pub fn get_tools_list() -> serde_json::Value {
                         "reply_to": {
                             "type": "string",
                             "description": "Optional id of the message this is a reply to"
+                        },
+                        "required_capabilities": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Required capabilities the recipient must have"
+                        },
+                        "media": {
+                            "type": "string",
+                            "description": "Media type of the message body"
+                        },
+                        "domain": {
+                            "type": "string",
+                            "description": "Domain of the message"
+                        },
+                        "tool_filter": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Allowed tools for the delegated task"
+                        },
+                        "delegation_threshold": {
+                            "type": "integer",
+                            "description": "Delegation threshold"
                         }
                     },
                     "required": ["run_dir", "agent", "to", "kind", "body"]
@@ -361,7 +405,10 @@ pub fn execute_tool(
             let has_doc_contract_failure = !is_relaxed && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
-            let passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
+            let passed = !has_must_failure
+                && !has_doc_contract_failure
+                && !has_strict_failure
+                && !has_deny_drafts_failure;
 
             let mut summary = String::new();
             let mut gate = "FAILED";
@@ -481,13 +528,21 @@ pub fn execute_tool(
             let include_ext: Vec<String> = arguments
                 .get("include_ext")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let exclude_ext: Vec<String> = arguments
                 .get("exclude_ext")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let mode = arguments
@@ -545,15 +600,16 @@ pub fn execute_tool(
             let mut formatter = Formatter::new(config, parsers)
                 .map_err(|e| format!("Failed to create formatter: {e}"))?;
 
-            let files = walk_files(formatter.config())
-                .map_err(|e| format!("Failed to walk files: {e}"))?;
+            let files =
+                walk_files(formatter.config()).map_err(|e| format!("Failed to walk files: {e}"))?;
 
             let mut output = Vec::new();
-            formatter.format_files(files, &mut output)
+            formatter
+                .format_files(files, &mut output)
                 .map_err(|e| format!("Failed to format files: {e}"))?;
 
-            let output_str = String::from_utf8(output)
-                .map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
+            let output_str =
+                String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
 
             Ok(serde_json::json!({
                 "content": [
@@ -671,15 +727,16 @@ pub fn execute_tool(
             let mut formatter = Formatter::new(config, parsers)
                 .map_err(|e| format!("Failed to create formatter: {e}"))?;
 
-            let files = walk_files(formatter.config())
-                .map_err(|e| format!("Failed to walk files: {e}"))?;
+            let files =
+                walk_files(formatter.config()).map_err(|e| format!("Failed to walk files: {e}"))?;
 
             let mut output = Vec::new();
-            formatter.format_files(files, &mut output)
+            formatter
+                .format_files(files, &mut output)
                 .map_err(|e| format!("Failed to format files: {e}"))?;
 
-            let output_str = String::from_utf8(output)
-                .map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
+            let output_str =
+                String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
 
             Ok(serde_json::json!({
                 "content": [
@@ -697,15 +754,71 @@ pub fn execute_tool(
             let from = mcp_role(mcp_require_str(arguments, "agent")?)?;
             let to = mcp_role(mcp_require_str(arguments, "to")?)?;
             let kind = mcp_kind(arguments, "kind")?;
-            let body = arguments
+            let mut body = arguments
                 .get("body")
                 .ok_or_else(|| "Missing required parameter 'body'".to_string())?
                 .clone();
-            let ref_path = arguments
-                .get("ref")
-                .and_then(|v| v.as_str())
-                .map(Path::new);
+            let ref_path = arguments.get("ref").and_then(|v| v.as_str()).map(Path::new);
             let reply_to = arguments.get("reply_to").and_then(|v| v.as_str());
+
+            let required_capabilities =
+                mcp_opt_array_of_strings(arguments, "required_capabilities")?;
+            let media = mcp_opt_string(arguments, "media")?;
+            let domain = mcp_opt_string(arguments, "domain")?;
+            let tool_filter = mcp_opt_array_of_strings(arguments, "tool_filter")?;
+            let delegation_threshold = mcp_opt_i64(arguments, "delegation_threshold")?;
+
+            match body.as_object_mut() {
+                Some(obj) => {
+                    if let Some(caps) = required_capabilities.as_ref() {
+                        obj.entry("required_capabilities").or_insert(json!(caps));
+                    }
+                    if let Some(m) = media.as_ref() {
+                        obj.entry("media").or_insert(json!(m));
+                    }
+                    if let Some(d) = domain {
+                        obj.entry("domain").or_insert(json!(d));
+                    }
+                    if let Some(f) = tool_filter {
+                        obj.entry("tool_filter").or_insert(json!(f));
+                    }
+                    if let Some(t) = delegation_threshold {
+                        obj.entry("delegation_threshold").or_insert(json!(t));
+                    }
+                }
+                None => {}
+            }
+
+            // Fail-closed capability/media guard before any message is stored.
+            let guard_reason = match (
+                required_capabilities.as_deref(),
+                media.as_deref().filter(|m| !m.is_empty()),
+            ) {
+                (None, None) => None,
+                (caps, med) => {
+                    let profile = load_config(default_dir).capabilities;
+                    let names: Vec<&str> = caps
+                        .map(|vec| vec.iter().map(String::as_str).collect())
+                        .unwrap_or_default();
+                    profile.covers(&names, med).err()
+                }
+            };
+            match guard_reason {
+                Some(reason) => {
+                    return Ok(serde_json::json!({
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": serde_json::json!({"blocked": true, "reason": reason})
+                                    .to_string()
+                            }
+                        ],
+                        "isError": true
+                    }));
+                }
+                None => {}
+            }
+
             let store = MessageStore::new(&run_dir);
             let envelope = store.send(from, to, kind, body, ref_path, reply_to)?;
             mcp_text(json!({
@@ -754,8 +867,63 @@ pub fn execute_tool(
             }))
         }
 
+        "asep_accept_scoped" => {
+            let commit = mcp_require_str(arguments, "commit")?;
+            if !is_scoped_commit(commit) {
+                return Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "invalid commit '{commit}': expected a 40-character lowercase hex string"
+                            )
+                        }
+                    ],
+                    "isError": true
+                }));
+            }
+
+            let dir = arguments
+                .get("dir")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_dir.to_path_buf());
+
+            match run_scoped_acceptance(&dir, commit) {
+                Ok(evidence_dir) => Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "Scoped acceptance evidence at {}",
+                                evidence_dir.display()
+                            )
+                        }
+                    ],
+                    "isError": false
+                })),
+                Err(diagnostic) => Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!("Scoped acceptance failed: {diagnostic}")
+                        }
+                    ],
+                    "isError": true
+                })),
+            }
+        }
+
         other => Err(format!("Unknown tool: {other}")),
     }
+}
+
+/// Commit accepted by scoped acceptance must be exactly 40 lowercase hex chars.
+fn is_scoped_commit(commit: &str) -> bool {
+    commit.len() == 40
+        && commit
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Run directory for agent tools: explicit `run_dir` argument, `ASEP_RUN_DIR` env fallback only.
@@ -773,6 +941,44 @@ fn mcp_require_str<'a>(arguments: &'a serde_json::Value, key: &str) -> Result<&'
         .get(key)
         .and_then(|v| v.as_str())
         .ok_or_else(|| format!("Missing required parameter '{key}'"))
+}
+
+fn mcp_opt_array_of_strings(
+    arguments: &serde_json::Value,
+    key: &str,
+) -> Result<Option<Vec<String>>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .as_array()
+            .ok_or_else(|| format!("invalid {key}"))?
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| format!("invalid {key}"))
+            })
+            .collect::<Result<Vec<String>, String>>()
+            .map(Some),
+    }
+}
+
+fn mcp_opt_string(arguments: &serde_json::Value, key: &str) -> Result<Option<String>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| format!("invalid {key}"))
+            .map(Some),
+    }
+}
+
+fn mcp_opt_i64(arguments: &serde_json::Value, key: &str) -> Result<Option<i64>, String> {
+    match arguments.get(key) {
+        None => Ok(None),
+        Some(v) => v.as_i64().ok_or_else(|| format!("invalid {key}")).map(Some),
+    }
 }
 
 fn mcp_role(value: &str) -> Result<Role, String> {

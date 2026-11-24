@@ -17,17 +17,15 @@ fn audit_md(content: &str) -> Vec<asep::auditor::AntiSlopViolation> {
 fn test_audit_anti_slop_all_categories() {
     // DecorativeBanner: banner comment line.
     let violations = audit_rs("// =====================\nfn foo() {}\n");
-    assert!(violations.iter().any(|v| matches!(
-        v.kind,
-        AntiSlopViolationKind::DecorativeBanner { .. }
-    )));
+    assert!(violations
+        .iter()
+        .any(|v| matches!(v.kind, AntiSlopViolationKind::DecorativeBanner { .. })));
 
     // WorkflowNarration: step narration comment.
     let violations = audit_rs("// Step 1: validate input\nfn foo() {}\n");
-    assert!(violations.iter().any(|v| matches!(
-        v.kind,
-        AntiSlopViolationKind::WorkflowNarration { .. }
-    )));
+    assert!(violations
+        .iter()
+        .any(|v| matches!(v.kind, AntiSlopViolationKind::WorkflowNarration { .. })));
 
     // AiBuzzword: buzzwords in a doc comment line.
     let violations = audit_rs("/// Delve into robust solutions\nfn foo() {}\n");
@@ -71,10 +69,7 @@ fn test_audit_project_anti_slop_tempdir() {
         .filter(|v| {
             v.file_path == Path::new("main.rs")
                 && v.line_number == 1
-                && matches!(
-                    v.kind,
-                    AntiSlopViolationKind::DecorativeBanner { .. }
-                )
+                && matches!(v.kind, AntiSlopViolationKind::DecorativeBanner { .. })
         })
         .collect();
     assert!(!banner.is_empty(), "expected banner violation in main.rs:1");
@@ -84,13 +79,13 @@ fn test_audit_project_anti_slop_tempdir() {
         .filter(|v| {
             v.file_path == Path::new("README.md")
                 && v.line_number == 1
-                && matches!(
-                    v.kind,
-                    AntiSlopViolationKind::AiBuzzword { .. }
-                )
+                && matches!(v.kind, AntiSlopViolationKind::AiBuzzword { .. })
         })
         .collect();
-    assert!(!buzz.is_empty(), "expected buzzword violation in README.md:1");
+    assert!(
+        !buzz.is_empty(),
+        "expected buzzword violation in README.md:1"
+    );
 }
 
 #[test]
@@ -106,9 +101,18 @@ fn test_policy_rules_detect_design_copy_and_docs_slop() {
             _ => None,
         })
         .collect();
-    assert!(ids.contains(&"AS-DESIGN-TBD"), "missing AS-DESIGN-TBD in {ids:?}");
-    assert!(ids.contains(&"AS-COPY-FILLER"), "missing AS-COPY-FILLER in {ids:?}");
-    assert!(ids.contains(&"AS-COPY-HYPE"), "missing AS-COPY-HYPE in {ids:?}");
+    assert!(
+        ids.contains(&"AS-DESIGN-TBD"),
+        "missing AS-DESIGN-TBD in {ids:?}"
+    );
+    assert!(
+        ids.contains(&"AS-COPY-FILLER"),
+        "missing AS-COPY-FILLER in {ids:?}"
+    );
+    assert!(
+        ids.contains(&"AS-COPY-HYPE"),
+        "missing AS-COPY-HYPE in {ids:?}"
+    );
     assert!(
         ids.contains(&"AS-DOCS-PLACEHOLDER"),
         "missing AS-DOCS-PLACEHOLDER in {ids:?}"
@@ -141,7 +145,10 @@ fn test_box_drawing_produces_decorative_banner_error() {
         .iter()
         .filter(|v| matches!(v.kind, AntiSlopViolationKind::DecorativeBanner { .. }))
         .collect();
-    assert!(!banners.is_empty(), "expected DecorativeBanner for box drawing");
+    assert!(
+        !banners.is_empty(),
+        "expected DecorativeBanner for box drawing"
+    );
     assert!(
         banners.iter().all(|v| v.severity == Severity::Error),
         "box-drawing banner must be Error"
@@ -175,9 +182,8 @@ fn test_markdown_buzzword_uses_copy_rule() {
 #[test]
 fn test_nesting_threshold_from_policy() {
     // With max_nesting=0, any nested if (depth 2+) must be flagged.
-    let violations = audit_rs(
-        "fn foo(x: bool) {\n    if x {\n        if true {\n        }\n    }\n}\n",
-    );
+    let violations =
+        audit_rs("fn foo(x: bool) {\n    if x {\n        if true {\n        }\n    }\n}\n");
     assert!(
         violations.iter().any(|v| {
             matches!(&v.kind, AntiSlopViolationKind::ExcessiveNesting { depth } if *depth == 2)
@@ -196,9 +202,9 @@ fn test_existing_code_slop_kinds_preserved() {
     let has_banner = violations
         .iter()
         .any(|v| matches!(&v.kind, AntiSlopViolationKind::DecorativeBanner { .. }));
-    let has_narration = violations.iter().any(|v| {
-        matches!(&v.kind, AntiSlopViolationKind::WorkflowNarration { .. })
-    });
+    let has_narration = violations
+        .iter()
+        .any(|v| matches!(&v.kind, AntiSlopViolationKind::WorkflowNarration { .. }));
     let has_buzzword = violations
         .iter()
         .any(|v| matches!(&v.kind, AntiSlopViolationKind::AiBuzzword { .. }));
@@ -207,7 +213,12 @@ fn test_existing_code_slop_kinds_preserved() {
     assert!(has_buzzword, "expected AiBuzzword");
 
     for v in &violations {
-        assert_eq!(v.severity, Severity::Error, "existing detection {:?} should be Error", v.kind);
+        assert_eq!(
+            v.severity,
+            Severity::Error,
+            "existing detection {:?} should be Error",
+            v.kind
+        );
     }
 }
 
@@ -220,18 +231,16 @@ fn python_hash_comments_produce_code_domain_violations() {
     let violations = py("# =====================\n# Step 1: validate\n# delve into robust solutions\ndef foo():\n    pass\n");
 
     assert!(
-        violations.iter().any(|v| matches!(
-            v.kind,
-            AntiSlopViolationKind::DecorativeBanner { .. }
-        )),
+        violations
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::DecorativeBanner { .. })),
         "expected DecorativeBanner for '# =====================', got {violations:?}"
     );
 
     assert!(
-        violations.iter().any(|v| matches!(
-            v.kind,
-            AntiSlopViolationKind::WorkflowNarration { .. }
-        )),
+        violations
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::WorkflowNarration { .. })),
         "expected WorkflowNarration for '# Step 1: validate', got {violations:?}"
     );
 
@@ -251,5 +260,8 @@ fn python_hash_comments_produce_code_domain_violations() {
 #[test]
 fn python_code_outside_comments_is_not_flagged() {
     let violations = py("def foo():\n    return 1\n");
-    assert!(violations.is_empty(), "expected no violations, got {violations:?}");
+    assert!(
+        violations.is_empty(),
+        "expected no violations, got {violations:?}"
+    );
 }

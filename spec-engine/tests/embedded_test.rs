@@ -1,3 +1,4 @@
+// @test:FR-AMB-03 // @test:FR-AMB-04
 use asep::pack::embedded::{
     get_default_mcp_config_json, get_default_plugin_json, get_embedded_skills,
 };
@@ -6,9 +7,10 @@ use asep::pack::embedded::{
 #[test]
 fn test_get_embedded_skills_returns_all_canonical_protocols() {
     let skills = get_embedded_skills();
-    assert_eq!(skills.len(), 6, "Expected 6 canonical engineering skills");
+    assert_eq!(skills.len(), 7, "Expected 7 canonical engineering skills");
 
     let ids: Vec<&str> = skills.iter().map(|s| s.id).collect();
+    assert!(ids.contains(&"using-asep"));
     assert!(ids.contains(&"workflow-router"));
     assert!(ids.contains(&"system-architecture"));
     assert!(ids.contains(&"code-contracts"));
@@ -39,7 +41,7 @@ fn test_get_embedded_skills_returns_all_canonical_protocols() {
 #[test]
 fn test_skill_text_references_canonical_rule_ids() {
     let skills = get_embedded_skills();
-    assert_eq!(skills.len(), 6, "Expected 6 canonical embedded skills");
+    assert_eq!(skills.len(), 7, "Expected 7 canonical embedded skills");
 
     for skill in skills {
         let content = skill.content;
@@ -66,12 +68,17 @@ fn test_skill_text_references_canonical_rule_ids() {
 #[test]
 fn test_skills_reference_antislop_rule_ids() {
     let skills = get_embedded_skills();
-    assert_eq!(skills.len(), 6, "Expected 6 canonical embedded skills");
+    assert_eq!(skills.len(), 7, "Expected 7 canonical embedded skills");
 
     let expected: &[(&str, &[&str])] = &[
         (
             "engineering-specs",
-            &["AS-DESIGN-VAGUE", "AS-DESIGN-TBD", "AS-DOCS-PLACEHOLDER", "AS-DOCS-WORDY"],
+            &[
+                "AS-DESIGN-VAGUE",
+                "AS-DESIGN-TBD",
+                "AS-DOCS-PLACEHOLDER",
+                "AS-DOCS-WORDY",
+            ],
         ),
         (
             "code-contracts",
@@ -85,7 +92,12 @@ fn test_skills_reference_antislop_rule_ids() {
         ),
         (
             "repository-governance",
-            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-COPY-BUZZWORD", "AS-DOCS-WORDY"],
+            &[
+                "AS-COPY-FILLER",
+                "AS-COPY-HYPE",
+                "AS-COPY-BUZZWORD",
+                "AS-DOCS-WORDY",
+            ],
         ),
         ("design-tokens", &["AS-COPY-HYPE", "AS-DOCS-PLACEHOLDER"]),
         (
@@ -117,9 +129,7 @@ fn test_skills_reference_antislop_rule_ids() {
             "Skill {} must contain 'Canonical Anti-Slop Rules' section",
             id
         );
-        let has_rule_id = rule_ids
-            .iter()
-            .any(|rid| skill.content.contains(rid));
+        let has_rule_id = rule_ids.iter().any(|rid| skill.content.contains(rid));
         assert!(
             has_rule_id,
             "Skill {} must reference at least one canonical anti-slop AS- rule id",
@@ -175,6 +185,42 @@ fn test_workflow_router_uses_targeted_verification() {
             required
         );
     }
+}
+
+// @test:FR-PACK-EMBED-USING-ASEP
+#[test]
+fn test_using_asep_skill_present_and_bounded() {
+    let skills = get_embedded_skills();
+    let skill = skills
+        .iter()
+        .find(|s| s.id == "using-asep")
+        .expect("embedded using-asep skill must exist");
+
+    assert_eq!(skill.directory, "using-asep");
+    assert!(
+        skill.content.contains("name: using-asep"),
+        "using-asep frontmatter must declare name: using-asep"
+    );
+
+    let desc_line = skill
+        .content
+        .lines()
+        .find(|l| l.trim_start().starts_with("description:"))
+        .expect("using-asep frontmatter must have description:");
+    assert!(
+        desc_line.trim_start().starts_with("description: Use when"),
+        "using-asep description must start with 'Use when', got: {:?}",
+        desc_line
+    );
+
+    let rest = skill.content.strip_prefix("---\n").unwrap_or(skill.content);
+    let body = rest.splitn(2, "\n---\n").nth(1).unwrap_or(rest);
+    let word_count = body.split_whitespace().count();
+    assert!(
+        word_count <= 200,
+        "using-asep body must be <= 200 words, got {}",
+        word_count
+    );
 }
 
 // @test:FR-PACK-EMBED-02

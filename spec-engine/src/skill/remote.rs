@@ -29,10 +29,7 @@ pub fn parse_skill_specifier(spec: &str) -> SkillSource {
             Some((url, tag)) => (url.to_string(), Some(tag.to_string())),
             None => (s.to_string(), None),
         };
-        return SkillSource::Git {
-            url,
-            tag_or_branch,
-        };
+        return SkillSource::Git { url, tag_or_branch };
     }
 
     if s.starts_with("http://") || s.starts_with("https://") {
@@ -53,10 +50,7 @@ pub fn parse_skill_specifier(spec: &str) -> SkillSource {
 }
 
 /// Fetches a remote skill and writes it into skills_dir/<skill_id>/SKILL.md.
-pub fn fetch_remote_skill(
-    source: &SkillSource,
-    skills_dir: &Path,
-) -> Result<PathBuf, String> {
+pub fn fetch_remote_skill(source: &SkillSource, skills_dir: &Path) -> Result<PathBuf, String> {
     match source {
         SkillSource::Git { url, tag_or_branch } => {
             let tmp_dir = std::env::temp_dir().join(format!(
@@ -89,15 +83,13 @@ pub fn fetch_remote_skill(
                 tmp_dir.join("skill").join("SKILL.md"),
             ];
 
-            let found = candidate_paths
-                .iter()
-                .find(|p| p.exists())
-                .cloned();
+            let found = candidate_paths.iter().find(|p| p.exists()).cloned();
 
             let res = match found {
                 Some(found_path) => {
                     let content = fs::read_to_string(&found_path).map_err(|e| e.to_string())?;
-                    let (name, _, _, _) = crate::skill::inspector::extract_skill_full_metadata(&content);
+                    let (name, _, _, _) =
+                        crate::skill::inspector::extract_skill_full_metadata(&content);
                     let skill_id = match name.is_empty() {
                         false => name.to_lowercase().replace(' ', "-"),
                         true => url
@@ -122,7 +114,8 @@ pub fn fetch_remote_skill(
         }
 
         SkillSource::Http { url } => {
-            let resp = reqwest::blocking::get(url).map_err(|e| format!("HTTP fetch failed: {e}"))?;
+            let resp =
+                reqwest::blocking::get(url).map_err(|e| format!("HTTP fetch failed: {e}"))?;
             if !resp.status().is_success() {
                 return Err(format!("HTTP request returned status {}", resp.status()));
             }

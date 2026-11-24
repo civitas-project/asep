@@ -38,7 +38,10 @@ fn test_run_cmd_complexity_quadratic_fails() {
     let sizes = [50, 100, 200, 400, 800];
     let cmd = "awk 'BEGIN { n = {n}; printf \"{\\\"steps\\\": %d}\\n\", n * n }'";
     let result = run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(60));
-    assert!(result.is_err(), "expected complexity failure, got {result:?}");
+    assert!(
+        result.is_err(),
+        "expected complexity failure, got {result:?}"
+    );
     let err = result.unwrap_err();
     assert!(err.contains("exceeds"), "unexpected error: {err}");
 }
@@ -63,6 +66,9 @@ fn test_run_cmd_memory_pass_and_fail() {
     assert!(peak > 0, "expected non-zero peak RSS, got {peak}");
 
     let over = run_cmd_memory("sh -c 'true'", 0, Duration::from_secs(60));
-    assert!(over.is_err(), "expected memory check to fail with zero budget, got {over:?}");
+    assert!(
+        over.is_err(),
+        "expected memory check to fail with zero budget, got {over:?}"
+    );
     assert!(over.unwrap_err().contains("exceeds budget"));
 }

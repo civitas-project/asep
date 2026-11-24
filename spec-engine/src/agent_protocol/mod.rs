@@ -3,6 +3,7 @@
 //! File-based message store: envelopes live under `<run-dir>/messages/<id>.json`,
 //! bodies under `<run-dir>/messages/<id>.body.json`. Writes use a temp file +
 //! `rename` for atomicity. `validate_dir` audits every envelope in a run dir.
+// @impl:FR-CAP-05
 
 use std::collections::HashSet;
 use std::fs;
@@ -41,6 +42,10 @@ pub struct KindSchema {
     pub required: Vec<String>,
     #[serde(default)]
     pub array_fields: Vec<String>,
+    #[serde(default)]
+    pub optional_numeric: Vec<String>,
+    #[serde(default)]
+    pub optional_array: Vec<String>,
     #[serde(default)]
     pub nested: Vec<NestedField>,
     #[serde(default)]
@@ -275,12 +280,7 @@ impl MessageStore {
     }
 
     pub fn ack(&self, agent: Role, id: &str, status: &str) -> Result<(), String> {
-        if !protocol_schema()
-            .statuses
-            .iter()
-            .any(|s| s == status)
-            || status == STATUS_SENT
-        {
+        if !protocol_schema().statuses.iter().any(|s| s == status) || status == STATUS_SENT {
             return Err(format!("invalid ack status: {status}"));
         }
         let env_path = self.messages_dir.join(format!("{id}.json"));
@@ -289,7 +289,11 @@ impl MessageStore {
         let is_lead_rejecting_own =
             agent == Role::Lead && envelope.from == Role::Lead && status == "rejected";
         if !is_recipient && !is_lead_rejecting_own {
-            return Err(format!("only recipient {} may ack {}", envelope.to.as_str(), id));
+            return Err(format!(
+                "only recipient {} may ack {}",
+                envelope.to.as_str(),
+                id
+            ));
         }
         envelope.status = status.to_string();
         write_json_atomic(&env_path, &envelope)?;
@@ -311,8 +315,8 @@ impl MessageStore {
 
     fn rel_path(&self, path: &Path) -> Result<PathBuf, String> {
         path.strip_prefix(&self.run_dir)
-        .map(|rel| rel.to_path_buf())
-        .map_err(|_| format!("ref {path:?} escapes run dir {}", self.run_dir.display()))
+            .map(|rel| rel.to_path_buf())
+            .map_err(|_| format!("ref {path:?} escapes run dir {}", self.run_dir.display()))
     }
 
     fn next_id(&self) -> String {
@@ -323,11 +327,7 @@ impl MessageStore {
         let mut suffix = random_id_suffix();
         loop {
             let id = format!("msg-{ms}-{suffix}");
-            if !self
-                .messages_dir
-                .join(format!("{id}.json"))
-                .exists()
-            {
+            if !self.messages_dir.join(format!("{id}.json")).exists() {
                 return id;
             }
             suffix = random_id_suffix();
@@ -377,11 +377,7 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
     let obj = body
         .as_object()
         .ok_or_else(|| "body must be a JSON object".to_string())?;
-    let kind_schema = match schema
-        .kinds
-        .iter()
-        .find(|k| k.name == kind_as_str(kind))
-    {
+    let kind_schema = match schema.kinds.iter().find(|k| k.name == kind_as_str(kind)) {
         Some(k) => k,
         None => return Err(format!("unknown kind: {}", kind_as_str(kind))),
     };
@@ -390,6 +386,24 @@ fn validate_body(kind: &Kind, body: &Value) -> Result<(), String> {
         obj.get(field)
             .and_then(Value::as_array)
             .ok_or_else(|| format!("{field} must be an array"))?;
+    }
+    for field in &kind_schema.optional_numeric {
+        let value = match obj.get(field) {
+            Some(value) => value,
+            None => continue,
+        };
+        if !matches!(value, Value::Number(_)) {
+            return Err(format!("{field} must be numeric"));
+        }
+    }
+    for field in &kind_schema.optional_array {
+        let value = match obj.get(field) {
+            Some(value) => value,
+            None => continue,
+        };
+        if !matches!(value, Value::Array(_)) {
+            return Err(format!("{field} must be an array"));
+        }
     }
     for nested in &kind_schema.nested {
         let parent = obj
@@ -462,7 +476,9 @@ fn validate_envelope(
             Err(e) => errors.push(format!("{prefix}: ref {e}")),
         }
     }
-    let body_path = dir.join(MESSAGES_DIR).join(format!("{}.body.json", envelope.id));
+    let body_path = dir
+        .join(MESSAGES_DIR)
+        .join(format!("{}.body.json", envelope.id));
     let body = match fs::read_to_string(&body_path) {
         Ok(data) => match serde_json::from_str::<Value>(&data) {
             Ok(b) => b,
@@ -485,7 +501,11 @@ fn validate_ref(dir: &Path, ref_: &str) -> Result<(), String> {
     let mut parts = ref_.splitn(2, "@sha256:");
     let rel = parts.next().ok_or("empty ref path")?;
     let hash = parts.next().ok_or("ref missing @sha256:<hash>")?;
-    if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f')) {
+    if hash.len() != 64
+        || !hash
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, 'a'..='f'))
+    {
         return Err(format!("hash must be 64 lowercase hex chars: {hash}"));
     }
     let full = dir.join(rel);
@@ -572,7 +592,5 @@ fn now_rfc3339() -> String {
     let hour = secs_of_day / 3_600;
     let minute = (secs_of_day % 3_600) / 60;
     let second = secs_of_day % 60;
-    format!(
-        "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
-    )
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
 }

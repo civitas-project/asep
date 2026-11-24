@@ -56,6 +56,72 @@ fn test_check_json_output_mode() {
         .stdout(predicate::str::contains("\"total_requirements\": 1"));
 }
 
+// @test:FR-ACC-03-EVIDENCE-DIR
+#[test]
+fn test_check_uses_explicit_evidence_dir() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project with evidence kept out of the default evidence dir,
+    // so `asep check --rigor T2` without --evidence-dir is Unproven (exit 3).
+    write_t2_closed_project(root, "FR-EVID-01");
+    fs::remove_dir_all(root.join("evidence")).expect("remove default evidence dir");
+
+    // Valid semantic evidence in an external dir.
+    let evidence_dir = dir.path().join("external-evidence");
+    fs::create_dir_all(evidence_dir.join("semantic")).expect("create external evidence dir");
+    fs::write(
+        evidence_dir.join("semantic").join("FR-EVID-01.md"),
+        "reviewer: qa\nverdict: ACCEPTED\nrationale: accepted\n",
+    )
+    .expect("write evidence");
+
+    // 1. Without --evidence-dir: Unproven => failure, exit 3.
+    let mut cmd_without = Command::cargo_bin("asep").expect("binary exists");
+    cmd_without.arg("check").arg("--rigor").arg("T2").arg(root);
+    cmd_without.assert().failure().code(3);
+
+    // 2. With --evidence-dir: Pass => exit 0.
+    let mut cmd_with = Command::cargo_bin("asep").expect("binary exists");
+    cmd_with
+        .arg("check")
+        .arg("--rigor")
+        .arg("T2")
+        .arg("--evidence-dir")
+        .arg(&evidence_dir)
+        .arg(root);
+    cmd_with.assert().success().code(0);
+}
+
+// @test:FR-ACC-05
+#[test]
+fn test_check_uses_config_evidence_dir() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project with evidence kept outside the default <root>/evidence
+    // dir, so `asep check --rigor T2` without --evidence-dir must resolve the
+    // evidence dir from config.toml (relative to target root) to pass.
+    write_t2_closed_project(root, "FR-ACC-05");
+    fs::remove_dir_all(root.join("evidence")).expect("remove default evidence dir");
+
+    let config_evidence = root.join("config-evidence");
+    fs::create_dir_all(config_evidence.join("semantic")).expect("create config evidence dir");
+    fs::write(
+        config_evidence.join("semantic").join("FR-ACC-05.md"),
+        "reviewer: qa\nverdict: ACCEPTED\nrationale: accepted\n",
+    )
+    .expect("write evidence");
+
+    let mut config = asep::config::load_config(root);
+    config.evidence_dir = Some("config-evidence".to_string());
+    asep::config::save_config(root, &config).expect("save config");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T2").arg(root);
+    cmd.assert().success().code(0);
+}
+
 // @test:FR-CLI-INIT-01
 #[test]
 fn test_cli_init_and_adr_commands() {
@@ -96,11 +162,7 @@ fn test_check_velocity_mode_and_deny_drafts() {
 
     // 1. Velocity mode passes (draft does not fail build)
     let mut cmd_velocity = Command::cargo_bin("asep").expect("binary exists");
-    cmd_velocity
-        .arg("check")
-        .arg("--rigor")
-        .arg("T0")
-        .arg(root);
+    cmd_velocity.arg("check").arg("--rigor").arg("T0").arg(root);
     cmd_velocity
         .assert()
         .success()
@@ -146,7 +208,11 @@ fn write_t2_closed_project(root: &std::path::Path, req_id: &str) {
 
     let spec_engine_dir = root.join(".spec-engine");
     fs::create_dir_all(&spec_engine_dir).expect("create .spec-engine");
-    fs::write(spec_engine_dir.join("behavioral.json"), r#"{"passed": true}"#).expect("write behavioral");
+    fs::write(
+        spec_engine_dir.join("behavioral.json"),
+        r#"{"passed": true}"#,
+    )
+    .expect("write behavioral");
 
     let evidence_dir = root.join("evidence").join("semantic");
     fs::create_dir_all(&evidence_dir).expect("create evidence dir");
@@ -193,7 +259,10 @@ fn test_missing_semantic_evidence_is_unproven() {
         TierId::T2,
         &behavioral,
     );
-    assert_eq!(report.status, asep::verification::VerificationStatus::Unproven);
+    assert_eq!(
+        report.status,
+        asep::verification::VerificationStatus::Unproven
+    );
     assert!(report.structural);
     assert!(report.behavioral);
     assert!(!report.semantic);
@@ -201,7 +270,8 @@ fn test_missing_semantic_evidence_is_unproven() {
     // CLI end-to-end: `asep check` exits 3.
     fs::write(
         root.join("spec.md"),
-        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string() + "T2 -->\n",
+        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string()
+            + "T2 -->\n",
     )
     .expect("write spec");
     fs::write(
@@ -289,7 +359,9 @@ fn test_check_messages_missing_dir_fails() {
     cmd.assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+        .stderr(predicate::str::contains(
+            "messages directory missing or unreadable",
+        ));
 }
 
 // @test:FR-CLI-CHECK-MESSAGES-04
@@ -305,11 +377,16 @@ fn test_check_messages_wrong_messages_folder_fails() {
 
     // Passing the messages/ folder itself (not its parent run dir) must fail closed.
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg(root).arg("--messages").arg(&messages_dir);
+    cmd.arg("check")
+        .arg(root)
+        .arg("--messages")
+        .arg(&messages_dir);
     cmd.assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+        .stderr(predicate::str::contains(
+            "messages directory missing or unreadable",
+        ));
 }
 
 // @test:FR-CLI-CHECK-ANTISLOP-01
@@ -329,11 +406,7 @@ fn test_check_antislop_warning_only_passes_without_strict() {
 
     // T1, no --strict: Warning does not block => pass, reported on stderr.
     let mut cmd_lenient = Command::cargo_bin("asep").expect("binary exists");
-    cmd_lenient
-        .arg("check")
-        .arg("--rigor")
-        .arg("T1")
-        .arg(root);
+    cmd_lenient.arg("check").arg("--rigor").arg("T1").arg(root);
     cmd_lenient
         .assert()
         .success()
@@ -364,15 +437,14 @@ fn test_check_antislop_error_banner_fails_at_t1() {
     // Closed T2 project so the exit code reflects anti-slop only.
     write_t2_closed_project(root, "FR-ANTISLOP-ERR");
     // Decorative banner comment is Error-severity and blocks at T1.
-    fs::write(
-        root.join("main.rs"),
-        "// ==========\nfn main() {}\n",
-    )
-    .expect("write main.rs");
+    fs::write(root.join("main.rs"), "// ==========\nfn main() {}\n").expect("write main.rs");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
     cmd.arg("check").arg("--rigor").arg("T1").arg(root);
-    cmd.assert().failure().code(1).stdout(predicate::str::contains("=="));
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("=="));
 }
 
 // @test:FR-VERIFY-01
@@ -423,6 +495,59 @@ fn check_fails_on_guard_clause_violations() {
         "fn f(a: bool, b: bool) { if a { return; } if b { return; } }\n",
     )
     .expect("rewrite guard.rs");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert().success().code(0);
+}
+
+// @test:FR-AMB-06
+#[test]
+fn test_ambient_skills_violations_fail_outside_t0() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed project so the exit code reflects ambient skills only.
+    write_t2_closed_project(root, "FR-AMBIENT-01");
+
+    // Malformed: missing pointer block, and description does not start with `Use when`.
+    fs::create_dir_all(root.join("skills").join("alpha")).expect("create skills dir");
+    fs::write(
+        root.join("skills").join("alpha").join("SKILL.md"),
+        "---\ndescription: Handles alpha routing\n---\n# Alpha\nBody text.\n",
+    )
+    .expect("write SKILL.md");
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("Ambient Skills Violations"))
+        .stdout(predicate::str::contains("Use when"));
+}
+
+// @test:FR-AMB-06
+#[test]
+fn test_ambient_skills_valid_input_passes() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_t2_closed_project(root, "FR-AMBIENT-02");
+
+    // Valid: pointer block present, using-asep skill description + body budget OK.
+    fs::write(
+        root.join("AGENTS.md"),
+        "<!-- asep:start -->\nASEP ambient context.\n<!-- asep:end -->\n",
+    )
+    .expect("write AGENTS.md");
+    fs::create_dir_all(root.join("skills").join("using-asep")).expect("create skills dir");
+    fs::write(
+        root.join("skills").join("using-asep").join("SKILL.md"),
+        "---\ndescription: Use when the agent starts a session and loads ambient skills\n---\n\
+         # using-asep\nLoad ambient skills at startup.\n",
+    )
+    .expect("write SKILL.md");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
     cmd.arg("check").arg("--rigor").arg("T1").arg(root);

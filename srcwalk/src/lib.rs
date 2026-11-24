@@ -139,9 +139,7 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
         }
 
         let rel = path.strip_prefix(&config.root).unwrap_or(path);
-        if !inc_pat.is_empty()
-            && !inc_pat.iter().any(|p| p.matches_path(rel))
-        {
+        if !inc_pat.is_empty() && !inc_pat.iter().any(|p| p.matches_path(rel)) {
             continue;
         }
         if exc_pat.iter().any(|p| p.matches_path(rel)) {
@@ -166,11 +164,8 @@ mod tests {
     use std::io::Write;
 
     fn test_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "srcwalk-test-{}-{}",
-            std::process::id(),
-            name
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("srcwalk-test-{}-{}", std::process::id(), name));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create test dir");
         dir
@@ -193,11 +188,7 @@ mod tests {
         let files = walk_files(&config).unwrap();
         assert_eq!(
             files,
-            vec![
-                dir.join("a.rs"),
-                dir.join("b.txt"),
-                dir.join("sub/c.rs")
-            ]
+            vec![dir.join("a.rs"), dir.join("b.txt"), dir.join("sub/c.rs")]
         );
     }
 

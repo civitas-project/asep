@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use std::io::Read;
-use std::process::{Command, Child, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -72,7 +72,10 @@ fn spawn_shell(cmd: &str) -> Result<Child, String> {
 
 /// Wait for `child` to exit, enforcing `timeout` by polling. On timeout the
 /// child is killed and reaped.
-fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Result<std::process::ExitStatus, String> {
+fn wait_with_timeout(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
     let start = Instant::now();
     loop {
         match child.try_wait() {
@@ -267,8 +270,7 @@ mod tests {
     fn run_cmd_complexity_linear_passes() {
         let sizes = [50, 100, 200, 400, 800];
         let cmd = "awk 'BEGIN { n = {n}; printf \"{\\\"steps\\\": %d}\\n\", n }'";
-        let slope =
-            run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(30)).unwrap();
+        let slope = run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(30)).unwrap();
         assert!((slope - 1.0).abs() < 0.01, "slope was {slope}");
     }
 
@@ -282,12 +284,19 @@ mod tests {
 
     #[test]
     fn run_cmd_memory_pass_and_fail() {
-        let ok = run_cmd_memory("sh -c 'true'", 10 * 1_024 * 1_024 * 1_024, Duration::from_secs(30));
+        let ok = run_cmd_memory(
+            "sh -c 'true'",
+            10 * 1_024 * 1_024 * 1_024,
+            Duration::from_secs(30),
+        );
         assert!(ok.is_ok(), "expected pass, got {ok:?}");
         let peak = ok.unwrap();
         assert!(peak > 0);
 
         let over = run_cmd_memory("sh -c 'true'", 0, Duration::from_secs(30));
-        assert!(over.is_err(), "expected fail with zero budget, got {over:?}");
+        assert!(
+            over.is_err(),
+            "expected fail with zero budget, got {over:?}"
+        );
     }
 }

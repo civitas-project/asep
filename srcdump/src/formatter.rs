@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tiktoken::{CoreBpe, get_encoding};
+use tiktoken::{get_encoding, CoreBpe};
 
 use crate::config::{Config, OutputMode};
 
@@ -82,7 +82,9 @@ fn raw_string_end(bytes: &[u8], i: usize) -> Option<usize> {
     while cursor < bytes.len() {
         if bytes[cursor] == b'"'
             && cursor + hashes < bytes.len()
-            && bytes[cursor + 1..=cursor + hashes].iter().all(|&b| b == b'#')
+            && bytes[cursor + 1..=cursor + hashes]
+                .iter()
+                .all(|&b| b == b'#')
         {
             return Some(cursor + 1 + hashes);
         }
@@ -133,7 +135,6 @@ fn char_lit_end(bytes: &[u8], i: usize) -> Option<usize> {
     None
 }
 
-
 impl Formatter {
     /// Create a new formatter.
     pub fn new(config: Config, parsers: srcidx::parser::ParserRegistry) -> Result<Self> {
@@ -144,8 +145,14 @@ impl Formatter {
         let mut comment_queries = HashMap::new();
         let languages = [
             ("rust", include_str!("queries/comments/rust.scm")),
-            ("typescript", include_str!("queries/comments/typescript.scm")),
-            ("javascript", include_str!("queries/comments/typescript.scm")),
+            (
+                "typescript",
+                include_str!("queries/comments/typescript.scm"),
+            ),
+            (
+                "javascript",
+                include_str!("queries/comments/typescript.scm"),
+            ),
             ("python", include_str!("queries/comments/python.scm")),
             ("dart", include_str!("queries/comments/dart.scm")),
             ("go", include_str!("queries/comments/go.scm")),
@@ -254,7 +261,8 @@ impl Formatter {
 
     /// Content processing; skipped for symbol-only output modes.
     fn content_for_mode(&self, content: &str, lang: &str) -> (String, usize) {
-        if self.config.mode == OutputMode::SymbolsOnly || self.config.mode == OutputMode::Signatures {
+        if self.config.mode == OutputMode::SymbolsOnly || self.config.mode == OutputMode::Signatures
+        {
             // For symbol-only modes, don't process full content
             return (String::new(), 0);
         }
@@ -324,7 +332,12 @@ impl Formatter {
 
     /// Strip comments using tree-sitter query for accurate removal.
     #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
-    fn strip_comments_with_query(&self, content: &str, query: &Query, language: tree_sitter::Language) -> String {
+    fn strip_comments_with_query(
+        &self,
+        content: &str,
+        query: &Query,
+        language: tree_sitter::Language,
+    ) -> String {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&language).unwrap();
         let tree = parser.parse(content, None).unwrap();
@@ -337,7 +350,8 @@ impl Formatter {
         use tree_sitter::StreamingIterator;
         while let Some(match_) = matches.next() {
             for capture in match_.captures() {
-                if capture.index == 0 { // @comment capture
+                if capture.index == 0 {
+                    // @comment capture
                     let range = capture.node.range();
                     comment_ranges.push((range.start_byte, range.end_byte));
                 }
@@ -504,7 +518,8 @@ impl Formatter {
             return content.to_string(); // Too small to truncate meaningfully
         }
 
-        content.lines()
+        content
+            .lines()
             .map(|line| {
                 let too_long = line.chars().count() > max_len;
                 match too_long {
@@ -512,7 +527,11 @@ impl Formatter {
                     true => {
                         let half = max_len / 2;
                         let chars: Vec<char> = line.chars().collect();
-                        format!("{}...{}", chars[..half].iter().collect::<String>(), chars[chars.len()-half..].iter().collect::<String>())
+                        format!(
+                            "{}...{}",
+                            chars[..half].iter().collect::<String>(),
+                            chars[chars.len() - half..].iter().collect::<String>()
+                        )
                     }
                 }
             })
@@ -543,7 +562,12 @@ impl Formatter {
         result.extend(lines.iter().take(keep).map(|s| s.to_string()));
         let omitted = lines.len().saturating_sub(keep * 2);
         result.push(format!("... [{omitted} lines omitted] ..."));
-        result.extend(lines.iter().skip(lines.len().saturating_sub(keep)).map(|s| s.to_string()));
+        result.extend(
+            lines
+                .iter()
+                .skip(lines.len().saturating_sub(keep))
+                .map(|s| s.to_string()),
+        );
         result.join("\n")
     }
 
@@ -554,15 +578,21 @@ impl Formatter {
 
     /// Extract symbols using srcidx parser.
     fn extract_symbols(&self, path: &Path, content: &str) -> Option<Vec<SymbolInfo>> {
-        self.parsers.with_parser(path, |parser| {
-            let result = parser.parse_file(path, content);
-            result.symbols.iter().map(|s| SymbolInfo {
-                kind: format!("{:?}", s.kind).to_lowercase(),
-                name: s.name.clone(),
-                line: s.line,
-                signature: s.signature.clone(),
-            }).collect()
-        }).filter(|symbols: &Vec<SymbolInfo>| !symbols.is_empty())
+        self.parsers
+            .with_parser(path, |parser| {
+                let result = parser.parse_file(path, content);
+                result
+                    .symbols
+                    .iter()
+                    .map(|s| SymbolInfo {
+                        kind: format!("{:?}", s.kind).to_lowercase(),
+                        name: s.name.clone(),
+                        line: s.line,
+                        signature: s.signature.clone(),
+                    })
+                    .collect()
+            })
+            .filter(|symbols: &Vec<SymbolInfo>| !symbols.is_empty())
     }
 }
 
@@ -659,7 +689,10 @@ def foo():
     fn test_collapse_blank_lines_trailing_newline_preserved() {
         let formatter = test_formatter();
         assert_eq!(formatter.collapse_blank_lines("hello\n"), "hello\n");
-        assert_eq!(formatter.collapse_blank_lines("line 1\n\n\nline 2\n"), "line 1\n\nline 2\n");
+        assert_eq!(
+            formatter.collapse_blank_lines("line 1\n\n\nline 2\n"),
+            "line 1\n\nline 2\n"
+        );
         assert_eq!(formatter.collapse_blank_lines("line 1\n\n"), "line 1\n\n");
         assert_eq!(formatter.collapse_blank_lines("\n"), "\n");
     }
@@ -668,7 +701,10 @@ def foo():
     fn test_collapse_blank_lines_no_trailing_newline_when_absent() {
         let formatter = test_formatter();
         assert_eq!(formatter.collapse_blank_lines("hello"), "hello");
-        assert_eq!(formatter.collapse_blank_lines("line 1\n\n\nline 2"), "line 1\n\nline 2");
+        assert_eq!(
+            formatter.collapse_blank_lines("line 1\n\n\nline 2"),
+            "line 1\n\nline 2"
+        );
         assert_eq!(formatter.collapse_blank_lines(""), "");
         assert_eq!(formatter.collapse_blank_lines("   "), "");
     }
@@ -744,13 +780,23 @@ def foo():
 
     #[test]
     fn test_format_files_parallel() {
-        let temp_dir = std::env::temp_dir().join(format!("srcdump_test_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let temp_dir = std::env::temp_dir().join(format!(
+            "srcdump_test_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         fs::create_dir_all(&temp_dir).unwrap();
 
         let mut test_files = Vec::new();
         for i in 0..10 {
             let file_path = temp_dir.join(format!("file_{i}.rs"));
-            fs::write(&file_path, format!("// Comment in file {i}\npub fn foo_{i}() {{}}\n")).unwrap();
+            fs::write(
+                &file_path,
+                format!("// Comment in file {i}\npub fn foo_{i}() {{}}\n"),
+            )
+            .unwrap();
             test_files.push(file_path);
         }
 
@@ -763,7 +809,9 @@ def foo():
         let mut formatter = Formatter::new(config, parsers).unwrap();
 
         let mut output = Vec::new();
-        formatter.format_files(test_files.clone(), &mut output).unwrap();
+        formatter
+            .format_files(test_files.clone(), &mut output)
+            .unwrap();
 
         let output_str = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = output_str.lines().collect();
@@ -821,7 +869,9 @@ def foo():
         let res = Formatter::new(invalid_config, ParserRegistry::default());
         match res {
             Ok(_) => panic!("expected error for invalid tokenizer"),
-            Err(err) => assert!(err.to_string().contains("Failed to load invalid_tokenizer encoding")),
+            Err(err) => assert!(err
+                .to_string()
+                .contains("Failed to load invalid_tokenizer encoding")),
         }
     }
 }

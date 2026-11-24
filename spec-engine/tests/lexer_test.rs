@@ -110,28 +110,36 @@ fn test_parse_adr_lim_criticality_tags() {
     assert_eq!(adr.len(), 1);
     assert_eq!(
         adr[0].kind,
-        TagKind::Adr { id: "0001".to_string() }
+        TagKind::Adr {
+            id: "0001".to_string()
+        }
     );
 
     let lim = parse_tags_from_line("// @lim:LIM-MEM-01", 71);
     assert_eq!(lim.len(), 1);
     assert_eq!(
         lim[0].kind,
-        TagKind::Limit { id: "LIM-MEM-01".to_string() }
+        TagKind::Limit {
+            id: "LIM-MEM-01".to_string()
+        }
     );
 
     let crit = parse_tags_from_line("// @criticality:high", 72);
     assert_eq!(crit.len(), 1);
     assert_eq!(
         crit[0].kind,
-        TagKind::Criticality { level: "high".to_string() }
+        TagKind::Criticality {
+            level: "high".to_string()
+        }
     );
 
     let prose = parse_tags_from_line("requires `@criticality:high|low` tagging", 73);
     assert_eq!(prose.len(), 1);
     assert_eq!(
         prose[0].kind,
-        TagKind::Criticality { level: "high".to_string() }
+        TagKind::Criticality {
+            level: "high".to_string()
+        }
     );
 }
 
@@ -154,8 +162,10 @@ fn test_parse_rel_tags_multi_target() {
 // @test:FR-CLI-SCAN-02
 #[test]
 fn test_parse_rel_tags_with_note() {
-    let tags =
-        parse_tags_from_line(r#"// @rel:verifies:auth/session->AUTH-01  "token kedaluwarsa ditolak""#, 7);
+    let tags = parse_tags_from_line(
+        r#"// @rel:verifies:auth/session->AUTH-01  "token kedaluwarsa ditolak""#,
+        7,
+    );
     assert_eq!(tags.len(), 1);
     assert_eq!(
         tags[0].kind,
@@ -173,7 +183,5 @@ fn test_parse_rel_tags_with_note() {
 fn test_parse_rel_tags_unknown_kind_rejected() {
     let tags = parse_tags_from_line("// @rel:unknown:auth/session->AUTH-01", 7);
     assert!(tags.is_empty());
-    assert!(tags
-        .iter()
-        .all(|t| !matches!(t.kind, TagKind::Rel { .. })));
+    assert!(tags.iter().all(|t| !matches!(t.kind, TagKind::Rel { .. })));
 }

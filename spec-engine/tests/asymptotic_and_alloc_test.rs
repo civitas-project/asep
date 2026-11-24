@@ -27,10 +27,14 @@ fn test_asymptotic_analyzer_binary_search_log_n() {
     let sizes = [100usize, 200, 400, 800, 1600];
 
     let slope = analyzer
-        .assert_complexity(&sizes, |n| {
-            let arr: Vec<i32> = (0..n as i32).collect();
-            binary_search_iters(&arr, -1)
-        }, 0.35)
+        .assert_complexity(
+            &sizes,
+            |n| {
+                let arr: Vec<i32> = (0..n as i32).collect();
+                binary_search_iters(&arr, -1)
+            },
+            0.35,
+        )
         .unwrap();
 
     assert!(slope <= 0.35, "binary search slope {slope} exceeds 0.35");
@@ -42,14 +46,18 @@ fn test_asymptotic_analyzer_linear_scan_o_n() {
     let sizes = [50usize, 100, 200, 400, 800];
 
     let slope = analyzer
-        .assert_complexity(&sizes, |n| {
-            let arr = vec![0i32; n];
-            let mut steps = 0u64;
-            for _ in &arr {
-                steps += 1;
-            }
-            steps
-        }, 1.2)
+        .assert_complexity(
+            &sizes,
+            |n| {
+                let arr = vec![0i32; n];
+                let mut steps = 0u64;
+                for _ in &arr {
+                    steps += 1;
+                }
+                steps
+            },
+            1.2,
+        )
         .unwrap();
 
     assert!(slope <= 1.2, "linear scan slope {slope} exceeds 1.2");
@@ -60,21 +68,28 @@ fn test_asymptotic_analyzer_quadratic_bubble_sort_detect_fail() {
     let analyzer = AsymptoticAnalyzer::new();
     let sizes = [50usize, 100, 200, 400, 800];
 
-    let result = analyzer.assert_complexity(&sizes, |n| {
-        let mut arr: Vec<i32> = (0..n as i32).rev().collect();
-        let mut steps = 0u64;
-        for i in 0..n {
-            for j in 0..n - 1 - i {
-                steps += 1;
-                if arr[j] > arr[j + 1] {
-                    arr.swap(j, j + 1);
+    let result = analyzer.assert_complexity(
+        &sizes,
+        |n| {
+            let mut arr: Vec<i32> = (0..n as i32).rev().collect();
+            let mut steps = 0u64;
+            for i in 0..n {
+                for j in 0..n - 1 - i {
+                    steps += 1;
+                    if arr[j] > arr[j + 1] {
+                        arr.swap(j, j + 1);
+                    }
                 }
             }
-        }
-        steps
-    }, 1.3);
+            steps
+        },
+        1.3,
+    );
 
-    assert!(result.is_err(), "quadratic bubble sort should fail complexity assert, got {result:?}");
+    assert!(
+        result.is_err(),
+        "quadratic bubble sort should fail complexity assert, got {result:?}"
+    );
 }
 
 #[test]

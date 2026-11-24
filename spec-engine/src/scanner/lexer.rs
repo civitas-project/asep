@@ -12,16 +12,38 @@ pub enum Priority {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TagKind {
-    Req { id: String, priority: Priority },
-    Design { id: String },
-    Impl { id: String },
-    Test { id: String },
-    Token { id: String },
-    Gov { category: String, id: String },
-    Adr { id: String },
-    Limit { id: String },
-    Criticality { level: String },
-    Rigor { tier: String },
+    Req {
+        id: String,
+        priority: Priority,
+    },
+    Design {
+        id: String,
+    },
+    Impl {
+        id: String,
+    },
+    Test {
+        id: String,
+    },
+    Token {
+        id: String,
+    },
+    Gov {
+        category: String,
+        id: String,
+    },
+    Adr {
+        id: String,
+    },
+    Limit {
+        id: String,
+    },
+    Criticality {
+        level: String,
+    },
+    Rigor {
+        tier: String,
+    },
     Rel {
         kind: EdgeKind,
         from: String,
@@ -85,10 +107,18 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
                 let (category, id) = gov_parts(part1, part2);
                 TagKind::Gov { category, id }
             }
-            "adr" => TagKind::Adr { id: part1.to_string() },
-            "lim" => TagKind::Limit { id: part1.to_string() },
-            "criticality" => TagKind::Criticality { level: part1.to_string() },
-            "rigor" => TagKind::Rigor { tier: part1.to_string() },
+            "adr" => TagKind::Adr {
+                id: part1.to_string(),
+            },
+            "lim" => TagKind::Limit {
+                id: part1.to_string(),
+            },
+            "criticality" => TagKind::Criticality {
+                level: part1.to_string(),
+            },
+            "rigor" => TagKind::Rigor {
+                tier: part1.to_string(),
+            },
             _ => continue,
         };
 
@@ -119,7 +149,12 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
 
         results.push((
             whole_match.start(),
-            TagKind::Rel { kind, from, to, note },
+            TagKind::Rel {
+                kind,
+                from,
+                to,
+                note,
+            },
         ));
     }
 

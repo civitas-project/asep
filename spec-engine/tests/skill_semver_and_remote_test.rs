@@ -1,5 +1,5 @@
-use asep::skill::semver_resolver::{match_version_constraint, resolve_skill_dependency_version};
 use asep::skill::remote::{parse_skill_specifier, SkillSource};
+use asep::skill::semver_resolver::{match_version_constraint, resolve_skill_dependency_version};
 
 #[test]
 fn test_parse_skill_specifier() {

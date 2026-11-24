@@ -13,11 +13,7 @@ pub struct SyncReport {
 }
 
 /// Sync all skills from skills_dir to the given agents.
-pub fn sync_skills(
-    skills_dir: &Path,
-    scope: &InstallScope,
-    agents: &[TargetAgent],
-) -> SyncReport {
+pub fn sync_skills(skills_dir: &Path, scope: &InstallScope, agents: &[TargetAgent]) -> SyncReport {
     let entries = inspect_skills(skills_dir);
     let mut report = SyncReport {
         synced: 0,
@@ -29,7 +25,9 @@ pub fn sync_skills(
         let target = resolve_target_paths(scope, *agent);
         // Ensure target dir exists
         if let Err(e) = fs::create_dir_all(&target) {
-            report.errors.push(format!("{}: {}", agent.display_name(), e));
+            report
+                .errors
+                .push(format!("{}: {}", agent.display_name(), e));
             continue;
         }
 
@@ -58,7 +56,9 @@ pub fn sync_skills(
                 | TargetAgent::ClaudeCode => {
                     let s_dir = target.join(&entry.id);
                     match fs::create_dir_all(&s_dir) {
-                        Ok(()) => fs::write(s_dir.join("SKILL.md"), &content).map_err(|e| e.to_string()),
+                        Ok(()) => {
+                            fs::write(s_dir.join("SKILL.md"), &content).map_err(|e| e.to_string())
+                        }
                         Err(e) => Err(e.to_string()),
                     }
                 }
@@ -66,10 +66,8 @@ pub fn sync_skills(
                     fs::write(target.join(format!("{}.mdc", entry.id)), &content)
                         .map_err(|e| e.to_string())
                 }
-                _ => {
-                    fs::write(target.join(format!("{}.md", entry.id)), &content)
-                        .map_err(|e| e.to_string())
-                }
+                _ => fs::write(target.join(format!("{}.md", entry.id)), &content)
+                    .map_err(|e| e.to_string()),
             };
 
             match res {
@@ -77,7 +75,11 @@ pub fn sync_skills(
                     report.synced += 1;
                     let _ = crate::skill::state::record_agent_install(skills_dir, &entry.id, agent);
                 }
-                Err(e) => report.errors.push(format!("{} -> {}: {}", entry.id, agent.display_name(), e)),
+                Err(e) => {
+                    report
+                        .errors
+                        .push(format!("{} -> {}: {}", entry.id, agent.display_name(), e))
+                }
             }
         }
     }

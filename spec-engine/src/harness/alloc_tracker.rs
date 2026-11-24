@@ -123,7 +123,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for TrackingAllocator<A> {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe { self.inner.dealloc(ptr, layout) };
         self.dealloc_count.fetch_add(1, Ordering::Relaxed);
-        self.current_bytes.fetch_sub(layout.size(), Ordering::Relaxed);
+        self.current_bytes
+            .fetch_sub(layout.size(), Ordering::Relaxed);
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {

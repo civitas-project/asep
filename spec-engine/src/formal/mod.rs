@@ -19,10 +19,7 @@ pub struct FormalCheckResult {
 pub fn validate_formal_specs(dir: &Path) -> Vec<FormalCheckResult> {
     let mut results = Vec::new();
 
-    let walker = WalkBuilder::new(dir)
-        .hidden(true)
-        .git_ignore(true)
-        .build();
+    let walker = WalkBuilder::new(dir).hidden(true).git_ignore(true).build();
 
     for entry in walker.filter_map(Result::ok) {
         let path = entry.path();
@@ -42,7 +39,11 @@ pub fn validate_formal_specs(dir: &Path) -> Vec<FormalCheckResult> {
             results.push(validate_tla(path, &file_str));
             continue;
         }
-        if file_name == "api.yaml" || file_name == "api.json" || file_name == "openapi.yaml" || file_name == "openapi.json" {
+        if file_name == "api.yaml"
+            || file_name == "api.json"
+            || file_name == "openapi.yaml"
+            || file_name == "openapi.json"
+        {
             results.push(validate_openapi(path, &file_str));
             continue;
         }

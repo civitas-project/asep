@@ -1,3 +1,4 @@
+// @test:FR-CAP-05
 use asep::agent_protocol::{Kind, MessageStore, Role};
 use serde_json::json;
 use std::fs;
@@ -38,7 +39,14 @@ fn test_task_report_requires_concerns() {
     let mut no_concerns = task_report_body(json!([]));
     no_concerns.as_object_mut().unwrap().remove("concerns");
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None, None)
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskReport,
+            no_concerns,
+            None,
+            None
+        )
         .is_err());
     assert!(store
         .send(
@@ -78,10 +86,14 @@ fn test_lead_can_reject_own_sent_message() {
         .unwrap();
     // Lead may reject a message it sent.
     store.ack(Role::Lead, &envelope.id, "rejected").unwrap();
-    let env: serde_json::Value = serde_json::from_str(&fs::read_to_string(
-        dir.path().join("messages").join(format!("{}.json", envelope.id)),
+    let env: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(
+            dir.path()
+                .join("messages")
+                .join(format!("{}.json", envelope.id)),
+        )
+        .unwrap(),
     )
-    .unwrap())
     .unwrap();
     assert_eq!(env["status"], "rejected");
     // Non-recipient cannot ack lead's message.
@@ -138,7 +150,10 @@ fn test_send_writes_envelope_without_body_in_summary() {
     assert_eq!(envelope.kind, Kind::TaskDispatch);
     assert_eq!(envelope.status, "sent");
     assert!(envelope.id.starts_with("msg-"));
-    let env_path = dir.path().join("messages").join(format!("{}.json", envelope.id));
+    let env_path = dir
+        .path()
+        .join("messages")
+        .join(format!("{}.json", envelope.id));
     assert!(env_path.exists());
 }
 
@@ -161,7 +176,9 @@ fn test_ref_hash_mismatch_rejected() {
     fs::write(&ref_path, "tampered content").unwrap();
     let errors = asep::agent_protocol::validate_dir(dir.path()).unwrap_err();
     assert!(!errors.is_empty());
-    assert!(errors.iter().any(|e| e.contains("hash") || e.contains("mismatch") || e.contains("brief.md")));
+    assert!(errors
+        .iter()
+        .any(|e| e.contains("hash") || e.contains("mismatch") || e.contains("brief.md")));
 }
 
 #[test]
@@ -184,13 +201,34 @@ fn test_recv_returns_only_unacked_for_recipient() {
     let dir = tempfile::tempdir().unwrap();
     let store = MessageStore::new(dir.path());
     let e1 = store
-        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(
+            Role::Lead,
+            Role::Executor,
+            Kind::TaskDispatch,
+            dispatch_body(),
+            None,
+            None,
+        )
         .unwrap();
     let e2 = store
-        .send(Role::Lead, Role::Executor, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(
+            Role::Lead,
+            Role::Executor,
+            Kind::TaskDispatch,
+            dispatch_body(),
+            None,
+            None,
+        )
         .unwrap();
     let e3 = store
-        .send(Role::Judge, Role::Executor, Kind::Verdict, verdict_body(), None, None)
+        .send(
+            Role::Judge,
+            Role::Executor,
+            Kind::Verdict,
+            verdict_body(),
+            None,
+            None,
+        )
         .unwrap();
     store.ack(Role::Executor, &e1.id, "accepted").unwrap();
     let inbox: Vec<_> = store.recv(Role::Executor);
@@ -239,12 +277,20 @@ fn test_protocol_schema_loads() {
     assert_eq!(schema.version, 1);
     assert_eq!(schema.roles.len(), 4);
     assert_eq!(
-        schema.roles.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
+        schema
+            .roles
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>(),
         vec!["lead", "executor", "judge", "explorer"]
     );
     assert_eq!(schema.kinds.len(), 6);
     assert_eq!(
-        schema.kinds.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(),
+        schema
+            .kinds
+            .iter()
+            .map(|k| k.name.as_str())
+            .collect::<Vec<_>>(),
         vec![
             "TASK_DISPATCH",
             "RULING",
@@ -262,7 +308,14 @@ fn test_schema_drives_role_kind_check() {
     let store = MessageStore::new(dir.path());
     // executor may not send TASK_DISPATCH per schema.
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskDispatch, dispatch_body(), None, None)
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskDispatch,
+            dispatch_body(),
+            None,
+            None
+        )
         .is_err());
     // executor may send TASK_REPORT per schema.
     assert!(store
@@ -285,7 +338,14 @@ fn test_schema_drives_body_check() {
     let mut no_concerns = task_report_body(json!([]));
     no_concerns.as_object_mut().unwrap().remove("concerns");
     assert!(store
-        .send(Role::Executor, Role::Lead, Kind::TaskReport, no_concerns, None, None)
+        .send(
+            Role::Executor,
+            Role::Lead,
+            Kind::TaskReport,
+            no_concerns,
+            None,
+            None
+        )
         .is_err());
     // VERDICT rerun with non-numeric test is rejected.
     let mut bad_verdict = verdict_body();
@@ -295,11 +355,25 @@ fn test_schema_drives_body_check() {
         .get_mut("rerun")
         .unwrap()["test"] = json!("one");
     assert!(store
-        .send(Role::Judge, Role::Lead, Kind::Verdict, bad_verdict, None, None)
+        .send(
+            Role::Judge,
+            Role::Lead,
+            Kind::Verdict,
+            bad_verdict,
+            None,
+            None
+        )
         .is_err());
     // numeric rerun is accepted.
     assert!(store
-        .send(Role::Judge, Role::Lead, Kind::Verdict, verdict_body(), None, None)
+        .send(
+            Role::Judge,
+            Role::Lead,
+            Kind::Verdict,
+            verdict_body(),
+            None,
+            None
+        )
         .is_ok());
 }
 
@@ -318,7 +392,9 @@ fn test_envelope_uses_full_semantic_keys() {
         )
         .unwrap();
     let raw = fs::read_to_string(
-        dir.path().join("messages").join(format!("{}.json", envelope.id)),
+        dir.path()
+            .join("messages")
+            .join(format!("{}.json", envelope.id)),
     )
     .unwrap();
     let obj: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -327,7 +403,10 @@ fn test_envelope_uses_full_semantic_keys() {
         assert!(keys.contains_key(key), "envelope must write '{key}' key");
     }
     for short in ["f", "t", "k", "rt", "r", "s"] {
-        assert!(!keys.contains_key(short), "envelope must not contain short key '{short}'");
+        assert!(
+            !keys.contains_key(short),
+            "envelope must not contain short key '{short}'"
+        );
     }
 
     // Legacy long-key envelope must still deserialize and pass validation.
@@ -403,6 +482,64 @@ fn test_next_id_uses_random_suffix() {
         suffix2.chars().all(|c| c.is_ascii_hexdigit()),
         "suffix must be hex: {suffix2}"
     );
+}
+
+#[test]
+fn test_task_report_optional_fields_typed() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path());
+
+    let mut valid = task_report_body(json!([]));
+    valid
+        .as_object_mut()
+        .unwrap()
+        .insert("tool_call_count".to_string(), json!(42));
+    valid
+        .as_object_mut()
+        .unwrap()
+        .insert("duplicate_calls".to_string(), json!(["a", "b"]));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            valid,
+            None,
+            None
+        )
+        .is_ok());
+
+    let mut bad_numeric = task_report_body(json!([]));
+    bad_numeric
+        .as_object_mut()
+        .unwrap()
+        .insert("tool_call_count".to_string(), json!("lots"));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            bad_numeric,
+            None,
+            None
+        )
+        .is_err());
+
+    let mut bad_array = task_report_body(json!([]));
+    bad_array
+        .as_object_mut()
+        .unwrap()
+        .insert("duplicate_calls".to_string(), json!("not an array"));
+    assert!(store
+        .send(
+            Role::Executor,
+            Role::Leader,
+            Kind::TaskReport,
+            bad_array,
+            None,
+            None
+        )
+        .is_err());
 }
 
 #[test]

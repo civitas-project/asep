@@ -60,23 +60,21 @@ fn test_new_run_writes_manifest() {
         manifest.get("schema_version").and_then(Value::as_u64),
         Some(1)
     );
-    assert_eq!(
-        manifest.get("run_id").and_then(Value::as_str),
-        Some(run_id)
-    );
+    assert_eq!(manifest.get("run_id").and_then(Value::as_str), Some(run_id));
     assert!(manifest.get("seed").and_then(Value::as_u64).is_some());
-    assert!(
-        manifest.get("rustc_version").and_then(Value::as_str).is_some()
-    );
-    assert!(
-        manifest.get("asep_commit").and_then(Value::as_str).is_some()
-    );
-    assert!(
-        manifest.get("asep_binary").and_then(Value::as_str).is_some()
-    );
-    assert!(
-        manifest.get("created_at").and_then(Value::as_str).is_some()
-    );
+    assert!(manifest
+        .get("rustc_version")
+        .and_then(Value::as_str)
+        .is_some());
+    assert!(manifest
+        .get("asep_commit")
+        .and_then(Value::as_str)
+        .is_some());
+    assert!(manifest
+        .get("asep_binary")
+        .and_then(Value::as_str)
+        .is_some());
+    assert!(manifest.get("created_at").and_then(Value::as_str).is_some());
 
     // Seed is deterministic for the same run-id.
     let run_dir_again = new_run(root.path(), run_id).expect("new_run should succeed");
@@ -113,7 +111,10 @@ fn test_seed_written_to_manifest() {
         &std::fs::read_to_string(&manifest_path).expect("manifest.json should exist"),
     )
     .expect("manifest.json should be valid JSON");
-    assert_eq!(manifest.get("seed").and_then(Value::as_u64), Some(883735528));
+    assert_eq!(
+        manifest.get("seed").and_then(Value::as_u64),
+        Some(883735528)
+    );
 }
 
 #[test]
@@ -173,13 +174,20 @@ fn test_verify_detects_missing_artifacts_and_hash() {
     }
 
     // Dummy hash matches neither the aggregate nor any single test file.
-    assert!(!hash_lock_ok, "hash lock should be unsatisfiable: {reasons:?}");
     assert!(
-        reasons.iter().any(|reason| reason.starts_with("missing artifacts:")),
+        !hash_lock_ok,
+        "hash lock should be unsatisfiable: {reasons:?}"
+    );
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason.starts_with("missing artifacts:")),
         "expected missing-artifacts reason, got {reasons:?}"
     );
     assert!(
-        reasons.iter().any(|reason| reason.starts_with("hash lock:")),
+        reasons
+            .iter()
+            .any(|reason| reason.starts_with("hash lock:")),
         "expected hash-lock reason, got {reasons:?}"
     );
 }
@@ -195,7 +203,6 @@ fn test_verify_controller_ruling_overrides_hash() {
     let (_artifacts, hash_lock_ok, _reasons) = verify_preflight(run_dir.path());
     assert!(hash_lock_ok, "controller ruling should override hash lock");
 }
-
 
 #[test]
 fn test_hash_lock_collects_tests_in_multiple_subdirectories() {
@@ -219,16 +226,30 @@ fn test_hash_lock_collects_tests_in_multiple_subdirectories() {
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
     };
     let mut lines = vec![
-        format!("{}  {}", hex(fs::read(&fa).unwrap().as_slice()), fa.strip_prefix(run_dir.path()).unwrap().to_string_lossy()),
-        format!("{}  {}", hex(fs::read(&fb).unwrap().as_slice()), fb.strip_prefix(run_dir.path()).unwrap().to_string_lossy()),
+        format!(
+            "{}  {}",
+            hex(fs::read(&fa).unwrap().as_slice()),
+            fa.strip_prefix(run_dir.path()).unwrap().to_string_lossy()
+        ),
+        format!(
+            "{}  {}",
+            hex(fs::read(&fb).unwrap().as_slice()),
+            fb.strip_prefix(run_dir.path()).unwrap().to_string_lossy()
+        ),
     ];
     lines.sort();
     let mut listing = lines.join("\n");
     listing.push('\n');
     let aggregate = hex(listing.as_bytes());
-    fs::write(run_dir.path().join("03-hash.txt"), format!("{aggregate}  all\n"))
-        .expect("03-hash.txt written");
+    fs::write(
+        run_dir.path().join("03-hash.txt"),
+        format!("{aggregate}  all\n"),
+    )
+    .expect("03-hash.txt written");
 
     let (_artifacts, hash_lock_ok, reasons) = verify_preflight(run_dir.path());
-    assert!(hash_lock_ok, "hash lock should cover test files in all subdirectories: {reasons:?}");
+    assert!(
+        hash_lock_ok,
+        "hash lock should cover test files in all subdirectories: {reasons:?}"
+    );
 }

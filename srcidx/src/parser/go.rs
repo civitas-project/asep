@@ -1,19 +1,16 @@
 //! Go parser using tree-sitter.
 
 use crate::index::SymbolKind;
-use crate::parser::SourceParser;
 use crate::parser::tree_sitter_base::{TreeSitterConfig, TreeSitterParser};
-use tree_sitter::Query;
+use crate::parser::SourceParser;
 use anyhow::Result;
+use tree_sitter::Query;
 
 /// Create a Go parser.
 pub fn create_go_parser() -> Result<Box<dyn SourceParser>> {
     let go_language = tree_sitter_go::LANGUAGE.into();
-    
-    let go_query = Query::new(
-        &go_language,
-        include_str!("queries/go/tags.scm"),
-    )?;
+
+    let go_query = Query::new(&go_language, include_str!("queries/go/tags.scm"))?;
 
     // Pattern kind map: maps pattern index to symbol kind
     // Pattern indices (0-based) correspond to patterns in queries/go/tags.scm:
@@ -29,17 +26,17 @@ pub fn create_go_parser() -> Result<Box<dyn SourceParser>> {
     // 9: import_declaration (list) -> Import
     // 10: doc comment
     let pattern_kind_map = vec![
-        SymbolKind::Fn,         // 0: function_declaration
-        SymbolKind::Fn,         // 1: method_declaration
-        SymbolKind::Struct,     // 2: struct
-        SymbolKind::Interface,  // 3: interface
-        SymbolKind::Type,       // 4: type_alias
-        SymbolKind::Const,      // 5: const_declaration
-        SymbolKind::Variable,   // 6: var_declaration
-        SymbolKind::Variable,   // 7: short_var_declaration
-        SymbolKind::Import,     // 8: import_declaration (single)
-        SymbolKind::Import,     // 9: import_declaration (list)
-        SymbolKind::Other("doc".into()),   // 10: doc comment
+        SymbolKind::Fn,                  // 0: function_declaration
+        SymbolKind::Fn,                  // 1: method_declaration
+        SymbolKind::Struct,              // 2: struct
+        SymbolKind::Interface,           // 3: interface
+        SymbolKind::Type,                // 4: type_alias
+        SymbolKind::Const,               // 5: const_declaration
+        SymbolKind::Variable,            // 6: var_declaration
+        SymbolKind::Variable,            // 7: short_var_declaration
+        SymbolKind::Import,              // 8: import_declaration (single)
+        SymbolKind::Import,              // 9: import_declaration (list)
+        SymbolKind::Other("doc".into()), // 10: doc comment
     ];
 
     let config = TreeSitterConfig {
@@ -101,7 +98,11 @@ func (p Point) Distance() float64 {
 "#;
         let mut parser = create_go_parser().unwrap();
         let result = parser.parse_file(Path::new("test.go"), code);
-        let method_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "Distance").unwrap();
+        let method_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "Distance")
+            .unwrap();
         assert_eq!(method_sym.name, "Distance");
     }
 
@@ -117,7 +118,11 @@ type Point struct {
 "#;
         let mut parser = create_go_parser().unwrap();
         let result = parser.parse_file(Path::new("test.go"), code);
-        let structs: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Struct).collect();
+        let structs: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Struct)
+            .collect();
         assert_eq!(structs.len(), 1);
         assert_eq!(structs[0].name, "Point");
     }
@@ -133,7 +138,11 @@ type Shape interface {
 "#;
         let mut parser = create_go_parser().unwrap();
         let result = parser.parse_file(Path::new("test.go"), code);
-        let interfaces: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Interface).collect();
+        let interfaces: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface)
+            .collect();
         assert_eq!(interfaces.len(), 1);
         assert_eq!(interfaces[0].name, "Shape");
     }
@@ -150,7 +159,11 @@ import (
 "#;
         let mut parser = create_go_parser().unwrap();
         let result = parser.parse_file(Path::new("test.go"), code);
-        let imports: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Import).collect();
+        let imports: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .collect();
         assert_eq!(imports.len(), 2);
     }
 
@@ -164,7 +177,11 @@ const MaxSize = 100
 "#;
         let mut parser = create_go_parser().unwrap();
         let result = parser.parse_file(Path::new("test.go"), code);
-        let consts: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Const).collect();
+        let consts: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Const)
+            .collect();
         assert_eq!(consts.len(), 2);
     }
 }

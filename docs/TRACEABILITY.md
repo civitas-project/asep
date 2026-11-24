@@ -124,3 +124,54 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 
 @rel:satisfies:BUILD-NEXT-03->BUILD-NEXT-03
 @rel:verifies:BUILD-NEXT-03->BUILD-NEXT-03 "Perbandingan job dan antrean mencatat wall time, disk, dan bukti tunggu lock tanpa mengubah default"
+# Traceability relations (@rel:satisfies) — capability and ambient tracks
+
+@rel:satisfies:FR-CAP-01->FR-CAP-01
+@rel:satisfies:FR-CAP-02->FR-CAP-02
+@rel:satisfies:FR-CAP-03->FR-CAP-03
+@rel:satisfies:FR-CAP-04->FR-CAP-04
+@rel:satisfies:FR-CAP-05->FR-CAP-05
+@rel:satisfies:FR-CAP-06->FR-CAP-06
+@rel:satisfies:FR-CAP-07->FR-CAP-07
+@rel:satisfies:FR-CAP-08->FR-CAP-08
+@rel:satisfies:FR-AMB-01->FR-AMB-01
+@rel:satisfies:FR-AMB-02->FR-AMB-02
+@rel:satisfies:FR-AMB-03->FR-AMB-03
+@rel:satisfies:FR-AMB-04->FR-AMB-04
+@rel:satisfies:FR-AMB-05->FR-AMB-05
+@rel:satisfies:FR-AMB-06->FR-AMB-06
+
+# Traceability relations (@rel:verifies) — capability and ambient tracks
+
+@rel:verifies:FR-CAP-01->FR-CAP-01 "config_test asserts capability media and threshold defaults and round-trip"
+@rel:verifies:FR-CAP-02->FR-CAP-02 "mcp_test asserts asep_agent_send schema and backward-compatible payload"
+@rel:verifies:FR-CAP-03->FR-CAP-03 "config_test asserts covers returns BLOCKED for missing capability or media"
+@rel:verifies:FR-CAP-04->FR-CAP-04 "config_test asserts delegation_threshold default and persistence"
+@rel:verifies:FR-CAP-05->FR-CAP-05 "agent_protocol_test asserts typed optional tool_call_count and duplicate_calls"
+@rel:verifies:FR-CAP-06->FR-CAP-06 "targets_test asserts judge prompt carries the trajectory rule"
+@rel:verifies:FR-CAP-07->FR-CAP-07 "targets_test asserts capability-domain worker presets are generated"
+@rel:verifies:FR-CAP-08->FR-CAP-08 "config_test asserts media routing rejects unsupported media"
+@rel:verifies:FR-AMB-01->FR-AMB-01 "diagram_and_init_test asserts pointer block and flat skills scaffold idempotently"
+@rel:verifies:FR-AMB-02->FR-AMB-02 "pack_test asserts pack writes no skill files"
+@rel:verifies:FR-AMB-03->FR-AMB-03 "embedded_test asserts using-asep bootstrap skill is embedded and bounded"
+@rel:verifies:FR-AMB-04->FR-AMB-04 "embedded_test asserts description-first and token budget"
+@rel:verifies:FR-AMB-05->FR-AMB-05 "skill_status_test asserts extract_skill_requires parses inline and dash lists"
+@rel:verifies:FR-AMB-06->FR-AMB-06 "integration_check_test asserts ambient governance gate reports violations"
+
+@rel:satisfies:FR-CAP-09->FR-CAP-09
+@rel:verifies:FR-CAP-09->FR-CAP-09 "pack_test constructs PackOptions without skills_filter and pack writes no skills"
+
+@rel:satisfies:FR-ACC-02->FR-ACC-02
+@rel:verifies:FR-ACC-02->FR-ACC-02 "acceptance_scoped_test asserts non-root scoped acceptance writes evidence"
+@rel:satisfies:FR-ACC-03->FR-ACC-03
+@rel:verifies:FR-ACC-03->FR-ACC-03 "integration_check_test asserts --evidence-dir supplies T2 semantic evidence"
+@rel:satisfies:FR-ACC-04->FR-ACC-04
+@rel:verifies:FR-ACC-04->FR-ACC-04 "acceptance_scoped_test asserts no full-suite gate and scoped tests"
+
+@rel:satisfies:FR-ACC-05->FR-ACC-05
+@rel:verifies:FR-ACC-05->FR-ACC-05 "integration_check_test asserts config evidence_dir makes T2 pass without flag"
+
+@rel:satisfies:FR-MCP-03->FR-MCP-03
+@rel:verifies:FR-MCP-03->FR-MCP-03 "mcp_test asserts asep_accept_scoped schema, validation, and evidence output"
+@rel:satisfies:FR-INT-01->FR-INT-01
+@rel:verifies:FR-INT-01->FR-INT-01 "targets_test and JSON validation assert leader prompt carries the acceptance rule"

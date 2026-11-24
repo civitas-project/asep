@@ -1,6 +1,7 @@
 ---
 name: workflow-router
-description: Use at the start of any task to route intent, sequence phases, and orchestrate skills across the ASEP (Axiomatic Systems Engineering Protocol) ecosystem
+description: Use when routing intent, sequencing phases, or orchestrating skills across the ASEP ecosystem
+requires: []
 version: 2.2.0
 depends: [system-architecture, engineering-specs, code-contracts, repository-governance, design-tokens, spec-engine]
 ---
@@ -136,9 +137,10 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
    - **Design (`asep:design-tokens`):** Zero dimensionless numbers, zero unclipped wide-gamut colors without `fallbackHex`.
 5. **Empirical Terminal Verification Before Completion:**
    - Never declare a task finished based on mental execution. Always run the verification command in the terminal and inspect the actual output.
-6. **Sovereign & Self-Contained Ecosystem:**
+6. **Verification & acceptance gate:** After implementation, run `asep check --rigor T2`. When green, call MCP tool `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`) with the exact commit; report the evidence dir. Only the trusted runner grants ACCEPTED — never grant it yourself.
+7. **Sovereign & Self-Contained Ecosystem:**
    - All engineering capabilities (interactive brainstorming, requirements elicitation, task slicing, TDD, systematic debugging, comment hygiene, human copywriting, and accessible design tokens) are natively integrated into the 6 internal `asep:*` skills. External plugins are never required or invoked within ASEP-governed repositories.
-7. **Git Topology & Branching:**
+8. **Git Topology & Branching:**
    - Every change lives on a branch cut from `dev`. Never commit directly to `dev` or `main`.
    - Branch prefix follows the commit type:
      - `feat/<topic>`: new behavior (`feat:` commits)

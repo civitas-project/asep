@@ -67,7 +67,9 @@ fn flush_current_file(
 }
 
 /// Parses LCOV file from disk.
-pub fn parse_lcov_file(path: &Path) -> Result<HashMap<PathBuf, HashMap<usize, usize>>, std::io::Error> {
+pub fn parse_lcov_file(
+    path: &Path,
+) -> Result<HashMap<PathBuf, HashMap<usize, usize>>, std::io::Error> {
     let content = fs::read_to_string(path)?;
     Ok(parse_lcov(&content))
 }

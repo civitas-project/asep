@@ -170,7 +170,13 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
     //    graph is a plain many-to-many relation (one target per edge).
     let mut edges: Vec<TraceEdge> = Vec::new();
     for tag in tags {
-        if let TagKind::Rel { kind, from, to, note } = &tag.kind {
+        if let TagKind::Rel {
+            kind,
+            from,
+            to,
+            note,
+        } = &tag.kind
+        {
             for target in to {
                 edges.push(TraceEdge {
                     kind: *kind,
@@ -221,7 +227,7 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
     let mut incoming_satisfies: HashMap<String, usize> = HashMap::new();
     let mut incoming_verifies: HashMap<String, usize> = HashMap::new();
     let mut satisfies_to_req: HashSet<String> = HashSet::new(); // source -> at least one Req target
-    let mut informs_to_adr: HashSet<String> = HashSet::new();   // source -> at least one Adr target
+    let mut informs_to_adr: HashSet<String> = HashSet::new(); // source -> at least one Adr target
     let mut verifies_with_note: HashMap<String, usize> = HashMap::new();
 
     for edge in &edges {
@@ -238,20 +244,20 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
         }
         match edge.kind {
             EdgeKind::Satisfies => {
-                if edge
-                    .to
-                    .iter()
-                    .any(|t| id_kinds.get(t).is_some_and(|ks| ks.contains(&NodeKind::Req)))
-                {
+                if edge.to.iter().any(|t| {
+                    id_kinds
+                        .get(t)
+                        .is_some_and(|ks| ks.contains(&NodeKind::Req))
+                }) {
                     satisfies_to_req.insert(edge.from.clone());
                 }
             }
             EdgeKind::Informs => {
-                if edge
-                    .to
-                    .iter()
-                    .any(|t| id_kinds.get(t).is_some_and(|ks| ks.contains(&NodeKind::Adr)))
-                {
+                if edge.to.iter().any(|t| {
+                    id_kinds
+                        .get(t)
+                        .is_some_and(|ks| ks.contains(&NodeKind::Adr))
+                }) {
                     informs_to_adr.insert(edge.from.clone());
                 }
             }
@@ -346,7 +352,11 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
         }
     }
 
-    violations.sort_by(|a, b| a.rule_id.cmp(&b.rule_id).then_with(|| a.subject.cmp(&b.subject)));
+    violations.sort_by(|a, b| {
+        a.rule_id
+            .cmp(&b.rule_id)
+            .then_with(|| a.subject.cmp(&b.subject))
+    });
 
     let error_rules: HashSet<&str> = policy
         .coverage_rules()
@@ -354,7 +364,9 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
         .filter(|r| r.severity == Severity::Error)
         .map(|r| r.id.as_str())
         .collect();
-    let is_closed = !violations.iter().any(|v| error_rules.contains(v.rule_id.as_str()));
+    let is_closed = !violations
+        .iter()
+        .any(|v| error_rules.contains(v.rule_id.as_str()));
 
     GraphReport {
         nodes,

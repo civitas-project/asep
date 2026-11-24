@@ -52,11 +52,7 @@ fn test_concurrent_readers_see_consistent_snapshots() {
                     let snap = store.snapshot();
                     let first = store.get(&key, &snap);
                     let second = store.get(&key, &snap);
-                    assert_eq!(
-                        first,
-                        second,
-                        "pinned snapshot must return a stable read"
-                    );
+                    assert_eq!(first, second, "pinned snapshot must return a stable read");
                     iterations += 1;
                 }
             }));

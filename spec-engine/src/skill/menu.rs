@@ -204,15 +204,14 @@ fn list_skills(skills_dir: &Path) {
 
 /// Flow for creating a new custom skill (menu option "2.").
 fn create_skill(skills_dir: &Path, config_dir: &Path) {
-    let id = match Text::new("Skill Identifier (e.g. my-custom-skill, or empty to cancel):")
-        .prompt()
-    {
-        Ok(val) => val.trim().to_string(),
-        Err(_) => {
-            println!("{}", "Skill creation cancelled.".yellow());
-            return;
-        }
-    };
+    let id =
+        match Text::new("Skill Identifier (e.g. my-custom-skill, or empty to cancel):").prompt() {
+            Ok(val) => val.trim().to_string(),
+            Err(_) => {
+                println!("{}", "Skill creation cancelled.".yellow());
+                return;
+            }
+        };
     if id.is_empty() {
         println!("{}", "Skill creation cancelled.".yellow());
         return;
@@ -358,9 +357,7 @@ fn restore_skill_flow(skills_dir: &Path) {
     let skills = inspect_skills(skills_dir);
     let candidates: Vec<&SkillEntry> = skills
         .iter()
-        .filter(|s| {
-            s.status == SkillStatus::Modified || s.status == SkillStatus::Missing
-        })
+        .filter(|s| s.status == SkillStatus::Modified || s.status == SkillStatus::Missing)
         .collect();
 
     if candidates.is_empty() {
@@ -396,10 +393,12 @@ fn restore_skill_flow(skills_dir: &Path) {
 
 /// Restore ALL built-in skills to factory defaults.
 fn restore_all_flow(skills_dir: &Path) {
-    let confirmed = Confirm::new("Are you sure you want to restore ALL built-in skills to factory defaults? (Yes/No)")
-        .with_default(false)
-        .prompt()
-        .unwrap_or(false);
+    let confirmed = Confirm::new(
+        "Are you sure you want to restore ALL built-in skills to factory defaults? (Yes/No)",
+    )
+    .with_default(false)
+    .prompt()
+    .unwrap_or(false);
 
     if !confirmed {
         println!("{}", "Restoration cancelled.".yellow());
@@ -466,7 +465,12 @@ fn restore_select_flow(skills_dir: &Path, candidates: &[&SkillEntry]) {
     match restore_skills(skills_dir, &ids) {
         Ok(restored) => println!(
             "{}",
-            format!("Restored {} skill(s): {}", restored.len(), restored.join(", ")).green()
+            format!(
+                "Restored {} skill(s): {}",
+                restored.len(),
+                restored.join(", ")
+            )
+            .green()
         ),
         Err(e) => eprintln!("{}", format!("Failed to restore: {}", e).red()),
     }
@@ -620,15 +624,14 @@ fn export_all_flow(skills_dir: &Path, available: &[&SkillEntry]) {
 
 /// Flow for importing a skill from markdown (menu option "7.").
 fn import_skill_flow(skills_dir: &Path) {
-    let source = match Text::new("Path to markdown (.md) file to import (or empty to cancel):")
-        .prompt()
-    {
-        Ok(s) => s.trim().to_string(),
-        Err(_) => {
-            println!("{}", "Import cancelled.".yellow());
-            return;
-        }
-    };
+    let source =
+        match Text::new("Path to markdown (.md) file to import (or empty to cancel):").prompt() {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => {
+                println!("{}", "Import cancelled.".yellow());
+                return;
+            }
+        };
 
     if source.is_empty() {
         println!("{}", "Import cancelled.".yellow());
