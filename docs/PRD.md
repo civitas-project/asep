@@ -51,6 +51,8 @@ Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk pu
 <!-- @req:FR-ACC-03:MUST After all scoped gates pass, the runner shall write `evidence/semantic/<REQ-ID>.md` with `verdict: ACCEPTED` for every `@req:*:MUST`; `asep check` shall accept `--evidence-dir <path>` and read semantic evidence from that path. -->
 <!-- @req:FR-ACC-04:MUST The acceptance Tests gate shall run only tests derived from `asep affected <changed-paths>`; `cargo test --workspace --all-targets` shall not be a mandatory acceptance gate. BenchPreflight shall be opt-in. -->
 <!-- @req:FR-ACC-05:MUST `asep check` shall resolve the semantic evidence directory from `.spec-engine/config.toml` (`evidence_dir`) when `--evidence-dir` is absent, so `asep check --rigor T2` is proven after scoped acceptance without extra flags. -->
+<!-- @req:FR-MCP-03:MUST The MCP server shall expose `asep_accept_scoped` with a validated schema (`commit`, optional `dir`) that invokes the scoped non-root acceptance runner and returns the evidence directory. -->
+<!-- @req:FR-INT-01:MUST OpenCode leader/executor presets and documentation shall instruct agentic verification via `asep check --rigor T2` followed by `asep accept-scoped <commit>`; the agent shall never grant ACCEPTED itself. -->
 
 ### Phase A — Ambient skill distribution (after Phase M)
 

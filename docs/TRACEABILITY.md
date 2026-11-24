@@ -170,3 +170,8 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 
 @rel:satisfies:FR-ACC-05->FR-ACC-05
 @rel:verifies:FR-ACC-05->FR-ACC-05 "integration_check_test asserts config evidence_dir makes T2 pass without flag"
+
+@rel:satisfies:FR-MCP-03->FR-MCP-03
+@rel:verifies:FR-MCP-03->FR-MCP-03 "mcp_test asserts asep_accept_scoped schema, validation, and evidence output"
+@rel:satisfies:FR-INT-01->FR-INT-01
+@rel:verifies:FR-INT-01->FR-INT-01 "targets_test and JSON validation assert leader prompt carries the acceptance rule"

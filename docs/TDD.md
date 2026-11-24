@@ -252,3 +252,17 @@ Mandatory gates: Formal (`asep ci --gate 0`), Structural (`asep check --rigor T1
 | A2 | `spec-engine/src/acceptance/scoped.rs` (new), `spec-engine/src/lib.rs` | Non-root policy loader, scoped gate runner using `asep affected`, bwrap isolation, semantic evidence writer. | `cargo test -p asep --lib acceptance::scoped` |
 | A3 | `spec-engine/src/runner.rs`, `Commands::AcceptScoped` | CLI `asep accept-scoped <commit>` dispatches to A2; writes evidence; no full suite. | `cargo test -p asep --test acceptance_scoped_test` |
 | A4 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Requirements closed with `@rel:satisfies`/`@rel:verifies`, changelog notes scoped acceptance. | `asep check . --rigor T1` |
+
+### OpenCode integration
+
+<!-- @design:FR-MCP-03 -->
+`asep_accept_scoped` tool in `spec-engine/src/mcp/tools.rs`: input `{commit: string, dir?: string}`; calls `acceptance_scoped::run_scoped_acceptance(dir or default_dir, commit)`, returns the evidence dir as MCP text. Missing/invalid commit or runner failure yields `isError: true`. The tool uses the same trusted runner; it does not grant `ACCEPTED` itself.
+
+<!-- @design:FR-INT-01 -->
+Add a verification rule to the leader system prompt in `spec-engine/src/pack/manifest.rs`, project `opencode.json`, and global `~/.config/opencode/opencode.json`: after implementation, run `asep check --rigor T2`, then call `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`); report the runner's evidence dir. Keep the existing rule that only the trusted runner grants `ACCEPTED`. Mirror the rule in `workflow-router/skill/SKILL.md`.
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| I1 | `spec-engine/src/mcp/tools.rs`, `spec-engine/tests/mcp_test.rs` | `asep_accept_scoped` listed with typed schema; invalid commit returns error; success path uses ASEP_BWRAP shim in tests. | `cargo test -p asep --test mcp_test` |
+| I2 | `spec-engine/src/pack/manifest.rs`, `opencode.json`, global `opencode.json`, `workflow-router/skill/SKILL.md` | Leader prompt instructs T2 check + accept-scoped; other prompts and settings unchanged. | JSON parse; `cargo test -p asep --test targets_test` |
+| I3 | `docs/TRACEABILITY.md`, `CHANGELOG.md`, tags | FR-MCP-03/FR-INT-01 closed; changelog notes integration. | `asep check . --rigor T2` |

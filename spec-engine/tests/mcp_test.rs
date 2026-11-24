@@ -4,7 +4,9 @@ use asep::mcp::server::process_jsonrpc_request;
 use asep::mcp::tools::{execute_tool, get_tools_list};
 use serde_json::json;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 // @test:FR-MCP-PROTO-01
 #[test]
@@ -43,7 +45,7 @@ fn test_mcp_tools_list() {
 fn test_tool_descriptions_are_compact() {
     let tools = get_tools_list();
     let tool_list = tools["tools"].as_array().expect("tools array");
-    assert_eq!(tool_list.len(), 10, "expected exactly 10 tools");
+    assert_eq!(tool_list.len(), 11, "expected exactly 11 tools");
     for tool in tool_list {
         let name = tool["name"].as_str().unwrap_or("<unnamed>");
         let desc = tool["description"].as_str().expect("description string");
@@ -413,4 +415,155 @@ fn test_agent_send_blocks_missing_required_capability() {
 
     // No message file must be written when blocked.
     assert!(!run_dir.path().join("messages").exists());
+}
+
+// @test:FR-MCP-03
+#[test]
+fn test_accept_scoped_tool_listed() {
+    let tools = get_tools_list();
+    let tool_list = tools["tools"].as_array().expect("tools array");
+    let tool = tool_list
+        .iter()
+        .find(|t| t["name"] == "asep_accept_scoped")
+        .expect("asep_accept_scoped must be listed");
+    assert_eq!(
+        tool["description"].as_str().unwrap(),
+        "Runs scoped non-root acceptance via the trusted runner."
+    );
+    let props = tool["inputSchema"]["properties"]
+        .as_object()
+        .expect("properties object");
+    assert!(props.contains_key("commit"));
+    assert!(props.contains_key("dir"));
+    let required: Vec<&str> = tool["inputSchema"]["required"]
+        .as_array()
+        .expect("required array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert!(required.contains(&"commit"), "commit is required");
+    assert!(!required.contains(&"dir"), "dir is optional");
+}
+
+// @test:FR-MCP-03
+#[test]
+fn test_accept_scoped_rejects_invalid_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir_s = dir.path().to_str().unwrap().to_string();
+    for commit in [
+        "short",
+        "gggggggggggggggggggggggggggggggggggggggg",
+        "ABCDEF0123456789ABCDEF0123456789ABCDEF01",
+    ] {
+        let res = execute_tool(
+            "asep_accept_scoped",
+            &json!({"commit": commit, "dir": dir_s}),
+            Path::new(""),
+        )
+        .expect("asep_accept_scoped must return");
+        assert!(
+            res["isError"].as_bool() == Some(true),
+            "expected isError=true for commit '{commit}': {res:?}"
+        );
+        let text = res["content"][0]["text"].as_str().expect("text content");
+        assert!(text.contains("commit"), "unclear diagnostic: {text}");
+    }
+}
+
+// @test:FR-MCP-03
+#[test]
+fn test_accept_scoped_success_writes_evidence() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let root_path = root.path();
+
+    // Minimal temp git repo.
+    git(root_path, &["init", "-q", root_path.to_str().unwrap()]);
+    Command::new("git")
+        .arg("-C")
+        .arg(root_path)
+        .arg("config")
+        .arg("user.email")
+        .arg("test@example.com")
+        .status()
+        .expect("git config email");
+    Command::new("git")
+        .arg("-C")
+        .arg(root_path)
+        .arg("config")
+        .arg("user.name")
+        .arg("test")
+        .status()
+        .expect("git config name");
+    fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
+    git(root_path, &["add", "README.md"]);
+    git(root_path, &["commit", "-q", "-m", "init"]);
+
+    // Policy + PRD with one MUST requirement.
+    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
+    fs::write(
+        root_path.join("docs/PRD.md"),
+        "# PRD\n\n@req:REQ-ALPHA:MUST\n",
+    )
+    .expect("write PRD");
+    fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
+    let commit = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+    let policy = format!(
+        r#"{{"approved_commit":"{commit}","changed_paths":["docs/PRD.md"],"evidence_dir":"evidence"}}"#
+    );
+    fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
+
+    // Fake bwrap shim: every gate exits 0 without running anything.
+    let shim_path = bwrap_shim();
+    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
+
+    let res = execute_tool(
+        "asep_accept_scoped",
+        &json!({"commit": commit, "dir": root_path.to_str().unwrap()}),
+        Path::new(""),
+    )
+    .expect("asep_accept_scoped must return");
+
+    assert_eq!(
+        res["isError"].as_bool(),
+        Some(false),
+        "unexpected error: {res:?}"
+    );
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let evidence_dir = root_path.join("evidence");
+    assert!(
+        text.contains(evidence_dir.to_str().unwrap()),
+        "response text must name evidence dir: {text}"
+    );
+
+    let semantic = evidence_dir.join("semantic");
+    let evidence = semantic.join("REQ-ALPHA.md");
+    assert!(evidence.is_file(), "missing evidence for REQ-ALPHA");
+    let content = fs::read_to_string(&evidence).unwrap();
+    assert!(content.contains("reviewer: scoped-trusted-runner"));
+    assert!(content.contains("verdict: ACCEPTED"));
+}
+
+fn git(root: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .status()
+        .unwrap_or_else(|e| panic!("failed to run git {args:?}: {e}"));
+    assert!(status.success(), "git {args:?} failed");
+}
+
+/// Fake bwrap shim: every invocation exits 0 without running anything, so
+/// all scoped gates "pass" without a real sandbox.
+fn bwrap_shim() -> PathBuf {
+    let shim_path = std::env::temp_dir().join("asep-mcp-test-bwrap");
+    let mut shim = fs::File::create(&shim_path).expect("create shim");
+    writeln!(shim, "#!/bin/sh\nexit 0\n").expect("write shim");
+    drop(shim);
+    let mut perms = fs::metadata(&shim_path)
+        .expect("shim metadata")
+        .permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).expect("shim perms");
+    shim_path
 }

@@ -1,6 +1,8 @@
+// @impl:FR-MCP-03
 //! Tool definitions and execution dispatch for MCP.
 // @impl:FR-CAP-02
 
+use crate::acceptance_scoped::run_scoped_acceptance;
 use crate::adr::create_new_adr;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
@@ -216,6 +218,24 @@ pub fn get_tools_list() -> serde_json::Value {
                             "description": "Follow symlinks with safety checks (default: true)"
                         }
                     }
+                }
+            },
+            {
+                "name": "asep_accept_scoped",
+                "description": "Runs scoped non-root acceptance via the trusted runner.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "commit": {
+                            "type": "string",
+                            "description": "Commit to accept (40 lowercase hex characters)"
+                        },
+                        "dir": {
+                            "type": "string",
+                            "description": "Repository root (defaults to current directory)"
+                        }
+                    },
+                    "required": ["commit"]
                 }
             },
             {
@@ -847,8 +867,63 @@ pub fn execute_tool(
             }))
         }
 
+        "asep_accept_scoped" => {
+            let commit = mcp_require_str(arguments, "commit")?;
+            if !is_scoped_commit(commit) {
+                return Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "invalid commit '{commit}': expected a 40-character lowercase hex string"
+                            )
+                        }
+                    ],
+                    "isError": true
+                }));
+            }
+
+            let dir = arguments
+                .get("dir")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_dir.to_path_buf());
+
+            match run_scoped_acceptance(&dir, commit) {
+                Ok(evidence_dir) => Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!(
+                                "Scoped acceptance evidence at {}",
+                                evidence_dir.display()
+                            )
+                        }
+                    ],
+                    "isError": false
+                })),
+                Err(diagnostic) => Ok(serde_json::json!({
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": format!("Scoped acceptance failed: {diagnostic}")
+                        }
+                    ],
+                    "isError": true
+                })),
+            }
+        }
+
         other => Err(format!("Unknown tool: {other}")),
     }
+}
+
+/// Commit accepted by scoped acceptance must be exactly 40 lowercase hex chars.
+fn is_scoped_commit(commit: &str) -> bool {
+    commit.len() == 40
+        && commit
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Run directory for agent tools: explicit `run_dir` argument, `ASEP_RUN_DIR` env fallback only.

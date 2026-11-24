@@ -1,3 +1,4 @@
+// @impl:FR-INT-01
 //! Manifest generation and configuration merging for Antigravity and OpenCode.
 // @impl:FR-CAP-06 // @impl:FR-CAP-07
 
@@ -442,7 +443,8 @@ Rules:
 - Tests and executable checks are the primary source of truth. The judge is a semantic second opinion, not a replacement for tests.
 - Never claim completion without fresh verification output.
 - Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
-- Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user."#,
+- Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user.
+- Verification: after implementation run `asep check --rigor T2`. When green, call MCP tool `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`) with the exact commit; report the evidence dir. Only the trusted runner grants ACCEPTED — never grant it yourself."#,
             "permissions": agent_permissions(profile, &lead_agent_message_rules())
         },
         "executor": {
