@@ -16,7 +16,7 @@ Compare identical tasks across four configurations (RFC §7.3):
 | A | Native agent/runtime baseline with commonly available tools |
 | B | A + explicit context retrieval from repository artifacts (PRD, TDD, TRACEABILITY, DOUBT) before task execution; persistent memory limited to repository files |
 | C | B + bounded executor unit and independent judge review before acceptance |
-| D | C + structured/high-assurance process where relevant |
+| D | C + explicit risk assessment, structured acceptance criteria, T2 scoped acceptance, and independent judge review |
 
 Control: task requirements, acceptance criteria, repository starting state, model, runtime, resource constraints. Record uncontrolled variables.
 

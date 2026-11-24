@@ -75,6 +75,32 @@
 - No rework; judge PASS on first review.
 - Single sample; no conclusion on overhead benefit.
 
+## Task 04 — Exact scope value test
+
+| Field | Value |
+|---|---|
+| Task | Strengthen `EngineerLevel::scope()` test to assert exact strings |
+| Level / Rigor | L1 / High Assurance (Config D process applied) |
+| Configuration | D — C + risk assessment, structured acceptance, T2 scoped acceptance, independent judge |
+| Acceptance | T1 PASS, T2 PASS, accept-scoped exit 0 (77 evidence) |
+| Judge verdict | PASS |
+| Acceptance pass | Yes |
+| Defects | 0 |
+| Rework count | 0 |
+| Leader tool calls | ~6 (define config, delegate, verify, judge, commit, accept) |
+| Executor steps | 1 unit (level.rs only) |
+| Judge steps | 1 review |
+| Extra gates | T2 + accept-scoped (vs C: T1 only) |
+| Token consumption | unavailable |
+| Wall-clock time | not precisely measured |
+| Cost per accepted task | undefined |
+| Cost source | unavailable |
+
+### Notes
+- Config D adds T2 scoped acceptance overhead (~one bwrap run) vs Config C.
+- No rework; judge PASS on first review.
+- Single sample; no conclusion on assurance benefit.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
@@ -82,6 +108,6 @@
 | A | 1 | 1/1 | ~5 | not measured | undefined |
 | B | 1 | 1/1 | ~3 | not measured | undefined |
 | C | 1 | 1/1 | ~4 leader + 1 exec + 1 judge | not measured | undefined |
-| D | 0 | — | — | — | — |
+| D | 1 | 1/1 | ~6 leader + 1 exec + 1 judge + T2 | not measured | undefined |
 
 No conclusion drawn from a single sample.
