@@ -152,7 +152,7 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
     let arr = tools["tools"]
         .as_array()
         .expect("tools list must be an array");
-    assert_eq!(arr.len(), 10);
+    assert_eq!(arr.len(), 12);
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "asep_check",
@@ -441,4 +441,37 @@ fn test_else_branch_not_suppressed_by_allow_marker() {
             .any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
         "ElseBranch must not be suppressible via asep:allow-antislop, got {violations:?}"
     );
+}
+
+// @test:IN-01-COMPAT
+#[test]
+fn test_observability_addition_keeps_existing_contracts() {
+    let config = EngineConfig::default();
+    assert_eq!(config.evidence_dir, None);
+    let tools = get_tools_list();
+    let names = tools["tools"].as_array().expect("tools array");
+    for required in ["asep_check", "spec_check", "srcdump", "asep_accept_scoped"] {
+        assert!(
+            names.iter().any(|t| t["name"] == required),
+            "legacy tool must remain: {required}"
+        );
+    }
+    assert!(Cli::try_parse_from(["asep", "check", "."]).is_ok());
+}
+
+// @test:IN-01-OVERHEAD
+#[test]
+fn test_telemetry_sampling_defaults_to_off() {
+    let config = EngineConfig::default();
+    assert!(!config.telemetry.enabled);
+}
+
+// @test:IN-01-REPORT
+#[test]
+fn test_trace_cli_and_mcp_report_are_registered() {
+    let cli = Cli::try_parse_from(["asep", "trace", "status"]).expect("trace status must parse");
+    assert!(matches!(cli.command, Some(Commands::Trace { .. })));
+    let tools = get_tools_list();
+    let names = tools["tools"].as_array().expect("tools array");
+    assert!(names.iter().any(|t| t["name"] == "asep_trace_report"));
 }

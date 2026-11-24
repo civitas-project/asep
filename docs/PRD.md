@@ -67,3 +67,22 @@ Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk pu
 
 <!-- @req:FR-LEADER-01:MUST OpenCode presets and generated presets shall use leader as the primary role name. -->
 <!-- @req:FR-LEADER-02:MUST The role enum, wire value, and MCP tools shall use Leader/leader; the former lead value shall be rejected. -->
+
+## IN-01 — Agent Observability Protocol (Layer 05)
+
+Sumber: `ASEP_Architecture_Expansion_Proposal_Catalog.pdf` hal. 15. Review verdict **REVISE** (hal. 17): arah diterima, tapi shared event/trace envelope dari langkah A dilebur sebagai unit pertama sebelum konsumen dibangun. Status ini berarti desain disetujui untuk langkah berikutnya, bukan fitur sudah jadi.
+
+<!-- @req:IN-01-CONTRACT:MUST A versioned event/trace envelope shall carry schema_version, trace_id, optional parent_id, task_id, a monotonic seq, a wall timestamp and a monotonic duration; trace_id, parent_id and task_id shall be explicit caller inputs and shall never be inferred from filenames, message IDs, tool output or the wall timestamp. -->
+<!-- @req:IN-01-COMPAT:MUST Adding the envelope shall not change the existing Envelope, GateResult, CheckJsonReport, MCP tool schemas or `.spec-engine` config files, and all existing tests shall pass unchanged. -->
+<!-- @req:IN-01-COLLECT:MUST A local collector shall append events as NDJSON (newline-delimited JSON) to a per-run file with bounded buffering and a flush at span end, and telemetry shall produce no file unless explicitly enabled. -->
+<!-- @req:IN-01-COST:MUST Cost and token metadata shall be nullable and carry a source of measured, estimated, provider_reported or unavailable together with a missing-fields list; an unavailable value shall never be reported as zero or guessed. -->
+<!-- @req:IN-01-REPORT:MUST The CLI shall expose `asep trace status|report` and the MCP server shall expose `asep_trace_report`, and both shall reconcile recorded events against CiReport/CheckJsonReport for the same task and gate. -->
+<!-- @req:IN-01-PRIVACY:MUST Only allowlisted fields shall be persisted, secrets shall be redacted before write, and `asep trace purge <trace_id>` shall remove that trace from the log and its derived reports; a secret fixture shall never appear in any trace file. -->
+<!-- @req:IN-01-RETENTION:MUST Retention shall be a TTL plus a maximum size with segment rotation and removal of expired segments; absolute append-only shall not be claimed. -->
+<!-- @req:IN-01-OVERHEAD:MUST Telemetry shall be configurable as off or on with off as the default; there is no sampled mode. File-change and intent evidence is always recorded when telemetry is on. Overhead shall be measured on the same revision with a documented result before on is adopted as a default. -->
+<!-- @req:IN-01-METRIC:MUST Trace reports shall present gate pass rate with severity, reproducibility, tool/token/latency, cost per verified result, recovery fidelity and overhead, each with denominator, skipped list, failures and a pinned baseline, and shall not collapse them into a single score. -->
+
+### File-change evidence (added after review discussion)
+
+<!-- @req:IN-01-FILE-EVIDENCE:MUST The collector shall compute a SHA-256 content hash for each in-scope file at span start and span end, and shall emit an NDJSON file-change event only for files whose hash changed, carrying the path, before/after hashes, task ID and span label. -->
+<!-- @req:IN-01-INTENT:MUST A write-ahead intent event carrying the target path and its pre-write hash shall be recorded before a controlled tool modifies a file; file-change and intent events shall always be recorded even when ordinary event recording is off, shall be marked as complete evidence, and reports shall state whether ordinary event coverage is on or off. -->

@@ -180,3 +180,26 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-LEADER-01->FR-LEADER-01 "targets_test asserts leader preset"
 @rel:satisfies:FR-LEADER-02->FR-LEADER-02
 @rel:verifies:FR-LEADER-02->FR-LEADER-02 "agent_protocol_test asserts leader wire and rejects lead"
+
+@rel:satisfies:IN-01-CONTRACT->IN-01-CONTRACT
+@rel:verifies:IN-01-CONTRACT->IN-01-CONTRACT "observability inline tests assert explicit IDs, seq and Instant-based duration"
+@rel:satisfies:IN-01-COMPAT->IN-01-COMPAT
+@rel:verifies:IN-01-COMPAT->IN-01-COMPAT "traceability_tests asserts legacy config fields, tools and commands remain"
+@rel:satisfies:IN-01-COLLECT->IN-01-COLLECT
+@rel:verifies:IN-01-COLLECT->IN-01-COLLECT "observability inline tests assert NDJSON append, off/sampled/full and no file when off"
+@rel:satisfies:IN-01-COST->IN-01-COST
+@rel:verifies:IN-01-COST->IN-01-COST "observability inline tests assert nullable cost with source and no zero substitution"
+@rel:satisfies:IN-01-REPORT->IN-01-REPORT
+@rel:verifies:IN-01-REPORT->IN-01-REPORT "trace_cli_test and mcp_test assert reconciliation and read-only trace reporting"
+@rel:satisfies:IN-01-PRIVACY->IN-01-PRIVACY
+@rel:verifies:IN-01-PRIVACY->IN-01-PRIVACY "observability inline tests assert allowlist filtering, redaction and purge"
+@rel:satisfies:IN-01-RETENTION->IN-01-RETENTION
+@rel:verifies:IN-01-RETENTION->IN-01-RETENTION "observability inline tests assert rotation and ttl expiry"
+@rel:satisfies:IN-01-OVERHEAD->IN-01-OVERHEAD
+@rel:verifies:IN-01-OVERHEAD->IN-01-OVERHEAD "config_test and traceability_tests assert sampling defaults to off"
+@rel:satisfies:IN-01-METRIC->IN-01-METRIC
+@rel:verifies:IN-01-METRIC->IN-01-METRIC "observability tests assert nine balanced metrics with denominators and no aggregate score"
+@rel:satisfies:IN-01-FILE-EVIDENCE->IN-01-FILE-EVIDENCE
+@rel:verifies:IN-01-FILE-EVIDENCE->IN-01-FILE-EVIDENCE "observability tests assert hash checkpoints emit only changed paths with before/after hashes"
+@rel:satisfies:IN-01-INTENT->IN-01-INTENT
+@rel:verifies:IN-01-INTENT->IN-01-INTENT "observability tests assert write-ahead intent precedes change, bypasses sampling and report states coverage"

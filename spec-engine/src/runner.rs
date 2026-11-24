@@ -1,13 +1,14 @@
 use crate::adr::create_new_adr;
 use crate::affected::affected;
 use crate::auditor::{audit_ambient_skills, audit_project_anti_slop, audit_project_docstrings};
-use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
+use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands, TraceAction};
 use crate::config::EngineConfig;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::{build_relation_graph, build_trace_graph};
 use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
+use crate::observability::TraceCollector;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, Severity, TierId};
@@ -18,6 +19,7 @@ use crate::verification::{evaluate, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
@@ -2114,6 +2116,18 @@ pub fn run() -> ExitCode {
             }
         }
 
+        Some(Commands::Trace { dir, action }) => {
+            let root = dir
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            match run_trace(&root, &action) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("{} {}", "✖".red(), e);
+                    ExitCode::from(1)
+                }
+            }
+        }
+
         Some(Commands::AcceptScoped { commit }) => {
             match crate::acceptance_scoped::run_scoped_acceptance(&PathBuf::from("."), &commit) {
                 Ok(evidence_dir) => {
@@ -2137,6 +2151,133 @@ pub fn run() -> ExitCode {
             ExitCode::SUCCESS
         }
     }
+}
+
+// @impl:IN-01-REPORT
+fn run_trace(root: &Path, action: &TraceAction) -> Result<(), String> {
+    let config = crate::config::load_config(root);
+    let collector = TraceCollector::new(root, &config.telemetry);
+    let dir = root.join(&config.telemetry.dir);
+
+    match action {
+        TraceAction::Status => {
+            let enabled = collector.enabled();
+            let count = trace_segment_count(&dir);
+            let mode = match enabled {
+                true => "enabled",
+                false => "disabled",
+            };
+            println!("telemetry: {mode}");
+            println!("trace dir: {}", dir.display());
+            println!("segments: {count}");
+            Ok(())
+        }
+        TraceAction::Report { trace_id } => run_trace_report(root, &dir, trace_id),
+        TraceAction::Purge { trace_id } => {
+            collector.purge(trace_id)?;
+            println!("purged trace: {trace_id}");
+            Ok(())
+        }
+    }
+}
+
+fn trace_segment_count(dir: &Path) -> usize {
+    match fs::read_dir(dir) {
+        Ok(read_dir) => read_dir
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("ndjson"))
+            .count(),
+        Err(_) => 0,
+    }
+}
+
+fn run_trace_report(root: &Path, dir: &Path, trace_id: &str) -> Result<(), String> {
+    let mut segments: Vec<PathBuf> = Vec::new();
+    match fs::read_dir(dir) {
+        Ok(read_dir) => {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(trace_id) && name.ends_with(".ndjson") {
+                    segments.push(entry.path());
+                }
+            }
+        }
+        Err(_) => {}
+    }
+    segments.sort();
+
+    let mut counts: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
+    let mut total = 0usize;
+    for path in &segments {
+        let content = fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let event: serde_json::Value = serde_json::from_str(line)
+                .map_err(|e| format!("invalid JSON in {}: {e}", path.display()))?;
+            let task_id = event
+                .get("task_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unknown>")
+                .to_string();
+            let event_name = event
+                .get("event")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<unknown>")
+                .to_string();
+            let counter = counts.entry(task_id).or_default();
+            *counter.entry(event_name).or_insert(0) += 1;
+            total += 1;
+        }
+    }
+
+    println!("trace: {trace_id}");
+    println!("segments: {}", segments.len());
+    println!("events: {total}");
+    match counts.is_empty() {
+        true => println!("  (none)"),
+        false => {
+            for (task_id, events) in &counts {
+                println!("{task_id}:");
+                for (event, count) in events {
+                    println!("  {event}: {count}");
+                }
+            }
+        }
+    }
+
+    let verification_path = root.join(".spec-engine").join("verification.json");
+    match fs::read_to_string(&verification_path) {
+        Ok(content) => {
+            let value: serde_json::Value = match serde_json::from_str(&content) {
+                Ok(v) => v,
+                Err(_) => serde_json::Value::Null,
+            };
+            let status = value
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            println!("verification status: {status}");
+            match value.get("skipped").and_then(|v| v.as_array()) {
+                Some(skipped) => match skipped.is_empty() {
+                    true => println!("verification skipped: (none)"),
+                    false => {
+                        for item in skipped {
+                            println!("  - {}", item.as_str().unwrap_or("<unknown>"));
+                        }
+                    }
+                },
+                None => println!("verification skipped: unknown"),
+            }
+        }
+        Err(_) => {
+            println!("verification status: unknown");
+            println!("verification skipped: unknown");
+        }
+    }
+    Ok(())
 }
 
 /// Prints only the detailed skill drift report for installed skill copies
