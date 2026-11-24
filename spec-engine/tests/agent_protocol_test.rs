@@ -576,9 +576,15 @@ fn test_leader_v2_serde_rejects_old_lead() {
         )
         .unwrap();
     assert_eq!(sent.v, 2, "sent envelope must use envelope version 2");
-    assert_eq!(sent.from, Role::Leader, "sent envelope must use leader role");
+    assert_eq!(
+        sent.from,
+        Role::Leader,
+        "sent envelope must use leader role"
+    );
     let raw = fs::read_to_string(
-        dir.path().join("messages").join(format!("{}.json", sent.id)),
+        dir.path()
+            .join("messages")
+            .join(format!("{}.json", sent.id)),
     )
     .unwrap();
     let obj: serde_json::Value = serde_json::from_str(&raw).unwrap();
@@ -613,7 +619,9 @@ fn test_leader_v2_serde_rejects_old_lead() {
     let errors = asep::agent_protocol::validate_dir(dir.path()).unwrap_err();
     assert!(!errors.is_empty());
     assert!(
-        errors.iter().any(|e| e.contains("leader") || e.contains("variant") || e.contains("role")),
+        errors
+            .iter()
+            .any(|e| e.contains("leader") || e.contains("variant") || e.contains("role")),
         "v2 with legacy lead role must be flagged: {errors:?}"
     );
 
