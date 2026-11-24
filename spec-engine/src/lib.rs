@@ -7,6 +7,7 @@ pub mod diagram;
 pub mod error;
 pub mod graph;
 pub mod affected;
+pub mod acceptance_scoped;
 pub mod harness;
 pub mod init;
 pub mod formal;

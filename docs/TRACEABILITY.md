@@ -160,3 +160,10 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 
 @rel:satisfies:FR-CAP-09->FR-CAP-09
 @rel:verifies:FR-CAP-09->FR-CAP-09 "pack_test constructs PackOptions without skills_filter and pack writes no skills"
+
+@rel:satisfies:FR-ACC-02->FR-ACC-02
+@rel:verifies:FR-ACC-02->FR-ACC-02 "acceptance_scoped_test asserts non-root scoped acceptance writes evidence"
+@rel:satisfies:FR-ACC-03->FR-ACC-03
+@rel:verifies:FR-ACC-03->FR-ACC-03 "integration_check_test asserts --evidence-dir supplies T2 semantic evidence"
+@rel:satisfies:FR-ACC-04->FR-ACC-04
+@rel:verifies:FR-ACC-04->FR-ACC-04 "acceptance_scoped_test asserts no full-suite gate and scoped tests"

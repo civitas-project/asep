@@ -232,3 +232,23 @@ Ambient governance gate: `asep check` validates pointer block presence, flat ski
 | M12 | Verification & reconfig | Run `asep pack` to apply latest config after Phase M and after Phase A; restart MCP. | `asep --version`; MCP `initialize`; `asep check . --rigor T1` |
 
 After Phase M complete: restart with latest config. After Phase A complete: restart again. Full suite reserved for merge to main.
+
+### Scoped non-root acceptance
+
+<!-- @design:FR-ACC-02 -->
+Policy lives at `<root>/.spec-engine/acceptance.json` (user-owned, 0600); evidence dir user-owned 0700. Candidate snapshot is executed with unprivileged `bwrap --unshare-user --unshare-pid`, read-only repo/toolchain mounts, a writable scratch target dir, and no policy/evidence mounts. No `/etc` changes and no `sudo`.
+
+<!-- @design:FR-ACC-03 -->
+After gates pass, the runner enumerates all `@req:*:MUST` from the trace graph and writes `evidence/semantic/<id>.md` containing `reviewer`, `verdict: ACCEPTED`, and a rationale citing the commit, snapshot digest, and scoped gate results. `asep check` gains `--evidence-dir`; when supplied it replaces the default `<root>/evidence` lookup.
+
+<!-- @design:FR-ACC-04 -->
+Mandatory gates: Formal (`asep ci --gate 0`), Structural (`asep check --rigor T1`), ScopedTests (`asep affected <changed-paths>` then execute only listed test targets), Format (`cargo fmt --all --check`). Clippy and BenchPreflight are opt-in flags. Evidence records each gate command, exit code, and the affected-path list.
+
+#### Ordered units for scoped acceptance
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| A1 | `spec-engine/src/runner.rs`, `Commands::Check` (`--evidence-dir`) | Flag parsed and passed to verification; default unchanged. | `cargo test -p asep --test integration_check_test` |
+| A2 | `spec-engine/src/acceptance/scoped.rs` (new), `spec-engine/src/lib.rs` | Non-root policy loader, scoped gate runner using `asep affected`, bwrap isolation, semantic evidence writer. | `cargo test -p asep --lib acceptance::scoped` |
+| A3 | `spec-engine/src/runner.rs`, `Commands::AcceptScoped` | CLI `asep accept-scoped <commit>` dispatches to A2; writes evidence; no full suite. | `cargo test -p asep --test acceptance_scoped_test` |
+| A4 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Requirements closed with `@rel:satisfies`/`@rel:verifies`, changelog notes scoped acceptance. | `asep check . --rigor T1` |

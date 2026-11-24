@@ -45,6 +45,12 @@ Target acuan, bukan syarat lulus: median feedback edit fungsi turun 40%, disk pu
 <!-- @req:FR-CAP-08:MUST Media-tagged tasks shall be routed only to agents whose supported_media includes the required media; text-only agents shall never receive image/pdf/audio/video tasks. -->
 <!-- @req:FR-CAP-09:MUST `PackOptions` shall not expose a `skills_filter` field; skill selection belongs to ambient init, not provisioning. -->
 
+### Scoped non-root acceptance
+
+<!-- @req:FR-ACC-02:MUST A trusted local runner shall operate without root: policy and evidence shall be user-owned (0600/0700), and candidate code shall execute inside unprivileged bubblewrap with the snapshot read-only and policy/evidence not mounted into the sandbox. -->
+<!-- @req:FR-ACC-03:MUST After all scoped gates pass, the runner shall write `evidence/semantic/<REQ-ID>.md` with `verdict: ACCEPTED` for every `@req:*:MUST`; `asep check` shall accept `--evidence-dir <path>` and read semantic evidence from that path. -->
+<!-- @req:FR-ACC-04:MUST The acceptance Tests gate shall run only tests derived from `asep affected <changed-paths>`; `cargo test --workspace --all-targets` shall not be a mandatory acceptance gate. BenchPreflight shall be opt-in. -->
+
 ### Phase A — Ambient skill distribution (after Phase M)
 
 <!-- @req:FR-AMB-01:MUST `asep init` shall inject an ambient pointer block into AGENTS.md/CLAUDE.md/GEMINI.md and scaffold a flat `skills/` directory with canonical SKILL.md files, so skills are discoverable without `asep pack`. -->

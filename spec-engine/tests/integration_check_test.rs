@@ -56,6 +56,47 @@ fn test_check_json_output_mode() {
         .stdout(predicate::str::contains("\"total_requirements\": 1"));
 }
 
+// @test:FR-ACC-03-EVIDENCE-DIR
+#[test]
+fn test_check_uses_explicit_evidence_dir() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    // Closed T2 project with evidence kept out of the default evidence dir,
+    // so `asep check --rigor T2` without --evidence-dir is Unproven (exit 3).
+    write_t2_closed_project(root, "FR-EVID-01");
+    fs::remove_dir_all(root.join("evidence")).expect("remove default evidence dir");
+
+    // Valid semantic evidence in an external dir.
+    let evidence_dir = dir.path().join("external-evidence");
+    fs::create_dir_all(evidence_dir.join("semantic")).expect("create external evidence dir");
+    fs::write(
+        evidence_dir.join("semantic").join("FR-EVID-01.md"),
+        "reviewer: qa\nverdict: ACCEPTED\nrationale: accepted\n",
+    )
+    .expect("write evidence");
+
+    // 1. Without --evidence-dir: Unproven => failure, exit 3.
+    let mut cmd_without = Command::cargo_bin("asep").expect("binary exists");
+    cmd_without
+        .arg("check")
+        .arg("--rigor")
+        .arg("T2")
+        .arg(root);
+    cmd_without.assert().failure().code(3);
+
+    // 2. With --evidence-dir: Pass => exit 0.
+    let mut cmd_with = Command::cargo_bin("asep").expect("binary exists");
+    cmd_with
+        .arg("check")
+        .arg("--rigor")
+        .arg("T2")
+        .arg("--evidence-dir")
+        .arg(&evidence_dir)
+        .arg(root);
+    cmd_with.assert().success().code(0);
+}
+
 // @test:FR-CLI-INIT-01
 #[test]
 fn test_cli_init_and_adr_commands() {

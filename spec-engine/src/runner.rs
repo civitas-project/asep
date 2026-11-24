@@ -102,6 +102,7 @@ pub fn run() -> ExitCode {
             coverage,
             rigor,
             skills,
+            evidence_dir,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
 
@@ -144,7 +145,7 @@ pub fn run() -> ExitCode {
             let graph = build_relation_graph(&tags, &policy);
             let report = build_trace_graph(&tags);
 
-            let evidence_dir = target_path.join("evidence");
+            let evidence_dir = evidence_dir.unwrap_or_else(|| target_path.join("evidence"));
             let behavioral_path = behavioral_report
                 .unwrap_or_else(|| target_path.join(".spec-engine").join("behavioral.json"));
             let verification_report = evaluate(&graph, &evidence_dir, tier, &behavioral_path);
@@ -1957,6 +1958,19 @@ pub fn run() -> ExitCode {
                 }
                 Err(e) => {
                     eprintln!("{} {}", "✖".red(), e);
+                    ExitCode::from(1)
+                }
+            }
+        }
+
+        Some(Commands::AcceptScoped { commit }) => {
+            match crate::acceptance_scoped::run_scoped_acceptance(&PathBuf::from("."), &commit) {
+                Ok(evidence_dir) => {
+                    println!("{} {}", "✔".green(), evidence_dir.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("{} accept-scoped failed: {e}", "✖".red());
                     ExitCode::from(1)
                 }
             }

@@ -1,3 +1,4 @@
+// @impl:FR-ACC-03 @impl:FR-ACC-04
 // Clap derives generate `from_arg_matches`, which builds every enum variant on the stack in debug builds.
 #![allow(clippy::large_stack_frames)]
 
@@ -71,6 +72,12 @@ pub enum Commands {
             help = "Print only the detailed skill drift report for installed skill copies"
         )]
         skills: bool,
+
+        #[arg(
+            long,
+            help = "Directory containing semantic evidence files (default: <target>/evidence)"
+        )]
+        evidence_dir: Option<PathBuf>,
     },
 
     /// Manage Architecture Decision Records (ADRs)
@@ -167,6 +174,12 @@ pub enum Commands {
 
     /// Self-update the asep binary from the latest Codeberg release
     Update {},
+
+    /// Run scoped acceptance for a single commit (FR-ACC-02 through FR-ACC-04).
+    AcceptScoped {
+        /// Full commit hash to accept
+        commit: String,
+    },
 
     /// Run empirical complexity and memory harness commands (ARCH-10)
     Harness {

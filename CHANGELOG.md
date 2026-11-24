@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `asep pack` is now provisioning-only; skill file copying was removed. Use `asep init` for ambient skill files.
 - **Breaking:** `PackOptions.skills_filter` was removed.
 - OpenCode MCP wiring now uses the v2 `mcp.servers.asep` shape instead of legacy `mcp.asep`.
+- Scoped acceptance: `asep accept-scoped <commit>` runs formal, structural, affected-test, and format gates inside unprivileged bubblewrap (no root, no full suite) and writes `evidence/semantic/<id>.md` with `ACCEPTED` verdicts. `asep check --evidence-dir` reads external semantic evidence.
 
 ## [2.0.0-alpha] - 2026-11-21
 
