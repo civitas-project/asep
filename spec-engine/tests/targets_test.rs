@@ -224,6 +224,16 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
             "reviewer": {
                 "description": "Custom reviewer agent",
                 "mode": "subagent"
+            },
+            "leader": {
+                "description": "Custom leader agent",
+                "mode": "subagent",
+                "steps": 5,
+                "system": "You are a custom leader agent.",
+                "permissions": [
+                    {"action": "read", "resource": "docs/*", "effect": "allow"}
+                ],
+                "customField": "preserved"
             }
         }
     }"#;
@@ -245,12 +255,40 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
     );
     assert_eq!(parsed["agents"]["reviewer"]["mode"], "subagent");
 
-    // Default agents are added.
+    // Pre-existing leader: non-protocol fields and existing permission rules
+    // survive, protocol content is refreshed from the canonical default preset.
     assert_eq!(
-        parsed["agents"]["lead"]["description"],
+        parsed["agents"]["leader"]["customField"].as_str(),
+        Some("preserved")
+    );
+    let leader_perms = parsed["agents"]["leader"]
+        ["permissions"]
+        .as_array()
+        .expect("permissions must be an array");
+    assert!(
+        leader_perms.iter().any(|r| {
+            r["action"].as_str() == Some("read")
+                && r["resource"].as_str() == Some("docs/*")
+                && r["effect"].as_str() == Some("allow")
+        }),
+        "custom leader permission rule must remain"
+    );
+    assert!(
+        leader_perms.iter().any(|r| {
+            r["action"].as_str() == Some("asep_agent_send")
+                && r["resource"].as_str() == Some("*")
+                && r["effect"].as_str() == Some("allow")
+        }),
+        "missing default leader permission rule must be merged"
+    );
+    assert_eq!(
+        parsed["agents"]["leader"]["description"],
         "Orchestrator for the bounded executor-judge workflow."
     );
-    assert_eq!(parsed["agents"]["lead"]["mode"], "primary");
+    assert_eq!(parsed["agents"]["leader"]["mode"], "primary");
+    assert_eq!(parsed["agents"]["leader"]["steps"], 60);
+    let leader_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
+    assert!(leader_system.contains("docs/PRD.md"), "leader system must reference PRD");
     assert_eq!(
         parsed["agents"]["executor"]["description"],
         "Fast coding executor in a bounded executor-judge pipeline."
@@ -272,6 +310,7 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
 }
 
 #[test]
+// @test:FR-LEADER-01
 fn test_scaffold_opencode_agents_writes_full_presets() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
@@ -281,7 +320,7 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
 
-    for name in ["lead", "executor", "judge", "explorer"] {
+    for name in ["leader", "executor", "judge", "explorer"] {
         let agent = &parsed["agents"][name];
         assert!(
             agent["system"].as_str().is_some_and(|s| !s.is_empty()),
@@ -295,22 +334,22 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
     }
 
     // Lead must know when to delegate mapping to the explorer.
-    let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
+    let lead_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
     assert!(
         lead_system.contains("`explorer` subagent"),
-        "lead prompt lacks explorer rule"
+        "leader prompt lacks explorer rule"
     );
     assert!(
         lead_system.contains("docs/PRD.md"),
-        "lead prompt lacks PRD reference"
+        "leader prompt lacks PRD reference"
     );
     assert!(
         lead_system.contains("docs/TDD.md"),
-        "lead prompt lacks TDD reference"
+        "leader prompt lacks TDD reference"
     );
     assert!(
         lead_system.contains(".superpowers/"),
-        "lead prompt lacks superpowers prohibition"
+        "leader prompt lacks superpowers prohibition"
     );
 
     // Executor and judge carry their own scope and step rules.
@@ -367,12 +406,12 @@ fn test_scaffold_opencode_agents_denies_disabled_capabilities() {
     };
 
     // file_write = false must deny edit for every agent.
-    for name in ["lead", "executor", "judge", "explorer"] {
+    for name in ["leader", "executor", "judge", "explorer"] {
         assert!(has(name, "edit", "deny"), "{name}: edit must be denied");
     }
 
     // Read capabilities remain allowed for every agent.
-    for name in ["lead", "executor", "judge", "explorer"] {
+    for name in ["leader", "executor", "judge", "explorer"] {
         assert!(has(name, "read", "allow"), "{name}: read must be allowed");
         assert!(has(name, "glob", "allow"), "{name}: glob must be allowed");
         assert!(has(name, "grep", "allow"), "{name}: grep must be allowed");
@@ -404,22 +443,22 @@ fn test_scaffold_opencode_agents_scopes_agent_message_tools_per_role() {
     };
 
     // Lead may send/recv/read/ack, no kind restriction.
-    let lead = perms("lead");
+    let leader = perms("leader");
     assert!(
-        has(lead, "asep_agent_send", "*", "allow"),
-        "lead: asep_agent_send allow"
+        has(leader, "asep_agent_send", "*", "allow"),
+        "leader: asep_agent_send allow"
     );
     assert!(
-        has(lead, "asep_agent_recv", "*", "allow"),
-        "lead: asep_agent_recv allow"
+        has(leader, "asep_agent_recv", "*", "allow"),
+        "leader: asep_agent_recv allow"
     );
     assert!(
-        has(lead, "asep_agent_read", "*", "allow"),
-        "lead: asep_agent_read allow"
+        has(leader, "asep_agent_read", "*", "allow"),
+        "leader: asep_agent_read allow"
     );
     assert!(
-        has(lead, "asep_agent_ack", "*", "allow"),
-        "lead: asep_agent_ack allow"
+        has(leader, "asep_agent_ack", "*", "allow"),
+        "leader: asep_agent_ack allow"
     );
 
     // Executor: send only TASK_REPORT and recv; no read/ack; subagent stays denied.
@@ -533,8 +572,8 @@ fn test_scaffold_opencode_agents_keeps_read_only_agents_read_only() {
     );
 
     // Lead and executor keep capability-derived allows under default profile.
-    assert!(has("lead", "edit", "allow"), "lead: edit must be allowed");
-    assert!(has("lead", "shell", "allow"), "lead: shell must be allowed");
+    assert!(has("leader", "edit", "allow"), "leader: edit must be allowed");
+    assert!(has("leader", "shell", "allow"), "leader: shell must be allowed");
     assert!(
         has("executor", "edit", "allow"),
         "executor: edit must be allowed"
@@ -627,16 +666,16 @@ fn test_scaffold_updates_existing_agent_system() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
-    // Pre-existing lead agent with a stale system prompt and a custom
+    // Pre-existing leader agent with a stale system prompt and a custom
     // permission rule.
     let initial_json = r#"{
         "model": "9router/ag/claude-sonnet-4-6",
         "agents": {
-            "lead": {
-                "description": "Stale lead agent",
+            "leader": {
+                "description": "Stale leader agent",
                 "mode": "subagent",
                 "steps": 5,
-                "system": "You are an outdated lead agent.",
+                "system": "You are an outdated leader agent.",
                 "permissions": [
                     {"action": "read", "resource": "docs/*", "effect": "allow"}
                 ]
@@ -650,10 +689,10 @@ fn test_scaffold_updates_existing_agent_system() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
 
-    let lead = &parsed["agents"]["lead"];
+    let leader = &parsed["agents"]["leader"];
 
-    // System prompt refreshed to the canonical lead text.
-    let system = lead["system"].as_str().unwrap();
+    // System prompt refreshed to the canonical leader text.
+    let system = leader["system"].as_str().unwrap();
     assert!(system.contains("docs/PRD.md"), "system must reference PRD");
     assert!(system.contains("docs/TDD.md"), "system must reference TDD");
     assert!(
@@ -666,7 +705,7 @@ fn test_scaffold_updates_existing_agent_system() {
     );
 
     // Custom permission rule preserved.
-    let perms = lead["permissions"]
+    let perms = leader["permissions"]
         .as_array()
         .expect("permissions must be an array");
     assert!(
@@ -690,11 +729,11 @@ fn test_scaffold_updates_existing_agent_system() {
 
     // Protocol fields refreshed from the canonical default preset.
     assert_eq!(
-        lead["description"],
+        leader["description"],
         "Orchestrator for the bounded executor-judge workflow."
     );
-    assert_eq!(lead["mode"], "primary");
-    assert_eq!(lead["steps"], 60);
+    assert_eq!(leader["mode"], "primary");
+    assert_eq!(leader["steps"], 60);
 
     // Top-level keys preserved.
     assert_eq!(parsed["model"], "9router/ag/claude-sonnet-4-6");
@@ -702,7 +741,7 @@ fn test_scaffold_updates_existing_agent_system() {
 
 // @test:ARCH-06
 #[test]
-fn test_lead_system_defaults_to_targeted_verification() {
+fn test_leader_system_defaults_to_targeted_verification() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
@@ -711,16 +750,16 @@ fn test_lead_system_defaults_to_targeted_verification() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
 
-    let lead_system = parsed["agents"]["lead"]["system"].as_str().unwrap();
-    let normalized = lead_system.to_ascii_lowercase().replace('`', "");
+    let leader_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
+    let normalized = leader_system.to_ascii_lowercase().replace('`', "");
 
     assert!(
         normalized.contains("asep affected"),
-        "lead system must direct verification to `asep affected`"
+        "leader system must direct verification to `asep affected`"
     );
     assert!(
         normalized.contains("full suite is reserved for merges to main"),
-        "lead system must reserve the full suite for merges to main"
+        "leader system must reserve the full suite for merges to main"
     );
 }
 

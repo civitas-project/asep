@@ -175,3 +175,8 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-MCP-03->FR-MCP-03 "mcp_test asserts asep_accept_scoped schema, validation, and evidence output"
 @rel:satisfies:FR-INT-01->FR-INT-01
 @rel:verifies:FR-INT-01->FR-INT-01 "targets_test and JSON validation assert leader prompt carries the acceptance rule"
+
+@rel:satisfies:FR-LEADER-01->FR-LEADER-01
+@rel:verifies:FR-LEADER-01->FR-LEADER-01 "targets_test asserts leader preset"
+@rel:satisfies:FR-LEADER-02->FR-LEADER-02
+@rel:verifies:FR-LEADER-02->FR-LEADER-02 "agent_protocol_test asserts leader wire and rejects lead"

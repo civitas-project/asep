@@ -166,7 +166,7 @@ fn test_agent_tools_do_not_return_payload() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir.to_str().unwrap(),
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": body,
@@ -209,7 +209,7 @@ fn test_agent_recv_filters_by_agent() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": dispatch,
@@ -221,7 +221,7 @@ fn test_agent_recv_filters_by_agent() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "judge",
             "kind": "RULING",
             "body": ruling,
@@ -268,7 +268,7 @@ fn test_agent_send_sets_reply_to() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": body,
@@ -304,7 +304,7 @@ fn test_agent_send_blocks_unsupported_media() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": json!({"task": "review image"}),
@@ -342,7 +342,7 @@ fn test_agent_send_allows_supported_media() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": json!({
@@ -390,7 +390,7 @@ fn test_agent_send_blocks_missing_required_capability() {
         "asep_agent_send",
         &json!({
             "run_dir": run_dir_s,
-            "agent": "lead",
+            "agent": "leader",
             "to": "executor",
             "kind": "TASK_DISPATCH",
             "body": json!({"task": "fetch"}),
