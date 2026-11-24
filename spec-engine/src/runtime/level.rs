@@ -63,9 +63,15 @@ mod tests {
     }
 
     #[test]
-    fn scope_non_empty() {
-        for level in [EngineerLevel::L1, EngineerLevel::L2, EngineerLevel::L3] {
-            assert!(!level.scope().is_empty());
-        }
+    fn scope_exact_values() {
+        assert_eq!(
+            EngineerLevel::L1.scope(),
+            "function, component, implementation"
+        );
+        assert_eq!(EngineerLevel::L2.scope(), "module, subsystem, integration");
+        assert_eq!(
+            EngineerLevel::L3.scope(),
+            "architecture, system, strategic decision"
+        );
     }
 }
