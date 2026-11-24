@@ -1,7 +1,9 @@
 // @test:FR-CAP-01 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-08
+// @test:FR-LEVEL-02
 use asep::config::settings::{
     load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig,
 };
+use asep::runtime::EngineerLevel;
 use std::fs;
 use tempfile::tempdir;
 
@@ -223,4 +225,28 @@ fn test_telemetry_enabled_round_trip() {
     let config = load_config(tmp.path());
     assert!(config.telemetry.enabled);
     assert_eq!(config.telemetry.dir, ".spec-engine/trace");
+}
+
+// @test:FR-LEVEL-02
+#[test]
+fn test_engineer_level_default_and_round_trip() {
+    let profile = CapabilityProfile::default();
+    assert_eq!(profile.engineer_level, EngineerLevel::L1);
+
+    let tmp = tempdir().unwrap();
+    let mut config = EngineConfig::default();
+    config.capabilities.engineer_level = EngineerLevel::L3;
+    save_config(tmp.path(), &config).expect("save");
+    let reloaded = load_config(tmp.path());
+    assert_eq!(reloaded.capabilities.engineer_level, EngineerLevel::L3);
+
+    // absent field defaults to L1
+    let dir = tmp.path().join(".spec-engine");
+    fs::write(
+        dir.join("config.toml"),
+        "[capabilities]\nfile_read = true\n",
+    )
+    .unwrap();
+    let reloaded = load_config(tmp.path());
+    assert_eq!(reloaded.capabilities.engineer_level, EngineerLevel::L1);
 }

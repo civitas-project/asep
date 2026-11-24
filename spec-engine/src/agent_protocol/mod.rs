@@ -4,7 +4,9 @@
 //! bodies under `<run-dir>/messages/<id>.body.json`. Writes use a temp file +
 //! `rename` for atomicity. `validate_dir` audits every envelope in a run dir.
 // @impl:FR-CAP-05
+// @impl:FR-LEVEL-03
 
+use crate::runtime::EngineerLevel;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
@@ -128,6 +130,8 @@ pub struct Envelope {
     pub ref_: Option<String>,
     pub status: String,
     pub ts: String,
+    #[serde(default)]
+    pub level: Option<EngineerLevel>,
 }
 
 pub struct MessageStore {
@@ -229,6 +233,7 @@ impl MessageStore {
             ref_,
             status: STATUS_SENT.to_string(),
             ts,
+            level: None,
         };
         let body_path = self.messages_dir.join(format!("{id}.body.json"));
         let env_path = self.messages_dir.join(format!("{id}.json"));
@@ -581,6 +586,44 @@ fn civil_from_days(mut z: i64) -> (i64, u32, u32) {
         false => y,
     };
     (y, m as u32, d as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    // @test:FR-LEVEL-03
+    use super::*;
+    use crate::runtime::EngineerLevel;
+
+    #[test]
+    fn envelope_level_round_trips() {
+        let mut env = Envelope {
+            v: ENVELOPE_VERSION,
+            id: "msg-1".to_string(),
+            from: Role::Leader,
+            to: Role::Executor,
+            kind: Kind::TaskDispatch,
+            reply_to: None,
+            ref_: None,
+            status: "sent".to_string(),
+            ts: "2026-01-01T00:00:00Z".to_string(),
+            level: Some(EngineerLevel::L2),
+        };
+        let json = serde_json::to_string(&env).unwrap();
+        let back: Envelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.level, Some(EngineerLevel::L2));
+
+        env.level = None;
+        let json = serde_json::to_string(&env).unwrap();
+        let back: Envelope = serde_json::from_str(&json).unwrap();
+        assert!(back.level.is_none());
+    }
+
+    #[test]
+    fn envelope_without_level_parses() {
+        let json = r#"{"v":2,"id":"x","from":"leader","to":"executor","kind":"TASK_DISPATCH","reply_to":null,"ref":null,"status":"sent","ts":"2026-01-01T00:00:00Z"}"#;
+        let env: Envelope = serde_json::from_str(json).unwrap();
+        assert!(env.level.is_none());
+    }
 }
 
 pub fn now_rfc3339() -> String {

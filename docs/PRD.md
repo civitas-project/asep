@@ -86,3 +86,29 @@ Sumber: `ASEP_Architecture_Expansion_Proposal_Catalog.pdf` hal. 15. Review verdi
 
 <!-- @req:IN-01-FILE-EVIDENCE:MUST The collector shall compute a SHA-256 content hash for each in-scope file at span start and span end, and shall emit an NDJSON file-change event only for files whose hash changed, carrying the path, before/after hashes, task ID and span label. -->
 <!-- @req:IN-01-INTENT:MUST A write-ahead intent event carrying the target path and its pre-write hash shall be recorded before a controlled tool modifies a file; file-change and intent events shall always be recorded even when ordinary event recording is off, shall be marked as complete evidence, and reports shall state whether ordinary event coverage is on or off. -->
+
+## Layer 5 — Agent Runtime (RFC v0.2)
+
+Sumber: `ASEP_Adaptive_Architecture_v0.2.md` §3, §5, §6, §8 (P0–P5). Urutan: audit redundansi dulu, lalu Engineer Level, lalu resource budgeting, lalu ReAct contracts. Setiap slice additive; tidak ada engine baru.
+
+### Slice 0 — Redundancy audit (P0)
+
+<!-- @req:FR-AUDIT-01:MUST The repository shall contain `docs/AUDIT.md` enumerating existing agent-runtime mechanisms, their consumers, overlap with native runtime capabilities, and a baseline measurement plan; `asep check --rigor T1` shall pass with it present. -->
+
+### Slice 1 — Engineer level
+
+<!-- @req:FR-LEVEL-01:MUST An `EngineerLevel` enum (L1, L2, L3) shall exist with scope descriptions and serialize/deserialize as `L1`/`L2`/`L3` with round-trip. -->
+<!-- @req:FR-LEVEL-02:MUST `CapabilityProfile` shall carry an `engineer_level` field defaulting to L1, loaded and saved through the existing config (additive, default applied when absent). -->
+<!-- @req:FR-LEVEL-03:MUST The agent `Envelope` shall carry an optional `level` field (additive, absent defaults to L1) that round-trips through serde without breaking existing envelopes. -->
+
+### Slice 2 — Resource budgeting
+
+<!-- @req:FR-BUDGET-01:MUST A `ResourceBudget` struct shall declare optional `max_tokens`, `max_tool_calls`, `max_cost_usd` and `max_latency_ms` (None meaning unlimited) and serialize/deserialize. -->
+<!-- @req:FR-BUDGET-02:MUST A `BudgetTracker` shall accumulate usage and report the first exceeded dimension via `exceeded()` returning `Option<&str>`. -->
+<!-- @req:FR-BUDGET-03:MUST Exceeding a budget shall produce a structured `BLOCKED: budget exceeded (<dimension>)` result rather than continue. -->
+
+### Slice 3 — ReAct contracts
+
+<!-- @req:FR-REACT-01:MUST `Action` and `Observation` structs shall represent a tool invocation and its result, linked to `trace_id` and `seq`. -->
+<!-- @req:FR-REACT-02:MUST An `ActionContract::validate` shall reject actions missing required fields or lacking capability coverage, returning a structured error. -->
+<!-- @req:FR-REACT-03:MUST An `Observation` shall be convertible to a `TraceEvent` reusing the existing collector, without introducing a new store. -->

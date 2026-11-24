@@ -336,3 +336,69 @@ Measured on this machine with a debug build, 10,000 synthetic events, three bala
 - Adding the nine `@req` tags before `@impl`/`@test`/`@rel` exist makes `asep check --rigor T1` fail COV-04/COV-05. This is expected and identical to the earlier scoped-acceptance rollout; the final gate after O7 is the acceptance point.
 - `asep affected` cannot map a new file until its `@impl`/`@test` tags land, so O1–O3 rely on the targeted `cargo test` commands; if `asep affected` returns empty, record that explicitly and use the listed targets.
 - Full suite remains reserved for merges to `main`.
+
+## Layer 5 — Agent Runtime (RFC v0.2)
+
+Constraint: new audited source must obey the strict policy — sequential guard clauses, no `else`, no nested `if`, no inline opt-out. Requirements are observable; no new engine is introduced because adapters already suffice. Reuse existing `Role`, `CapabilityProfile`, `Envelope`, `TraceEvent`, `TraceCollector`.
+
+<!-- @design:FR-AUDIT-01 -->
+### FR-AUDIT-01 Redundancy audit (P0)
+`docs/AUDIT.md` (new) enumerates: (a) existing agent-runtime mechanisms and their file/symbol, (b) their consumers, (c) overlap with native runtime capabilities, (d) baseline measurement plan. No code change; the artifact is the deliverable. A unit test in `spec-engine/tests/runtime_audit_test.rs` asserts the file exists and contains the four required section headings.
+
+<!-- @design:FR-LEVEL-01 -->
+### FR-LEVEL-01 EngineerLevel enum
+`spec-engine/src/agent_protocol/mod.rs` (or new `spec-engine/src/runtime/level.rs`) defines `EngineerLevel { L1, L2, L3 }` with `as_str()` returning `"L1"`/`"L2"`/`"L3"`, `scope()` returning the scope text (function/component; module/subsystem; architecture/system), serde rename, and `Default = L1`. Unit tests cover round-trip and scope.
+
+<!-- @design:FR-LEVEL-02 -->
+### FR-LEVEL-02 CapabilityProfile.engineer_level
+`spec-engine/src/config/settings.rs`: add `engineer_level: EngineerLevel` to `CapabilityProfile` with `#[serde(default)]` and default `L1`. Reuse the existing config load/save. Tests in `config_test.rs` cover default and round-trip.
+
+<!-- @design:FR-LEVEL-03 -->
+### FR-LEVEL-03 Envelope.level
+`spec-engine/src/agent_protocol/mod.rs`: add `level: Option<EngineerLevel>` to `Envelope` with `#[serde(default)]` (additive; absent → None treated as L1). Bump is NOT required because field is optional with default; existing envelopes still parse. Tests cover round-trip and absent-default.
+
+<!-- @design:FR-BUDGET-01 -->
+### FR-BUDGET-01 ResourceBudget
+New module `spec-engine/src/runtime/budget.rs` (or `spec-engine/src/agent_protocol/budget.rs`) defining `ResourceBudget { max_tokens: Option<u64>, max_tool_calls: Option<u64>, max_cost_usd: Option<f64>, max_latency_ms: Option<u64> }` with serde defaults (None) and `Default`. Unit tests cover round-trip and None handling.
+
+<!-- @design:FR-BUDGET-02 -->
+### FR-BUDGET-02 BudgetTracker
+Same module: `BudgetTracker { budget: ResourceBudget, tokens: u64, tool_calls: u64, cost_usd: f64, latency_ms: u64 }` with `record_*` methods and `exceeded() -> Option<&'static str>` returning the first exceeded dimension name (`"tokens"`, `"tool_calls"`, `"cost"`, `"latency"`). Unit tests cover threshold and unlimited (None).
+
+<!-- @design:FR-BUDGET-03 -->
+### FR-BUDGET-03 Budget exceeded result
+`exceeded()` result is formatted by callers as `BLOCKED: budget exceeded (<dimension>)`; provide a helper `blocked_message() -> Option<String>`. Unit test asserts exact string.
+
+<!-- @design:FR-REACT-01 -->
+### FR-REACT-01 Action and Observation
+New module `spec-engine/src/runtime/react.rs` defining `Action { trace_id: String, seq: u64, tool: String, args: serde_json::Value }` and `Observation { trace_id: String, seq: u64, ok: bool, output: serde_json::Value, error: Option<String> }` with serde. Unit tests cover round-trip.
+
+<!-- @design:FR-REACT-02 -->
+### FR-REACT-02 ActionContract::validate
+Same module: trait/struct `ActionContract` with `validate(&self, action: &Action, profile: &CapabilityProfile) -> Result<(), String>` rejecting missing tool name, empty trace_id, and capability mismatch (`BLOCKED: requires <capability>` reuse). Unit tests.
+
+<!-- @design:FR-REACT-03 -->
+### FR-REACT-03 Observation -> TraceEvent
+Same module: `impl From<Observation> for TraceEvent` (or `to_trace_event(&self, task_id)`) producing a `TraceEvent` with event name `"observation"`, reusing `now_rfc3339` and `schema_version`. Unit test asserts conversion and that collector can record it.
+
+### Ordered implementation plan (Layer 5)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| L0 | `docs/AUDIT.md` (new) | Four required sections present. | `cargo test -p asep --test runtime_audit_test` |
+| L1 | `spec-engine/src/agent_protocol/mod.rs` or `spec-engine/src/runtime/level.rs`, `EngineerLevel` | Enum round-trips as L1/L2/L3; scope() returns text; Default L1. | `cargo test -p asep --lib agent_protocol` then `asep affected` |
+| L2 | `spec-engine/src/config/settings.rs`, `CapabilityProfile.engineer_level` | Default L1; round-trip TOML; absent field defaults. | `cargo test -p asep --test config_test` |
+| L3 | `spec-engine/src/agent_protocol/mod.rs`, `Envelope.level` | Optional field; round-trip; old envelopes parse. | `cargo test -p asep --lib agent_protocol` / `integration_check_test` |
+| L4 | `spec-engine/src/runtime/budget.rs` (new), `ResourceBudget` | Optional fields; None = unlimited; round-trip. | `cargo test -p asep --lib runtime` then `asep affected` |
+| L5 | `spec-engine/src/runtime/budget.rs`, `BudgetTracker` | Accumulate + exceeded() first dimension; unlimited. | `cargo test -p asep --lib runtime` |
+| L6 | `spec-engine/src/runtime/budget.rs`, `blocked_message` | Exact `BLOCKED: budget exceeded (<dim>)`. | `cargo test -p asep --lib runtime` |
+| L7 | `spec-engine/src/runtime/react.rs` (new), `Action`/`Observation` | Round-trip; trace_id/seq present. | `cargo test -p asep --lib runtime` |
+| L8 | `spec-engine/src/runtime/react.rs`, `ActionContract::validate` | Rejects missing fields and capability mismatch. | `cargo test -p asep --lib runtime` |
+| L9 | `spec-engine/src/runtime/react.rs`, `Observation -> TraceEvent` | Conversion reuses collector; event name observation. | `cargo test -p asep --lib runtime` + `observability` |
+| L10 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | All nine Layer-5 requirements closed with relations; changelog notes. | `asep check . --rigor T2` after scoped acceptance |
+
+### Known consequences (Layer 5)
+- Adding nine `@req` tags before `@impl`/`@test` land makes `asep check --rigor T1` fail COV-04/COV-05 until L10; final gate after scoped acceptance.
+- `asep affected` cannot map new files until their tags land; L1–L9 rely on targeted `cargo test`.
+- Full suite reserved for merges to `main`.
+- New modules must be declared in `lib.rs` and registered in the module tree.

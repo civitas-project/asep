@@ -1,7 +1,9 @@
 // @impl:FR-ACC-05
 //! Persistent TOML configuration manager for spec-engine.
 // @impl:FR-CAP-01 // @impl:FR-CAP-03 // @impl:FR-CAP-04 // @impl:FR-CAP-08
+// @impl:FR-LEVEL-02
 
+use crate::runtime::EngineerLevel;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -93,6 +95,8 @@ pub struct CapabilityProfile {
     pub supported_media: Vec<String>,
     pub tool_domains: Vec<String>,
     pub delegation_threshold: usize,
+    #[serde(default)]
+    pub engineer_level: EngineerLevel,
 }
 
 impl Default for CapabilityProfile {
@@ -108,6 +112,7 @@ impl Default for CapabilityProfile {
             supported_media: vec!["text".to_string(), "code".to_string()],
             tool_domains: vec!["code".to_string()],
             delegation_threshold: 3,
+            engineer_level: EngineerLevel::default(),
         }
     }
 }
