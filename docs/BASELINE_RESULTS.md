@@ -27,12 +27,34 @@
 - Token/cost remain `unavailable` per IN-01-COST — never guessed as zero.
 - Wall-clock time and tool calls should be captured automatically via IN-01 telemetry on a later run for higher fidelity.
 
+## Task 02 — Record baseline execution status in DOUBT.md
+
+| Field | Value |
+|---|---|
+| Task | Update AD-D05 status in `docs/DOUBT.md` and define Config B operationally |
+| Level / Rigor | L1 / Lightweight |
+| Configuration | B — explicit context retrieval from repository artifacts before edit |
+| Context retrieved | `docs/PRD.md`, `docs/BASELINE_MEASUREMENT.md`, `docs/BASELINE_RESULTS.md`, `docs/DOUBT.md` |
+| Acceptance | `asep check --rigor T1` PASS |
+| Acceptance pass | Yes |
+| Defects | 0 |
+| Rework count | 0 |
+| Tool calls | ~3 (grep context, two edits) |
+| Token consumption | unavailable |
+| Wall-clock time | not precisely measured |
+| Cost per accepted task | undefined |
+| Cost source | unavailable |
+
+### Notes
+- Config B differs from A by explicit context retrieval from repository artifacts before editing.
+- No persistent memory engine used; repository files are the only memory.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
 |---|---|---|---|---|---|
 | A | 1 | 1/1 | ~5 | not measured | undefined |
-| B | 0 | — | — | — | — |
+| B | 1 | 1/1 | ~3 | not measured | undefined |
 | C | 0 | — | — | — | — |
 | D | 0 | — | — | — | — |
 

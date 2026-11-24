@@ -14,7 +14,7 @@ Compare identical tasks across four configurations (RFC §7.3):
 | Config | Description |
 |---|---|
 | A | Native agent/runtime baseline with commonly available tools |
-| B | A + context and persistent memory |
+| B | A + explicit context retrieval from repository artifacts (PRD, TDD, TRACEABILITY, DOUBT) before task execution; persistent memory limited to repository files |
 | C | B + execution support and independent verification |
 | D | C + structured/high-assurance process where relevant |
 
