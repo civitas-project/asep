@@ -182,6 +182,10 @@ cargo test
 
 ### Command Reference
 
+### Transitive Impact Analysis
+
+`asep affected` performs cycle-safe typed traversal from changed paths and reports implementations, requirements, tests, ADRs, provenance, and unmapped changes. A start-node ADR propagates impact to dependent requirements; a non-start ADR stays a terminal sink. Output is additive JSON/text and backward compatible.
+
 ### Traceability Verification & Contract Audit
 ```bash
 # Validate 1:1 closed-loop traceability and audit docstrings

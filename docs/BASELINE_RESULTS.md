@@ -49,13 +49,39 @@
 - Config B differs from A by explicit context retrieval from repository artifacts before editing.
 - No persistent memory engine used; repository files are the only memory.
 
+## Task 03 — README transitive impact subsection
+
+| Field | Value |
+|---|---|
+| Task | Add `### Transitive Impact Analysis` subsection to `README.md` |
+| Level / Rigor | L1 / Lightweight |
+| Configuration | C — B + bounded executor unit + independent judge review |
+| Context retrieved | Repository artifacts + executor/judge delegation |
+| Acceptance | `asep check --rigor T1` PASS (77 MUST) |
+| Judge verdict | PASS |
+| Acceptance pass | Yes |
+| Defects | 0 |
+| Rework count | 0 |
+| Leader tool calls | ~4 (define config, delegate, verify, judge) |
+| Executor steps | 1 unit (README.md only) |
+| Judge steps | 1 review |
+| Token consumption | unavailable |
+| Wall-clock time | not precisely measured |
+| Cost per accepted task | undefined |
+| Cost source | unavailable |
+
+### Notes
+- Config C adds coordination overhead (executor + judge) vs Config A/B.
+- No rework; judge PASS on first review.
+- Single sample; no conclusion on overhead benefit.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
 |---|---|---|---|---|---|
 | A | 1 | 1/1 | ~5 | not measured | undefined |
 | B | 1 | 1/1 | ~3 | not measured | undefined |
-| C | 0 | — | — | — | — |
+| C | 1 | 1/1 | ~4 leader + 1 exec + 1 judge | not measured | undefined |
 | D | 0 | — | — | — | — |
 
 No conclusion drawn from a single sample.
