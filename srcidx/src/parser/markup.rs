@@ -187,7 +187,12 @@ impl SourceParser for MarkupParser {
                     Some(idx) => symbols[idx].tags.extend(tags),
                     None => {
                         for tag in tags {
-                            symbols.push(mk_symbol("trace-comment", tag.clone(), line_num, &comment));
+                            symbols.push(mk_symbol(
+                                "trace-comment",
+                                tag.clone(),
+                                line_num,
+                                &comment,
+                            ));
                         }
                     }
                 }
@@ -378,11 +383,7 @@ fn extract_anchors(flavor: MarkupFlavor, trimmed: &str) -> Vec<String> {
 }
 
 /// Extract comment text(s) from a line, flavor-dependent.
-fn extract_comments(
-    flavor: MarkupFlavor,
-    line: &str,
-    state: &mut HtmlCommentState,
-) -> Vec<String> {
+fn extract_comments(flavor: MarkupFlavor, line: &str, state: &mut HtmlCommentState) -> Vec<String> {
     match flavor {
         MarkupFlavor::Markdown | MarkupFlavor::Html | MarkupFlavor::Xml => {
             extract_html_comments(line, state)
@@ -417,42 +418,38 @@ fn extract_html_comments(line: &str, state: &mut HtmlCommentState) -> Vec<String
     let mut s = line;
     loop {
         match state.open {
-            true => {
-                match s.find("-->") {
-                    Some(end) => {
-                        state.acc.push_str(&s[..end]);
-                        out.push(std::mem::take(&mut state.acc));
-                        s = &s[end + 3..];
-                        state.open = false;
-                        continue;
-                    }
-                    None => {
-                        state.acc.push_str(s);
-                        state.acc.push('\n');
-                        break;
-                    }
+            true => match s.find("-->") {
+                Some(end) => {
+                    state.acc.push_str(&s[..end]);
+                    out.push(std::mem::take(&mut state.acc));
+                    s = &s[end + 3..];
+                    state.open = false;
+                    continue;
                 }
-            }
-            false => {
-                match s.find("<!--") {
-                    Some(start) => {
-                        let after = &s[start + 4..];
-                        match after.find("-->") {
-                            Some(end) => {
-                                out.push(after[..end].to_string());
-                                s = &after[end + 3..];
-                            }
-                            None => {
-                                state.open = true;
-                                state.acc.push_str(after);
-                                state.acc.push('\n');
-                                break;
-                            }
+                None => {
+                    state.acc.push_str(s);
+                    state.acc.push('\n');
+                    break;
+                }
+            },
+            false => match s.find("<!--") {
+                Some(start) => {
+                    let after = &s[start + 4..];
+                    match after.find("-->") {
+                        Some(end) => {
+                            out.push(after[..end].to_string());
+                            s = &after[end + 3..];
+                        }
+                        None => {
+                            state.open = true;
+                            state.acc.push_str(after);
+                            state.acc.push('\n');
+                            break;
                         }
                     }
-                    None => break,
                 }
-            }
+                None => break,
+            },
         }
     }
     out
@@ -566,20 +563,18 @@ fn strip_script_style(line: &str, state: &mut ScriptStyleState) -> String {
         let open_script = rest.find("<script");
         let open_style = rest.find("<style");
         match (open_script, open_style) {
-            (Some(s), Some(t)) => {
-                match s <= t {
-                    true => {
-                        visible.push_str(&rest[..s]);
-                        state.in_script = true;
-                        rest = &rest[s + "<script".len()..];
-                    }
-                    false => {
-                        visible.push_str(&rest[..t]);
-                        state.in_style = true;
-                        rest = &rest[t + "<style".len()..];
-                    }
+            (Some(s), Some(t)) => match s <= t {
+                true => {
+                    visible.push_str(&rest[..s]);
+                    state.in_script = true;
+                    rest = &rest[s + "<script".len()..];
                 }
-            }
+                false => {
+                    visible.push_str(&rest[..t]);
+                    state.in_style = true;
+                    rest = &rest[t + "<style".len()..];
+                }
+            },
             (Some(s), None) => {
                 visible.push_str(&rest[..s]);
                 state.in_script = true;
@@ -605,49 +600,45 @@ fn html_title(line: &str, state: &mut HtmlTitleState) -> Option<String> {
     let mut found = None;
     loop {
         match state.open {
-            true => {
-                match s.find("</title>") {
-                    Some(end) => {
-                        state.acc.push_str(&s[..end]);
-                        let text = state.acc.trim();
-                        if !text.is_empty() {
-                            found = Some(text.to_string());
-                        }
-                        state.open = false;
-                        state.acc.clear();
-                        s = &s[end + 8..];
-                        continue;
+            true => match s.find("</title>") {
+                Some(end) => {
+                    state.acc.push_str(&s[..end]);
+                    let text = state.acc.trim();
+                    if !text.is_empty() {
+                        found = Some(text.to_string());
                     }
-                    None => {
-                        state.acc.push_str(s);
-                        state.acc.push('\n');
-                        break;
-                    }
+                    state.open = false;
+                    state.acc.clear();
+                    s = &s[end + 8..];
+                    continue;
                 }
-            }
-            false => {
-                match s.find("<title>") {
-                    Some(start) => {
-                        let after = &s[start + 7..];
-                        match after.find("</title>") {
-                            Some(end) => {
-                                let text = after[..end].trim();
-                                if !text.is_empty() {
-                                    found = Some(text.to_string());
-                                }
-                                s = &after[end + 8..];
+                None => {
+                    state.acc.push_str(s);
+                    state.acc.push('\n');
+                    break;
+                }
+            },
+            false => match s.find("<title>") {
+                Some(start) => {
+                    let after = &s[start + 7..];
+                    match after.find("</title>") {
+                        Some(end) => {
+                            let text = after[..end].trim();
+                            if !text.is_empty() {
+                                found = Some(text.to_string());
                             }
-                            None => {
-                                state.open = true;
-                                state.acc.push_str(after);
-                                state.acc.push('\n');
-                                break;
-                            }
+                            s = &after[end + 8..];
+                        }
+                        None => {
+                            state.open = true;
+                            state.acc.push_str(after);
+                            state.acc.push('\n');
+                            break;
                         }
                     }
-                    None => break,
                 }
-            }
+                None => break,
+            },
         }
     }
     found
@@ -661,10 +652,7 @@ fn html_heading(line: &str) -> Option<String> {
             Some(pos) => {
                 let after_open = &line[pos + open.len()..];
                 let first = after_open.as_bytes().first().copied();
-                if !matches!(
-                    first,
-                    Some(b'>') | Some(b'/') | Some(b' ') | Some(b'\t')
-                ) {
+                if !matches!(first, Some(b'>') | Some(b'/') | Some(b' ') | Some(b'\t')) {
                     continue;
                 }
                 let close_open = match after_open.find('>') {

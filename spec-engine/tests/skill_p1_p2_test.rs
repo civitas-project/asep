@@ -3,9 +3,7 @@ use asep::skill::fork::fork_skill;
 use asep::skill::install::resolve_dependencies;
 use asep::skill::merge::three_way_merge;
 use asep::skill::search::search_skills;
-use asep::skill::state::{
-    export_bundle, get_skill_agents, import_bundle, record_agent_install,
-};
+use asep::skill::state::{export_bundle, get_skill_agents, import_bundle, record_agent_install};
 use std::fs;
 use tempfile::tempdir;
 

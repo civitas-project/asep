@@ -1,4 +1,4 @@
-use asep::clean::{CleanAction, measure_dir, plan, read_baseline, threshold_bytes, write_baseline};
+use asep::clean::{measure_dir, plan, read_baseline, threshold_bytes, write_baseline, CleanAction};
 use std::fs;
 use tempfile::tempdir;
 

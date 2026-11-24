@@ -1,6 +1,7 @@
 ---
 name: workflow-router
-description: Use at the start of any task to route intent, sequence phases, and orchestrate skills across the ASEP (Axiomatic Systems Engineering Protocol) ecosystem
+description: Use when routing intent, sequencing phases, or orchestrating skills across the ASEP ecosystem
+requires: []
 version: 2.2.0
 depends: [system-architecture, engineering-specs, code-contracts, repository-governance, design-tokens, spec-engine]
 ---
@@ -136,9 +137,10 @@ Use this matrix to route any engineering intent exclusively to internal ASEP ski
    - **Design (`asep:design-tokens`):** Zero dimensionless numbers, zero unclipped wide-gamut colors without `fallbackHex`.
 5. **Empirical Terminal Verification Before Completion:**
    - Never declare a task finished based on mental execution. Always run the verification command in the terminal and inspect the actual output.
-6. **Sovereign & Self-Contained Ecosystem:**
+6. **Verification & acceptance gate:** After implementation, run `asep check --rigor T2`. When green, call MCP tool `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`) with the exact commit; report the evidence dir. Only the trusted runner grants ACCEPTED — never grant it yourself.
+7. **Sovereign & Self-Contained Ecosystem:**
    - All engineering capabilities (interactive brainstorming, requirements elicitation, task slicing, TDD, systematic debugging, comment hygiene, human copywriting, and accessible design tokens) are natively integrated into the 6 internal `asep:*` skills. External plugins are never required or invoked within ASEP-governed repositories.
-7. **Git Topology & Branching:**
+8. **Git Topology & Branching:**
    - Every change lives on a branch cut from `dev`. Never commit directly to `dev` or `main`.
    - Branch prefix follows the commit type:
      - `feat/<topic>`: new behavior (`feat:` commits)
@@ -230,39 +232,39 @@ Agents operating under workflow-router **must** invoke spec-engine MCP tools for
 
 ---
 
-## Appendix: Lead-Judge-Executor Protocol (ARCH-06)
+## Appendix: Leader-Judge-Executor Protocol (ARCH-06)
 
 Bounded decomposition cycle for the executor-judge pipeline:
 
-1. **Lead (primary mode):** Decomposes the task into bounded, verifiable slices. Owns the spec, the `@req`/`@design` tags, and the failing test. Defines done criteria and the evidence the judge must check: task requirements, produced diff, test results.
-2. **Executor (subagent mode):** Implements the minimal change to pass the slice. Stays within bounds set by the lead; no scope creep, no unrelated refactors.
-3. **Judge (subagent mode, read-only):** Verifies executor output against the task, the diff, and test evidence. Read-only: it may not modify files. Passes the slice or returns it to the executor with specific failures.
-4. **Explorer (subagent mode):** Fast codebase exploration for symbol extraction and context gathering; feeds findings back to the lead.
+1. **Leader (primary mode):** Decomposes the task into bounded, verifiable slices. Owns the spec, the `@req`/`@design` tags, and the failing test. Defines done criteria and the evidence the judge must check: task requirements, produced diff, test results. Cannot grant ACCEPTED.
+2. **Executor (subagent mode):** Implements the minimal change to pass the slice. Stays within bounds set by the leader; no scope creep, no unrelated refactors.
+3. **Judge (subagent mode, read-only):** Verifies executor output against the task, the diff, and test evidence. Its verdict is advisory PASS/FAIL for work review only; it cannot grant ACCEPTED. Only the trusted local runner grants ACCEPTED after all mandatory gates pass; local ACCEPTED does not authorize merge to governed branches. Read-only: it may not modify files. Passes the slice or returns it to the executor with specific failures.
+4. **Explorer (subagent mode):** Fast codebase exploration for symbol extraction and context gathering; feeds findings back to the leader.
 
-Cycle: lead plans, executor implements, judge verifies, repeat until every slice passes. The judge's read-only gate prevents unverified code from being accepted.
+Cycle: leader plans, executor implements, judge verifies, repeat until every slice passes. The judge's read-only gate prevents unverified code from being accepted.
 
 `opencode.json` presets (scaffolded by `asep::pack::manifest::scaffold_opencode_agents`):
 
-- `lead`: description "Orchestrator for the bounded executor-judge workflow.", mode "primary"
+- `leader`: description "Orchestrator for the bounded executor-judge workflow.", mode "primary"
 - `executor`: description "Fast coding executor in a bounded executor-judge pipeline.", mode "subagent"
 - `judge`: description "Read-only reviewer verifying executor output against task, diff, and test evidence.", mode "subagent"
 - `explorer`: description "Fast explorer subagent for codebase exploration.", mode "subagent"
 
 ---
 
-## Requirement and Plan Phase (Lead-owned)
+## Requirement and Plan Phase (Leader-owned)
 
-For any new feature, the lead performs two phases before any executor is dispatched:
+For any new feature, the leader performs two phases before any executor is dispatched:
 
 1. **Requirement phase (brainstorming).** If the request leaves something material unsettled, ask the user ONE decisive question. Write the agreed behavior into `docs/PRD.md` as `@req:*:MUST` requirements tied to observable behavior. Do not invent requirements to make a gate green.
 2. **Plan phase.** Write the design and the ordered implementation plan into `docs/TDD.md`: `@design:` entries, then per-task files/symbols, acceptance criteria, and verification commands. Stop and get explicit user approval before dispatching any executor.
 
-Execution then follows the Lead-Judge-Executor Protocol above: one bounded task per executor, fresh judge review of each diff, and fresh verification by the controller.
+Execution then follows the Leader-Judge-Executor Protocol above: one bounded task per executor, fresh judge review of each diff, and fresh verification by the controller.
 
 Hard rules:
 - `docs/PRD.md`, `docs/TDD.md`, and `docs/TRACEABILITY.md` are the only specification artifacts.
 - Never create .superpowers/ or docs/superpowers/, and never add a new skill folder for this pattern.
-- The lead owns PRD/TDD; executors never edit them.
+- The leader owns PRD/TDD; executors never edit them.
 - A task without a file path, a symbol, acceptance criteria, and a verification command is not delegable.
 
 ## Targeted Verification

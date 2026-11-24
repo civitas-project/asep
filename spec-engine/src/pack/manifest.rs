@@ -1,4 +1,6 @@
+// @impl:FR-INT-01
 //! Manifest generation and configuration merging for Antigravity and OpenCode.
+// @impl:FR-CAP-06 // @impl:FR-CAP-07
 
 use crate::config::settings::CapabilityProfile;
 use serde_json::json;
@@ -83,18 +85,38 @@ pub fn update_opencode_json(config_path: &Path, command: &str) -> Result<(), std
         config = serde_json::json!({});
     }
 
-    // Preserve any pre-existing mcp.servers (and other keys) by only touching
-    // the "asep" entry under mcp.
+    // Ensure mcp is an object without clobbering existing entries.
     if config.get("mcp").is_none() || !config["mcp"].is_object() {
         config["mcp"] = serde_json::json!({});
     }
 
-    config["mcp"]["asep"] = serde_json::json!({
-        "type": "local",
-        "command": command,
-        "args": ["mcp"],
-        "enabled": true
-    });
+    // Remove legacy `mcp.asep` entry written by a previous merge, if present.
+    config
+        .get_mut("mcp")
+        .and_then(|mcp| mcp.as_object_mut())
+        .map(|mcp_obj| mcp_obj.remove("asep"));
+
+    // Ensure mcp.servers is an object without clobbering existing server
+    // entries, then write the ASEP server in OpenCode v2 shape: command is
+    // the array [command, "mcp"].
+    let mcp_obj = config
+        .get_mut("mcp")
+        .and_then(|v| v.as_object_mut())
+        .expect("mcp value is an object");
+    if mcp_obj.get("servers").is_none() || !mcp_obj["servers"].is_object() {
+        mcp_obj.insert("servers".to_string(), serde_json::json!({}));
+    }
+    let servers_obj = mcp_obj
+        .get_mut("servers")
+        .and_then(|v| v.as_object_mut())
+        .expect("servers is an object");
+    servers_obj.insert(
+        "asep".to_string(),
+        serde_json::json!({
+            "type": "local",
+            "command": [command, "mcp"],
+        }),
+    );
 
     // Back up the original content before overwriting (best effort).
     if !existing_raw.is_empty() {
@@ -153,7 +175,10 @@ fn check_no_dropped_keys(
 /// profile, starting from a deny-by-default ceiling and allowing only the
 /// declared capabilities. `extra` holds agent-specific rules that are always
 /// kept (e.g. `*.env` denies for read-only agents, explorer tool allows).
-fn agent_permissions(profile: &CapabilityProfile, extra: &[serde_json::Value]) -> Vec<serde_json::Value> {
+fn agent_permissions(
+    profile: &CapabilityProfile,
+    extra: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
     let mut rules: Vec<serde_json::Value> =
         vec![json!({"action": "*", "resource": "*", "effect": "deny"})];
 
@@ -221,7 +246,7 @@ fn read_only_env_denies() -> Vec<serde_json::Value> {
 /// Role-scoped allows for the ASEP agent message tools (`asep_agent_*`).
 /// `subagent` is never widened here: executor keeps an explicit subagent
 /// deny, and judge/explorer keep theirs via `read_only_action_denies`.
-fn lead_agent_message_rules() -> Vec<serde_json::Value> {
+fn leader_agent_message_rules() -> Vec<serde_json::Value> {
     vec![
         json!({"action": "asep_agent_send", "resource": "*", "effect": "allow"}),
         json!({"action": "asep_agent_recv", "resource": "*", "effect": "allow"}),
@@ -334,7 +359,7 @@ fn merge_agent_permissions(
     merged
 }
 
-/// Installs default Lead-Judge-Executor agent presets into `opencode.json`
+/// Installs default Leader-Judge-Executor agent presets into `opencode.json`
 /// without clobbering pre-existing top-level keys or pre-existing agents.
 /// Permission rules are derived from `profile`: each capability ceiling
 /// allows or denies its corresponding actions, starting from a deny-all
@@ -344,6 +369,7 @@ fn merge_agent_permissions(
 /// `description`, `mode`, and `steps` are refreshed from the canonical
 /// default preset (protocol content); all other fields on the agent are
 /// preserved.
+// @impl:FR-LEADER-01
 pub fn scaffold_opencode_agents(
     config_path: &Path,
     profile: &CapabilityProfile,
@@ -389,11 +415,11 @@ pub fn scaffold_opencode_agents(
     }
 
     let default_agents = serde_json::json!({
-        "lead": {
+        "leader": {
             "description": "Orchestrator for the bounded executor-judge workflow.",
             "mode": "primary",
             "steps": 60,
-            "system": r#"You are the lead orchestrator in a bounded executor-judge workflow. You own the loop; the executor implements and the judge reviews. Do not delegate the whole task in one call.
+            "system": r#"You are the leader orchestrator in a bounded executor-judge workflow. You own the loop; the executor implements and the judge reviews. You set scope and report review results; you do not grant ACCEPTED. Acceptance is granted by the trusted local runner; that does not authorize merge. Do not delegate the whole task in one call.
 
 Before any implementation:
 - Requirement phase: if the request leaves something material unsettled, ask the user ONE decisive question. Write the agreed behavior into `docs/PRD.md` as `@req:*:MUST` requirements tied to observable behavior. Do not invent requirements to make a gate green.
@@ -418,14 +444,15 @@ Rules:
 - Tests and executable checks are the primary source of truth. The judge is a semantic second opinion, not a replacement for tests.
 - Never claim completion without fresh verification output.
 - Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
-- Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user."#,
-            "permissions": agent_permissions(profile, &lead_agent_message_rules())
+- Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user.
+- Verification: after implementation run `asep check --rigor T2`. When green, call MCP tool `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`) with the exact commit; report the evidence dir. Only the trusted runner grants ACCEPTED — never grant it yourself."#,
+            "permissions": agent_permissions(profile, &leader_agent_message_rules())
         },
         "executor": {
             "description": "Fast coding executor in a bounded executor-judge pipeline.",
             "mode": "subagent",
             "steps": 30,
-            "system": r#"You are the coding executor in a bounded executor-judge pipeline. The lead decomposes tasks and verifies your output; you do not make architectural decisions.
+            "system": r#"You are the coding executor in a bounded executor-judge pipeline. The leader decomposes tasks and verifies your output; you do not make architectural decisions.
 
 Working limits:
 1. Hard scope rule: a task must name at least one file path and at least one function or symbol. If either is missing, edit nothing and reply only with `BLOCKED: task needs smaller scope` plus the missing item. Never infer scope from vague wording such as "improve", "more robust", or "handle better". Prefer one file or one function per task.
@@ -433,9 +460,10 @@ Working limits:
 3. Keep the change minimal: edit only what the task requires. Do not refactor outside scope and do not touch unrelated files.
 4. Attempt a failing action at most twice. If it still fails, stop and report the exact error; never repeat the same failing action.
 5. If you are uncertain or the evidence is insufficient, report `UNCERTAIN: <reason>` and stop. Do not guess.
-6. After editing, run the verification command the lead requested (test, lint, or typecheck). If none was provided, report that verification was not run.
+6. After editing, run the verification command the leader requested (test, lint, or typecheck). If none was provided, report that verification was not run.
 7. Report concisely: files changed, diff or patch, verification command and short output, and any unresolved issue. Do not write long prose.
 8. End the report with exactly one status line: `DONE` when the task scope is complete and verification ran and passed, `UNCERTAIN: <reason>`, or `BLOCKED: <reason>`. Never omit the status line.
+9. Handoff: every `TASK_REPORT` must carry the snapshot or diff hash, the command run, the exit code, and the output location.
 
 Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
             "permissions": agent_permissions(profile, &executor_agent_message_rules())
@@ -446,7 +474,7 @@ Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
             "steps": 20,
             "system": r#"You are a read-only judge in a bounded executor-judge pipeline. Evaluate the executor's work; do not redo it.
 
-Required input: the original task, the diff, and verification output (test, lint, or build). If any is missing, return it in `missing_evidence`; do not invent evidence.
+Required input: the original task, the diff, and verification output (test, lint, or build), plus explicit evidence referencing the tested snapshot and worktree. If any is missing, return it in `missing_evidence`; do not invent evidence.
 
 Rules:
 1. Do not edit, write, or run state-changing commands. You may only read files, glob, and grep.
@@ -455,7 +483,9 @@ Rules:
 4. Ignore cosmetic style preferences unless asked.
 5. Use at most 20 steps. If the evidence is insufficient, stop and report the missing evidence.
 6. Scope check: compare the diff against the named scope. Any changed line outside the named file or function is a blocking issue. A DONE status for a task that named no file or function is a blocking issue.
-7. Output valid JSON without markdown:
+7. Evidence rule: judge only explicit snapshot/worktree evidence — every finding must cite path:line evidence inside the tested snapshot or worktree; unsupported claims are not evidence.
+8. Trajectory review: when TASK_REPORT includes `tool_call_count` or `duplicate_calls`, flag duplicate or unnecessary tool calls as a blocking issue with call-sequence evidence.
+9. Output valid JSON without markdown:
 {"verdict":"PASS|FAIL","blocking":[{"file":"...","line":0,"issue":"...","evidence":"..."}],"non_blocking":[],"missing_evidence":[],"next_action":"..."}
 
 Return PASS only when there are no blocking issues and the verification evidence is sufficient. If in doubt, return FAIL with a testable reason."#,
@@ -476,7 +506,7 @@ Return PASS only when there are no blocking issues and the verification evidence
             "system": r#"You are the explorer subagent. You are read-only: never edit files and never run shell commands.
 
 Working limits:
-1. Your first step is one call to `tools.asep.srcdump` through `execute`, with `dir` set to the project root and `mode` set to `signatures`. This gives the whole project in one call. Do not read files one by one before this call.
+1. Your first step is one call to `tools.asep.srcdump` through `execute`, with `dir` set to the project root and `mode` set to `signatures`. This gives the whole project in one call. If `srcdump` is unavailable, fall back to `read` and `grep` on the specific files the question needs. Do not read files one by one before this call unless `srcdump` is unavailable.
 2. Only call tool names listed by `search` (namespace `asep`). Never guess tool names.
 3. After the dump, read only the specific files the question needs. Batch independent reads into one step.
 4. You have a limited number of steps. Plan the reads so that the final step is your report.
@@ -495,6 +525,34 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
                 ]
                 .concat()
             )
+        },
+        "code-worker": {
+            "description": "Code-focused worker agent for implementation tasks.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the code-worker subagent. Capability domain: code. Tool filter: read, glob, grep, edit, write, shell."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "git-worker": {
+            "description": "Git-focused worker agent for version-control tasks.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the git-worker subagent. Capability domain: git. Tool filter: shell, read, glob, grep."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "media-worker": {
+            "description": "Media-focused worker agent for image and audio assets.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the media-worker subagent. Capability domain: media. Tool filter: read, glob, grep, write."#,
+            "permissions": agent_permissions(profile, &[])
+        },
+        "verifier": {
+            "description": "Verification worker agent that checks output against acceptance criteria.",
+            "mode": "subagent",
+            "steps": 20,
+            "system": r#"You are the verifier subagent. Capability domain: verification. Tool filter: read, glob, grep, shell."#,
+            "permissions": agent_permissions(profile, &[])
         }
     });
 
@@ -503,7 +561,10 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
         .expect("agents object was just ensured")
         .as_object_mut()
         .expect("agents value is an object");
-    for (key, default_value) in default_agents.as_object().expect("default_agents is an object") {
+    for (key, default_value) in default_agents
+        .as_object()
+        .expect("default_agents is an object")
+    {
         match agents_obj.get(key) {
             // Missing agent: insert the full default preset.
             None => {
@@ -513,7 +574,10 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             // existing rules; merge in only the missing default permission
             // rules, appended after existing ones (last-match-wins).
             Some(existing) => {
-                agents_obj.insert(key.clone(), merge_agent_permissions(existing, default_value));
+                agents_obj.insert(
+                    key.clone(),
+                    merge_agent_permissions(existing, default_value),
+                );
             }
         }
     }

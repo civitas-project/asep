@@ -106,3 +106,166 @@ Every audited source file in the repository is refactored to sequential guard cl
 - The self-compliance phase is the bulk of the work: 35 files, 212 `else` tokens plus nested `if` sites. It is split into one executor unit per file; each unit is independently verified.
 - Making the rules Error-severity means intermediate commits will fail `asep check . --rigor T1` until the cleanup phase finishes. The final gate is the acceptance point.
 - `.asepignore` already excludes `spec-engine/tests/`, `srcidx/tests/`, `vendor/`, and `harness/e2e/vendor-loom/`, so third-party and fixture code is out of scope.
+
+## Pilot optimasi build Rust
+
+<!-- @design:BUILD-PILOT-01 -->
+Bandingkan profil saat ini (A) dengan `debug = 0` hanya untuk dependensi non-workspace di profil `dev` dan `test` (B). Uji B dengan dua flag Cargo: `--config 'profile.dev.package."*".debug=0' --config 'profile.test.package."*".debug=0'`. Kode workspace tetap `line-tables-only`; profil release, incremental, fitur, linker, dan pin `nightly-2026-11-14` tidak berubah. Tidak perlu runner baru.
+
+Gunakan worktree sementara dari SHA yang sama, di filesystem yang sama dengan repo; `/tmp` lokal adalah tmpfs. Pakai satu direktori artefak khusus eksperimen, pada path yang sama untuk kedua varian. Kosongkan hanya direktori eksperimen saat ganti varian; jangan sentuh `target/` utama. Catat SHA, toolchain, linker, jumlah job, dan urutan uji. Jalankan serial. Hentikan pilot jika ruang kosong terukur mendekati 4 GiB. Pada audit awal, `target/` utama 3,3 GiB dan ruang kosong 8,7 GiB.
+
+Ukur wall time build awal dan build tanpa perubahan sebagai konteks. Setelah pemanasan, ulangi tiap skenario edit minimal tiga kali per varian. Terapkan perubahan identik dan pulihkan sumber di luar pengukuran; bangun ulang keadaan awal sebelum pengulangan berikutnya. Catat sampel waktu, median, disk puncak teramati dari sampel `du -s -B1` selama rangkaian, dan disk tersisa tepat setelah rangkaian yang sama. Sampling dapat melewatkan lonjakan singkat. Jangan laporkan p95 dari tiga sampel. Simpan hasil di luar direktori artefak eksperimen.
+
+<!-- @design:BUILD-PILOT-02 -->
+Adopsi kandidat hanya jika median kedua skenario edit turun, disk puncak teramati dan disk tersisa sama-sama turun, serta arah perbaikan waktu tidak bergantung pada satu pengukuran. Ulangi perbandingan bila hasil dekat dengan variasi sampel; jika tetap tidak jelas, pertahankan profil saat ini. Bandingkan daftar dan hasil test target yang sama. Full suite tidak dijalankan untuk pilot; gate penerimaan yang berlaku tidak berubah.
+
+### Urutan kerja pilot
+
+| Urutan | File dan simbol | Kriteria penerimaan | Perintah verifikasi |
+|---|---|---|---|
+| 1. Ukur edit fungsi | `spec-engine/src/harness/e2e.rs`, `now_rfc3339` | Terapkan edit body sementara (`duration.as_secs()` menjadi `duration.as_secs().saturating_add(1)`) di worktree eksperimen. Kedua varian membangun target yang sama; catat waktu pada setiap pengulangan dan pulihkan file. | `cargo build -p asep --bin asep --offline --locked --timings` |
+| 2. Ukur edit test dan disk | `spec-engine/tests/harness_e2e_test.rs`, `test_new_run_writes_manifest` | Ganti sementara assertion keberadaan seed dengan pemeriksaan seed `883735528`. Kedua varian memakai daftar test dan hasil yang sama; catat waktu, puncak teramati, dan ukuran akhir untuk rangkaian langkah 1–2. Pulihkan file. | `cargo test -p asep --test harness_e2e_test --offline --locked -- --list`; `cargo test -p asep --test harness_e2e_test --offline --locked` |
+| 3. Adopsi bila lolos | `Cargo.toml`, `profile.dev.package."*".debug` dan `profile.test.package."*".debug` | Hanya tambah kedua override. Jangan ubah konfigurasi global, test, atau gate. Jika kandidat tidak lolos, jangan ubah manifest. | `asep affected Cargo.toml`, lalu jalankan perintah dari hasilnya. Jika kosong, catat bahwa graph tidak memetakan profil Cargo; cek `cargo metadata --offline --locked --no-deps --format-version 1` dan ulangi test target pilot tanpa flag override di direktori eksperimen. |
+
+<!-- @impl:BUILD-PILOT-01 -->
+Pilot dijalankan di `446a0656` dengan 4 job, dalam urutan A lalu B dan B lalu A. Tiap run mengukur tiga edit fungsi dan tiga edit test. Wall time edit test mencakup kompilasi lewat `--list` dan eksekusi test. Interval sampel disk 1,5 detik; satu sampel baseline kedua gagal saat file sementara hilang.
+
+<!-- @impl:BUILD-PILOT-02 -->
+Kedua urutan memenuhi syarat adopsi. Konfigurasi kandidat menjadi dua override di `Cargo.toml`. Angka acuan belum tercapai. Gate penerimaan tidak berubah.
+
+## Lanjutan optimasi build Rust
+
+<!-- @design:BUILD-NEXT-01 -->
+Audit awal: `target/debug/build` memakai 1.205.305.344 byte. Hitungan blok file reguler deduplikasi inode: 919,0 MiB output unit kompilasi, 203,9 MiB executable/metadata build script, 20,0 MiB output build script, dan 6,6 MiB file lain. File `.a`/`.o` grammar bukan penyumbang utama. Empat build tanpa edit di pilot tidak melaporkan kompilasi ulang. Ini potret cache campuran, bukan ukuran profil baru maupun bukti semua perintah bebas invalidasi.
+
+<!-- @design:BUILD-NEXT-02 -->
+Mulai dari satu duplikasi versi: TOML 0.8.23 dipakai `srcdump`, sedangkan ASEP sudah menarik TOML 1.2.1 lewat batas versi `1.1.8`. Bandingkan unit kompilasi, bukan hanya baris `cargo tree`. Jangan menyatukan `syn` lintas versi atau mengganti backend TLS pada putaran ini.
+
+<!-- @design:BUILD-NEXT-03 -->
+Semua uji memakai pin nightly dan profil debug hasil pilot, offline, satu cache eksperimen di filesystem repo, ruang kosong minimal 4 GiB. Jangan bersihkan cache utama. Untuk A/B struktural, bangun dari direktori eksperimen kosong pada path sama; ukur build awal, tiga rebuild edit identik, disk puncak teramati dan akhir. Untuk jobs/antrean, samakan keadaan cache sebelum tiap percobaan dan balik urutan; catat wall time per proses dan sampai keduanya selesai, pesan lock Cargo, serta disk puncak dan akhir. Jangan klaim hasil jobs berlaku di mesin lain. Full suite dan gate penerimaan tidak berubah.
+
+### Urutan kerja
+
+| Urutan | File dan simbol | Kriteria penerimaan | Verifikasi |
+|---|---|---|---|
+| 1. Audit cache | `target/debug/build`, direktori unit dan output build script | Klasifikasi blok tanpa hitung hard link ganda, daftar komponen terbesar, bedakan artefak lama dari output aktif jika terbukti. Tidak ada penghapusan. | `du -s -B1 target/debug/build`; inventaris inode; log warm no-op pilot |
+| 2a. Gabung satu kelompok | `spec-engine/tests/lexer_test.rs`, modul `scanner` | Salin kasus `test_scan_project_tags_respects_gitignore` dari target `scanner_test` tanpa ubah fixture atau assertions. Pertahankan lima kasus lexer. | `cargo test -p asep --test lexer_test --offline --locked` |
+| 2b. Hapus target duplikat | `spec-engine/tests/scanner_test.rs`, target `scanner_test` | Hapus file hanya setelah enam kasus terbukti terdaftar dan lulus. Bandingkan dua target lama vs satu target baru; adopsi jika biaya turun dan feedback edit target tidak melambat di luar variasi sampel. | `cargo test -p asep --test lexer_test --offline --locked -- --list`; `cargo metadata --offline --locked --no-deps --format-version 1`; benchmark A/B |
+| 3a. Kunci perilaku konfigurasi | `srcdump/tests/config_test.rs`, `Config::from_file` | Uji fixture konfigurasi valid dan input TOML tidak valid sebelum ganti versi parser. | `cargo test -p srcdump --test config_test --offline --locked` |
+| 3b. Satukan versi | `Cargo.toml`, `workspace.dependencies.toml` | Samakan batas versi dengan ASEP; jangan ubah fitur lain. | `cargo metadata --offline --format-version 1` pada worktree eksperimen |
+| 3c. Perbarui resolusi | `Cargo.lock`, keluarga TOML 0.8 | Resolusi offline; tidak ada upgrade yang tidak terkait. Adopsi jika unit lama hilang, test konfigurasi tetap lulus, dan pilot tidak menunjukkan regresi feedback atau disk. | `cargo tree -p asep -d --offline --locked`; `cargo test -p asep --test lexer_test --unit-graph -Z unstable-options --offline --locked`; `cargo test -p srcdump --test config_test --offline --locked` |
+| 4. Uji jobs dan antrean | `spec-engine/tests/lexer_test.rs`, target `lexer_test`; `Cargo.toml`, konfigurasi `build.jobs` tidak diubah | Bandingkan 2 vs 4 job untuk build awal dan rebuild setelah edit yang sama. Pada cache eksperimen, bandingkan pasangan build/test identik secara serial dan serentak. Pisahkan waktu tunggu lock dari kerja kompilasi sejauh log mendukung. Laporkan, jangan ubah default. | `cargo build -p asep --bin asep --offline --locked --jobs <2-or-4> --timings`; `cargo test -p asep --test lexer_test --offline --locked --jobs <2-or-4>` |
+
+Setiap perubahan: `asep affected <changed-paths>` lebih dulu. Jika hasil kosong atau menyebut target Cargo yang tidak ada, catat dan gunakan verifikasi target pada tabel. Tinjau diff dan bukti per unit sebelum lanjut.
+
+<!-- @impl:BUILD-NEXT-01 -->
+Audit selesai. Konsolidasi `scanner_test` ke `lexer_test` tidak diadopsi. Putaran valid menghemat 19,9 MiB artefak tersisa (2,7%), tetapi semua sampel edit kandidat lebih lambat daripada semua sampel baseline. Kedua target tetap terpisah di worktree utama.
+
+<!-- @impl:BUILD-NEXT-02 -->
+Penyatuan TOML menghilangkan enam unit kompilasi lama tanpa menambah unit baru. Tidak diadopsi: dalam satu putaran, build awal lebih cepat dan disk lebih kecil, tetapi semua sampel edit kandidat lebih lambat daripada semua sampel baseline. Versi parser dan lockfile utama tetap; tiga tes konfigurasi `srcdump` dipertahankan.
+
+<!-- @impl:BUILD-NEXT-03 -->
+Pada mesin ini, 4 job menang pada satu putaran build dari cache kosong. Tiga sampel edit per jumlah job tumpang tindih. Jalankan build dan test bergantian bila berbagi target: uji serentak memunculkan tunggu lock tanpa keuntungan waktu total yang konsisten. Default Cargo tetap.
+## Capability-Aware Delegation & Ambient Skill Distribution
+
+### Phase M — MCP capability routing (first)
+
+<!-- @design:FR-CAP-01 -->
+Capability registry: `CapabilityProfile` in `spec-engine/src/config/settings.rs` gains `supported_media: Vec<String>` and `tool_domains: Vec<String>` (config-driven, validated by `asep check`). No hardcoded enum; unknown entries are accepted but warned. Default profile includes `text`, `code`.
+
+<!-- @design:FR-CAP-02 -->
+MCP delegation schema: extend `asep_agent_send` payload (in `spec-engine/src/mcp/tools.rs` and `spec-engine/src/agent/protocol.rs` if present) with optional fields `required_capabilities`, `media`, `domain`, `tool_filter`, `delegation_threshold`. Serde `#[serde(default)]` keeps backward compat. Validation in `execute_tool`.
+
+<!-- @design:FR-CAP-03 -->
+Capability guard: executor (and any worker) checks task's `required_capabilities`/`media` against its profile before running; mismatch returns structured `BLOCKED: requires <capability>` without executing. Implemented in `spec-engine/src/agent/executor_guard.rs` (new) or existing executor handler.
+
+<!-- @design:FR-CAP-04 -->
+Single-agent default + threshold: leader prompt/rules and `CapabilityProfile.delegation_threshold` (default e.g. 3 tool calls) define when to delegate. Implemented as config + documented rule; no code change beyond config field, enforced by agent behavior + check.
+
+<!-- @design:FR-CAP-05 -->
+Tool filtering + trajectory: worker loads only tools in `tool_filter` (or domain default). TASK_REPORT includes `tool_call_count: u32` and optional `duplicate_calls`. Added to report schema in `spec-engine/src/agent/protocol.rs`.
+
+<!-- @design:FR-CAP-06 -->
+Trajectory review: judge flags duplicate/unnecessary tool calls as blocking when evidence shows waste. Documented in judge prompt (opencode.json) + `asep check` optional gate.
+
+<!-- @design:FR-CAP-07 -->
+Capability-domain workers: `scaffold_opencode_agents` in `spec-engine/src/pack/manifest.rs` generates `code-worker`, `git-worker`, `media-worker`, `verifier` presets with supported_media/tool_domains from CapabilityProfile.
+
+<!-- @design:FR-CAP-08 -->
+Media routing: router/leader selects worker whose supported_media covers task media; text-only agents never receive image/pdf/audio/video tasks. Enforced by capability guard (FR-CAP-03) + documented routing rule.
+
+### Phase A — Ambient skill distribution (after Phase M)
+
+<!-- @design:FR-AMB-01 -->
+Ambient init: `init_asep_project` in `spec-engine/src/init/mod.rs` (or new `spec-engine/src/init/ambient.rs`) injects pointer block into AGENTS.md/CLAUDE.md/GEMINI.md and scaffolds flat `skills/` with canonical SKILL.md. Idempotent.
+
+<!-- @design:FR-AMB-02 -->
+Pack provisioning-only: remove skill-copy logic from `spec-engine/src/pack/installer.rs` (hard remove); keep role/permission/MCP wiring. Update `run_pack_installer`.
+
+<!-- @design:FR-AMB-03 -->
+Bootstrap injection: add `using-asep` skill + harness plugin entry (Pi extension style) generated by pack for supported harnesses. Embedded in `spec-engine/src/pack/embedded.rs`.
+
+<!-- @design:FR-AMB-04 -->
+Description-first + token budget: update all `*/skill/SKILL.md` frontmatter; `asep check` validates description starts with `Use when...` and word count budget.
+
+<!-- @design:FR-AMB-05 -->
+Skill capability metadata: SKILL.md frontmatter gains `requires: [<capability>]`; router skips unavailable. Parsed in `spec-engine/src/skill/inspector.rs` or new parser.
+
+<!-- @design:FR-AMB-06 -->
+Ambient governance gate: `asep check` validates pointer block presence, flat skills dir, description-first, token budget. New checks in `spec-engine/src/runner.rs` / auditor.
+
+### Ordered implementation plan (Phase M first, then Phase A)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| M1 | `spec-engine/src/config/settings.rs`, `CapabilityProfile` (add `supported_media`, `tool_domains`, `delegation_threshold`) | Fields serialize/deserialize; defaults include text/code; invalid types rejected. | `cargo test -p asep spec-engine` settings tests; `asep check . --rigor T1` |
+| M2 | `spec-engine/src/mcp/tools.rs`, `asep_agent_send` schema + handler | New fields optional with defaults; validation rejects malformed; backward compat with old payloads. | `cargo test -p asep mcp` tests; `asep affected spec-engine/src/mcp/tools.rs` |
+| M3 | `spec-engine/src/agent/executor_guard.rs` (new) or executor handler, capability guard | Mismatch returns `BLOCKED: requires <cap>`; no execution; match proceeds. | Unit tests for guard; `asep affected` |
+| M4 | `spec-engine/src/pack/manifest.rs`, `scaffold_opencode_agents` | Generates code/git/media/verifier presets from CapabilityProfile. | `asep pack --dry-run` or targeted tests; `asep affected` |
+| M5 | `spec-engine/src/agent/protocol.rs`, TASK_REPORT (`tool_call_count`, `duplicate_calls`) | Fields serialized; judge can read. | Tests; `asep affected` |
+| M6 | Judge prompt in `opencode.json` (project + global) + docs | Judge flags duplicate/unnecessary tool calls as blocking. | Manual review; `asep check . --rigor T1` |
+| M7 | `spec-engine/src/init/mod.rs` + `spec-engine/src/init/ambient.rs` (new) | Pointer block injected idempotently; flat `skills/` scaffolded. | Integration test; `asep affected` |
+| M8 | `spec-engine/src/pack/installer.rs`, `run_pack_installer` | Skill copy removed; provisioning only; no fallback. | Tests; `asep check . --rigor T1` |
+| M9 | `spec-engine/src/pack/embedded.rs` + harness plugin entries | `using-asep` bootstrap skill embedded and installable. | `asep pack` dry-run; tests |
+| M10 | `*/skill/SKILL.md` frontmatter + `spec-engine/src/skill/inspector.rs` | Description-first + token budget + `requires` parsed. | `asep check . --rigor T1`; `asep affected` |
+| M11 | `spec-engine/src/runner.rs` + auditor, ambient governance gate | Pointer block, flat skills, description-first, budget validated. | `asep check . --rigor T1` |
+| M12 | Verification & reconfig | Run `asep pack` to apply latest config after Phase M and after Phase A; restart MCP. | `asep --version`; MCP `initialize`; `asep check . --rigor T1` |
+
+After Phase M complete: restart with latest config. After Phase A complete: restart again. Full suite reserved for merge to main.
+
+### Scoped non-root acceptance
+
+<!-- @design:FR-ACC-02 -->
+Policy lives at `<root>/.spec-engine/acceptance.json` (user-owned, 0600); evidence dir user-owned 0700. Candidate snapshot is executed with unprivileged `bwrap --unshare-user --unshare-pid`, read-only repo/toolchain mounts, a writable scratch target dir, and no policy/evidence mounts. No `/etc` changes and no `sudo`.
+
+<!-- @design:FR-ACC-03 -->
+After gates pass, the runner enumerates all `@req:*:MUST` from the trace graph and writes `evidence/semantic/<id>.md` containing `reviewer`, `verdict: ACCEPTED`, and a rationale citing the commit, snapshot digest, and scoped gate results. `asep check` gains `--evidence-dir`; when supplied it replaces the default `<root>/evidence` lookup.
+
+<!-- @design:FR-ACC-04 -->
+Mandatory gates: Formal (`asep ci --gate 0`), Structural (`asep check --rigor T1`), ScopedTests (`asep affected <changed-paths>` then execute only listed test targets), Format (`cargo fmt --all --check`). Clippy and BenchPreflight are opt-in flags. Evidence records each gate command, exit code, and the affected-path list.
+
+#### Ordered units for scoped acceptance
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| A1 | `spec-engine/src/runner.rs`, `Commands::Check` (`--evidence-dir`) | Flag parsed and passed to verification; default unchanged. | `cargo test -p asep --test integration_check_test` |
+| A2 | `spec-engine/src/acceptance/scoped.rs` (new), `spec-engine/src/lib.rs` | Non-root policy loader, scoped gate runner using `asep affected`, bwrap isolation, semantic evidence writer. | `cargo test -p asep --lib acceptance::scoped` |
+| A3 | `spec-engine/src/runner.rs`, `Commands::AcceptScoped` | CLI `asep accept-scoped <commit>` dispatches to A2; writes evidence; no full suite. | `cargo test -p asep --test acceptance_scoped_test` |
+| A4 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Requirements closed with `@rel:satisfies`/`@rel:verifies`, changelog notes scoped acceptance. | `asep check . --rigor T1` |
+
+### OpenCode integration
+
+<!-- @design:FR-MCP-03 -->
+`asep_accept_scoped` tool in `spec-engine/src/mcp/tools.rs`: input `{commit: string, dir?: string}`; calls `acceptance_scoped::run_scoped_acceptance(dir or default_dir, commit)`, returns the evidence dir as MCP text. Missing/invalid commit or runner failure yields `isError: true`. The tool uses the same trusted runner; it does not grant `ACCEPTED` itself.
+
+<!-- @design:FR-INT-01 -->
+Add a verification rule to the leader system prompt in `spec-engine/src/pack/manifest.rs`, project `opencode.json`, and global `~/.config/opencode/opencode.json`: after implementation, run `asep check --rigor T2`, then call `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`); report the runner's evidence dir. Keep the existing rule that only the trusted runner grants `ACCEPTED`. Mirror the rule in `workflow-router/skill/SKILL.md`.
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| I1 | `spec-engine/src/mcp/tools.rs`, `spec-engine/tests/mcp_test.rs` | `asep_accept_scoped` listed with typed schema; invalid commit returns error; success path uses ASEP_BWRAP shim in tests. | `cargo test -p asep --test mcp_test` |
+| I2 | `spec-engine/src/pack/manifest.rs`, `opencode.json`, global `opencode.json`, `workflow-router/skill/SKILL.md` | Leader prompt instructs T2 check + accept-scoped; other prompts and settings unchanged. | JSON parse; `cargo test -p asep --test targets_test` |
+| I3 | `docs/TRACEABILITY.md`, `CHANGELOG.md`, tags | FR-MCP-03/FR-INT-01 closed; changelog notes integration. | `asep check . --rigor T2` |
+
+<!-- @design:FR-LEADER-01 -->
+Use leader as the primary agent name in generated presets and global configuration.

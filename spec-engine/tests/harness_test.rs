@@ -85,7 +85,10 @@ fn test_new_run_creates_manifest() {
     );
     for key in ["rustc_version", "asep_binary", "created_at"] {
         assert!(
-            value.get(key).and_then(Value::as_str).map_or(false, |s| !s.is_empty()),
+            value
+                .get(key)
+                .and_then(Value::as_str)
+                .map_or(false, |s| !s.is_empty()),
             "{key} non-empty"
         );
     }
@@ -93,13 +96,20 @@ fn test_new_run_creates_manifest() {
 
 const REQUIRED_ARTIFACTS: &[&str] = &[
     "manifest.json",
-    "01-prd.md", "01-judge.json",
-    "02-tdd.md", "02-judge.json",
-    "03-tests.diff", "03-red.log", "03-hash.txt",
+    "01-prd.md",
+    "01-judge.json",
+    "02-tdd.md",
+    "02-judge.json",
+    "03-tests.diff",
+    "03-red.log",
+    "03-hash.txt",
     "04-impl.diff",
-    "05-findings.md", "05-loom.log",
+    "05-findings.md",
+    "05-loom.log",
     "06-optimization.md",
-    "07-judge.json", "07-check.log", "07-ci.log",
+    "07-judge.json",
+    "07-check.log",
+    "07-ci.log",
 ];
 
 fn verifier_script(root: &Path) -> PathBuf {
@@ -286,11 +296,7 @@ fn write_single_file_hash(run_dir: &Path, dummy: &Path) {
         .expect("dummy is under run_dir")
         .to_str()
         .expect("path is utf-8");
-    write_artifact(
-        run_dir,
-        "03-hash.txt",
-        &format!("{hex}  {rel}\n"),
-    );
+    write_artifact(run_dir, "03-hash.txt", &format!("{hex}  {rel}\n"));
 }
 
 #[test]
@@ -301,10 +307,14 @@ fn test_verifier_runs_cargo_in_dummy_dir() {
 
     let dummy = write_dummy_crate(&run_dir);
     write_single_file_hash(&run_dir, &dummy);
-    write_artifact(&run_dir, "manifest.json", &manifest_with_binary(
-        "dummy-dir-run",
-        root.join("target/debug/asep").to_str().expect("utf-8 path"),
-    ));
+    write_artifact(
+        &run_dir,
+        "manifest.json",
+        &manifest_with_binary(
+            "dummy-dir-run",
+            root.join("target/debug/asep").to_str().expect("utf-8 path"),
+        ),
+    );
 
     let status = run_verifier(&root, &run_dir);
     assert_eq!(
@@ -367,10 +377,14 @@ fn test_verifier_accepts_single_file_hash_line() {
         "03-hash.txt",
         &format!("{hex}  dummy/tests/ring_buffer_test.rs\n"),
     );
-    write_artifact(&run_dir, "manifest.json", &manifest_with_binary(
-        "single-hash-run",
-        root.join("target/debug/asep").to_str().expect("utf-8 path"),
-    ));
+    write_artifact(
+        &run_dir,
+        "manifest.json",
+        &manifest_with_binary(
+            "single-hash-run",
+            root.join("target/debug/asep").to_str().expect("utf-8 path"),
+        ),
+    );
 
     let status = run_verifier(&root, &run_dir);
     assert_eq!(
@@ -435,10 +449,7 @@ fn test_vendor_script_points_to_offline_config() {
 
     let text = std::fs::read_to_string(&script).expect("read vendor-loom.sh");
 
-    assert!(
-        text.contains("=0.7.3"),
-        "script must pin loom = \"=0.7.3\""
-    );
+    assert!(text.contains("=0.7.3"), "script must pin loom = \"=0.7.3\"");
     assert!(
         text.contains(".cargo/config.toml"),
         "script must write .cargo/config.toml"
@@ -473,18 +484,20 @@ fn test_phase_prompts_cover_all_phases() {
 
     for name in PHASE_PROMPTS {
         let path = prompts_dir.join(name);
-        assert!(
-            path.is_file(),
-            "phase prompt {} exists",
-            path.display()
-        );
+        assert!(path.is_file(), "phase prompt {} exists", path.display());
     }
 
     let judge = prompts_dir.join("judge.md");
     assert!(judge.is_file(), "judge.md exists at {}", judge.display());
 
     let judge_text = std::fs::read_to_string(&judge).expect("read judge.md");
-    for key in ["verdict", "blocking", "non_blocking", "missing_evidence", "next_action"] {
+    for key in [
+        "verdict",
+        "blocking",
+        "non_blocking",
+        "missing_evidence",
+        "next_action",
+    ] {
         assert!(
             judge_text.contains(key),
             "judge.md contains verdict key {key}"

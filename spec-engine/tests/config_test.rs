@@ -1,4 +1,7 @@
-use asep::config::settings::{load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig};
+// @test:FR-CAP-01 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-08
+use asep::config::settings::{
+    load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig,
+};
 use std::fs;
 use tempfile::tempdir;
 
@@ -35,6 +38,33 @@ fn test_save_and_reload_config_toml() {
     assert_eq!(reloaded.editor.custom_command, "nvim");
 }
 
+// @test:FR-ACC-05-CONFIG-ROUNDTRIP
+#[test]
+fn test_evidence_dir_round_trip() {
+    let tmp = tempdir().unwrap();
+    let mut config = EngineConfig::default();
+    config.evidence_dir = Some("custom-evidence".to_string());
+
+    save_config(tmp.path(), &config).expect("Config save must succeed");
+
+    let config_file = tmp.path().join(".spec-engine").join("config.toml");
+    assert!(config_file.exists(), "config.toml must be written");
+
+    let raw_toml = fs::read_to_string(&config_file).unwrap();
+    assert!(raw_toml.contains("evidence_dir = \"custom-evidence\""));
+
+    let reloaded = load_config(tmp.path());
+    assert_eq!(reloaded.evidence_dir, Some("custom-evidence".to_string()));
+}
+
+// @test:FR-ACC-05-CONFIG-DEFAULT
+#[test]
+fn test_evidence_dir_defaults_to_none() {
+    let tmp = tempdir().unwrap();
+    let config = load_config(tmp.path());
+    assert_eq!(config.evidence_dir, None);
+}
+
 // @test:FR-CONFIG-LOAD-02
 #[test]
 fn test_corrupt_config_falls_back_to_defaults() {
@@ -53,7 +83,11 @@ fn test_capabilities_load_from_toml_with_defaults() {
     let tmp = tempdir().unwrap();
     let dir = tmp.path().join(".spec-engine");
     fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("config.toml"), "[capabilities]\nfile_read = true\nfile_write = false\n").unwrap();
+    fs::write(
+        dir.join("config.toml"),
+        "[capabilities]\nfile_read = true\nfile_write = false\n",
+    )
+    .unwrap();
 
     let config = load_config(tmp.path());
     assert!(config.capabilities.file_read);
@@ -72,10 +106,68 @@ fn test_capability_profile_missing_reports_disabled_only() {
     let mut profile = CapabilityProfile::default();
     profile.file_write = false;
 
-    assert_eq!(profile.missing(&["file_write", "terminal"]), vec!["file_write"]);
+    assert_eq!(
+        profile.missing(&["file_write", "terminal"]),
+        vec!["file_write"]
+    );
     assert_eq!(
         profile.missing(&["file_write", "terminal", "web"]),
         vec!["file_write"]
     );
-    assert!(CapabilityProfile::default().missing(&["file_read", "web"]).is_empty());
+    assert!(CapabilityProfile::default()
+        .missing(&["file_read", "web"])
+        .is_empty());
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-01
+#[test]
+fn test_supports_media_empty_returns_true() {
+    let profile = CapabilityProfile::default();
+    assert!(profile.supports_media(""));
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-02
+#[test]
+fn test_supports_media_supported_returns_true() {
+    let profile = CapabilityProfile::default();
+    assert!(profile.supports_media("text"));
+    assert!(profile.supports_media("code"));
+}
+
+// @test:FR-CONFIG-CAP-MEDIA-03
+#[test]
+fn test_supports_media_unsupported_returns_false() {
+    let profile = CapabilityProfile::default();
+    assert!(!profile.supports_media("image"));
+    assert!(!profile.supports_media("audio"));
+}
+
+// @test:FR-CONFIG-CAP-COVER-01
+#[test]
+fn test_covers_missing_capability_returns_err() {
+    let mut profile = CapabilityProfile::default();
+    profile.file_write = false;
+
+    let err = profile.covers(&["file_write"], None).unwrap_err();
+    assert_eq!(err, "BLOCKED: requires file_write");
+}
+
+// @test:FR-CONFIG-CAP-COVER-02
+#[test]
+fn test_covers_unsupported_media_returns_err() {
+    let profile = CapabilityProfile::default();
+
+    let err = profile.covers(&["file_read"], Some("image")).unwrap_err();
+    assert_eq!(err, "BLOCKED: requires media:image");
+}
+
+// @test:FR-CONFIG-CAP-COVER-03
+#[test]
+fn test_covers_all_satisfied_returns_ok() {
+    let profile = CapabilityProfile::default();
+
+    assert!(profile.covers(&["file_read", "web"], None).is_ok());
+    assert!(profile.covers(&["file_read", "web"], Some("text")).is_ok());
+    assert!(profile.covers(&[], Some("")).is_ok());
+    assert!(profile.covers(&[], None).is_ok());
 }

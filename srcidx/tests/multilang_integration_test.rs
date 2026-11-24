@@ -124,10 +124,7 @@ fn index_project(root: &Path, registry: &ParserRegistry) -> SymbolIndex {
 }
 
 fn find_symbol<'a>(symbols: &'a [&Symbol], name: &str) -> Option<&'a Symbol> {
-    symbols
-        .iter()
-        .find(|symbol| symbol.name == name)
-        .copied()
+    symbols.iter().find(|symbol| symbol.name == name).copied()
 }
 
 fn symbols_in<'a>(index: &'a SymbolIndex, suffix: &str) -> Vec<&'a Symbol> {
@@ -153,14 +150,11 @@ fn multilang_indexing_integrates_all_parsers() {
     assert!(!index.symbols.is_empty(), "no symbols indexed");
 
     // Rust symbols are found and identified as Rust.
-    let rust_lang = registry.with_parser(Path::new("src/main.rs"), |parser| {
-        parser.language_id()
-    });
+    let rust_lang = registry.with_parser(Path::new("src/main.rs"), |parser| parser.language_id());
     assert_eq!(rust_lang, Some("rust"));
 
     let rust_symbols = symbols_in(&index, "src/main.rs");
-    let app_config =
-        find_symbol(&rust_symbols, "AppConfig").expect("AppConfig symbol missing");
+    let app_config = find_symbol(&rust_symbols, "AppConfig").expect("AppConfig symbol missing");
     assert_eq!(app_config.kind, SymbolKind::Struct);
     assert_eq!(app_config.visibility, Visibility::Pub);
     let run_fn = find_symbol(&rust_symbols, "run").expect("run symbol missing");
@@ -169,34 +163,28 @@ fn multilang_indexing_integrates_all_parsers() {
 
     // TypeScript symbols are found with exported visibility.
     let ts_symbols = symbols_in(&index, "frontend/index.ts");
-    let create_app =
-        find_symbol(&ts_symbols, "createApp").expect("createApp symbol missing");
+    let create_app = find_symbol(&ts_symbols, "createApp").expect("createApp symbol missing");
     assert_eq!(create_app.kind, SymbolKind::Fn);
     assert_eq!(create_app.visibility, Visibility::Pub);
-    let api_client =
-        find_symbol(&ts_symbols, "ApiClient").expect("ApiClient symbol missing");
+    let api_client = find_symbol(&ts_symbols, "ApiClient").expect("ApiClient symbol missing");
     assert_eq!(api_client.kind, SymbolKind::Class);
     assert_eq!(api_client.visibility, Visibility::Pub);
 
     // Python symbols are found with convention visibility (_ prefix = Private).
     let py_symbols = symbols_in(&index, "backend/app.py");
-    let public_func =
-        find_symbol(&py_symbols, "public_func").expect("public_func symbol missing");
+    let public_func = find_symbol(&py_symbols, "public_func").expect("public_func symbol missing");
     assert_eq!(public_func.kind, SymbolKind::Fn);
     assert_eq!(public_func.visibility, Visibility::Pub);
-    let internal =
-        find_symbol(&py_symbols, "_internal").expect("_internal symbol missing");
+    let internal = find_symbol(&py_symbols, "_internal").expect("_internal symbol missing");
     assert_eq!(internal.kind, SymbolKind::Fn);
     assert_eq!(internal.visibility, Visibility::Private);
 
     // Go symbols are found and verify capitalization visibility.
     let go_symbols = symbols_in(&index, "services/api.go");
-    let exported =
-        find_symbol(&go_symbols, "Exported").expect("Exported symbol missing");
+    let exported = find_symbol(&go_symbols, "Exported").expect("Exported symbol missing");
     assert_eq!(exported.kind, SymbolKind::Fn);
     assert_eq!(exported.visibility, Visibility::Pub);
-    let unexported =
-        find_symbol(&go_symbols, "unexported").expect("unexported symbol missing");
+    let unexported = find_symbol(&go_symbols, "unexported").expect("unexported symbol missing");
     assert_eq!(unexported.kind, SymbolKind::Fn);
     assert_eq!(unexported.visibility, Visibility::Private);
 }

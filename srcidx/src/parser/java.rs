@@ -1,19 +1,16 @@
 //! Java parser using tree-sitter.
 
 use crate::index::SymbolKind;
-use crate::parser::SourceParser;
 use crate::parser::tree_sitter_base::{TreeSitterConfig, TreeSitterParser};
-use tree_sitter::Query;
+use crate::parser::SourceParser;
 use anyhow::Result;
+use tree_sitter::Query;
 
 /// Create a Java parser.
 pub fn create_java_parser() -> Result<Box<dyn SourceParser>> {
     let java_language = tree_sitter_java::LANGUAGE.into();
-    
-    let java_query = Query::new(
-        &java_language,
-        include_str!("queries/java/tags.scm"),
-    )?;
+
+    let java_query = Query::new(&java_language, include_str!("queries/java/tags.scm"))?;
 
     // Pattern kind map: maps pattern index to symbol kind
     // Pattern indices (0-based) correspond to patterns in queries/java/tags.scm:
@@ -33,18 +30,18 @@ pub fn create_java_parser() -> Result<Box<dyn SourceParser>> {
     // 13: doc comment (block_comment)
     // 13: attrs (annotation)
     let pattern_kind_map = vec![
-        SymbolKind::Fn,         // 0: method_declaration
-        SymbolKind::Fn,         // 1: constructor_declaration
-        SymbolKind::Class,      // 2: class_declaration
-        SymbolKind::Interface,  // 3: interface_declaration
-        SymbolKind::Enum,       // 4: enum_declaration
-        SymbolKind::Struct,     // 5: record_declaration
-        SymbolKind::Const,      // 6: field_declaration (static final)
-        SymbolKind::Variable,   // 7: field_declaration
-        SymbolKind::Import,     // 8: import_declaration (scoped_identifier)
-        SymbolKind::Import,     // 9: import_declaration (identifier)
-        SymbolKind::Mod,        // 10: package_declaration (scoped_identifier)
-        SymbolKind::Mod,        // 11: package_declaration (identifier)
+        SymbolKind::Fn,                    // 0: method_declaration
+        SymbolKind::Fn,                    // 1: constructor_declaration
+        SymbolKind::Class,                 // 2: class_declaration
+        SymbolKind::Interface,             // 3: interface_declaration
+        SymbolKind::Enum,                  // 4: enum_declaration
+        SymbolKind::Struct,                // 5: record_declaration
+        SymbolKind::Const,                 // 6: field_declaration (static final)
+        SymbolKind::Variable,              // 7: field_declaration
+        SymbolKind::Import,                // 8: import_declaration (scoped_identifier)
+        SymbolKind::Import,                // 9: import_declaration (identifier)
+        SymbolKind::Mod,                   // 10: package_declaration (scoped_identifier)
+        SymbolKind::Mod,                   // 11: package_declaration (identifier)
         SymbolKind::Other("doc".into()),   // 12: line_comment
         SymbolKind::Other("doc".into()),   // 13: block_comment
         SymbolKind::Other("attrs".into()), // 14: attrs
@@ -87,7 +84,11 @@ public class Test {
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Test.java"), code);
-        let method_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "add").unwrap();
+        let method_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "add")
+            .unwrap();
         assert_eq!(method_sym.name, "add");
         assert_eq!(method_sym.kind, SymbolKind::Fn);
     }
@@ -106,9 +107,17 @@ public class Point {
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Point.java"), code);
-        let class_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Class).unwrap();
+        let class_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Class)
+            .unwrap();
         assert_eq!(class_sym.name, "Point");
-        let constructor_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "Point").unwrap();
+        let constructor_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "Point")
+            .unwrap();
         assert_eq!(constructor_sym.name, "Point");
     }
 
@@ -121,7 +130,11 @@ public interface Shape {
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Shape.java"), code);
-        let interfaces: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Interface).collect();
+        let interfaces: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface)
+            .collect();
         assert_eq!(interfaces.len(), 1);
         assert_eq!(interfaces[0].name, "Shape");
     }
@@ -135,7 +148,11 @@ public enum Color {
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Color.java"), code);
-        let enums: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Enum).collect();
+        let enums: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Enum)
+            .collect();
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Color");
     }
@@ -147,7 +164,11 @@ public record Point(int x, int y) {}
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Point.java"), code);
-        let records: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Struct).collect();
+        let records: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Struct)
+            .collect();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "Point");
     }
@@ -162,7 +183,11 @@ import java.util.Map;
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Test.java"), code);
-        let imports: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Import).collect();
+        let imports: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .collect();
         assert_eq!(imports.len(), 2);
     }
 
@@ -176,7 +201,11 @@ public class Constants {
 "#;
         let mut parser = create_java_parser().unwrap();
         let result = parser.parse_file(Path::new("Constants.java"), code);
-        let consts: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Const).collect();
+        let consts: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Const)
+            .collect();
         assert_eq!(consts.len(), 2);
     }
 }

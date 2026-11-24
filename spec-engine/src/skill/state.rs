@@ -55,8 +55,8 @@ pub fn save_state(skills_dir: &Path, state: &SkillState) -> Result<(), std::io::
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(state)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(state).map_err(|e| std::io::Error::other(e.to_string()))?;
     fs::write(path, json)?;
     Ok(())
 }
@@ -159,7 +159,12 @@ pub struct StateDrift {
 pub fn check_drift(skills_dir: &Path) -> Result<Vec<StateDrift>, std::io::Error> {
     let state = match load_state(skills_dir) {
         Some(s) => s,
-        None => return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no state file found")),
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no state file found",
+            ))
+        }
     };
     let entries = inspect_skills(skills_dir);
     let mut drifts = Vec::new();
@@ -176,8 +181,7 @@ pub fn check_drift(skills_dir: &Path) -> Result<Vec<StateDrift>, std::io::Error>
                 continue;
             }
             Some(e) => {
-                if e.file_path.exists()
-                    && sha256_file(&e.file_path).unwrap_or_default() != se.hash
+                if e.file_path.exists() && sha256_file(&e.file_path).unwrap_or_default() != se.hash
                 {
                     drifts.push(StateDrift {
                         id: se.id.clone(),
@@ -243,8 +247,8 @@ pub fn export_bundle(skills_dir: &Path, out_path: &Path) -> Result<SkillBundle, 
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let json = serde_json::to_string_pretty(&bundle)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let json =
+        serde_json::to_string_pretty(&bundle).map_err(|e| std::io::Error::other(e.to_string()))?;
     fs::write(out_path, json)?;
     Ok(bundle)
 }

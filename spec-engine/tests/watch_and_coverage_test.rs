@@ -19,7 +19,9 @@ end_of_record
     let cov_map = parse_lcov(lcov_content);
     assert_eq!(cov_map.len(), 1);
 
-    let auth_lines = cov_map.get(&PathBuf::from("/mock/project/src/auth.rs")).unwrap();
+    let auth_lines = cov_map
+        .get(&PathBuf::from("/mock/project/src/auth.rs"))
+        .unwrap();
     assert_eq!(auth_lines.get(&10), Some(&2));
     assert_eq!(auth_lines.get(&11), Some(&2));
     assert_eq!(auth_lines.get(&12), Some(&0));

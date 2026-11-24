@@ -139,18 +139,25 @@ fn run_gate_0(dir: &Path) -> GateResult {
     for check in formal_checks {
         if !check.passed && !check.skipped {
             passed = false;
-            details.push(format!("[FAIL] {}: {} ({})", check.tool, check.file, check.message));
+            details.push(format!(
+                "[FAIL] {}: {} ({})",
+                check.tool, check.file, check.message
+            ));
             continue;
         }
         if check.skipped {
-            details.push(format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message));
+            details.push(format!(
+                "[SKIP] {}: {} ({})",
+                check.tool, check.file, check.message
+            ));
             continue;
         }
         details.push(format!("[PASS] {}: {}", check.tool, check.file));
     }
 
     if details.is_empty() {
-        details.push("No formal specification models (.als, .tla, .dbml, api.yaml) found".to_string());
+        details
+            .push("No formal specification models (.als, .tla, .dbml, api.yaml) found".to_string());
     }
 
     GateResult {
@@ -185,18 +192,16 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
                 .iter()
                 .filter(|v| v.severity == Severity::Warning)
                 .collect();
-            let has_antislop_failure =
-                tier != TierId::T0 && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
+            let has_antislop_failure = tier != TierId::T0
+                && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
 
             // COV-02 is a warning; `--strict` promotes it to failure.
-            let has_cov02 = graph
-                .violations
-                .iter()
-                .any(|v| v.rule_id == "COV-02");
+            let has_cov02 = graph.violations.iter().any(|v| v.rule_id == "COV-02");
             let passed = graph.is_closed && !(strict && has_cov02) && !has_antislop_failure;
 
             if !passed && strict && has_cov02 {
-                details.push("COV-02 coverage warnings promoted to failures by --strict".to_string());
+                details
+                    .push("COV-02 coverage warnings promoted to failures by --strict".to_string());
             }
             if !passed {
                 for v in &graph.violations {
@@ -207,7 +212,10 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
                 }
             }
             if passed {
-                details.push(format!("Closed MUST gates: structural closed, {} violations", graph.violations.len()));
+                details.push(format!(
+                    "Closed MUST gates: structural closed, {} violations",
+                    graph.violations.len()
+                ));
             }
 
             for v in &anti_errors {
@@ -324,10 +332,7 @@ fn run_gate_3(dir: &Path) -> GateResult {
         };
     }
 
-    let out = Command::new("cargo")
-        .arg("test")
-        .current_dir(dir)
-        .output();
+    let out = Command::new("cargo").arg("test").current_dir(dir).output();
 
     let passed = match out {
         Ok(res) => res.status.success(),
@@ -342,7 +347,8 @@ fn run_gate_3(dir: &Path) -> GateResult {
             serde_json::to_string_pretty(&serde_json::json!({
                 "passed": passed,
                 "skipped": Vec::<String>::new()
-            })).unwrap_or_default()
+            }))
+            .unwrap_or_default(),
         )
     });
 
@@ -388,7 +394,9 @@ fn run_gate_4(dir: &Path) -> GateResult {
                 skipped: false,
                 duration_ms: 0,
                 details: vec![match passed {
-                    true => "Benchmark harness compiled and verified against noise floor".to_string(),
+                    true => {
+                        "Benchmark harness compiled and verified against noise floor".to_string()
+                    }
                     false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
                 }],
             }

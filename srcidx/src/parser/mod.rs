@@ -95,14 +95,13 @@ impl ParserRegistry {
         let extensions: Vec<String> = parser.extensions().iter().map(|s| s.to_string()).collect();
         let instance = Arc::new(RwLock::new(parser));
         let inst_clone = Arc::clone(&instance);
-        let matcher: PathPredicate = Box::new(move |p: &Path| {
-            match inst_clone.read() {
-                Ok(guard) => guard.can_parse(p),
-                Err(_) => p.extension()
-                    .and_then(|e| e.to_str())
-                    .map(|ext| extensions.iter().any(|s| s == ext))
-                    .unwrap_or(false),
-            }
+        let matcher: PathPredicate = Box::new(move |p: &Path| match inst_clone.read() {
+            Ok(guard) => guard.can_parse(p),
+            Err(_) => p
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|ext| extensions.iter().any(|s| s == ext))
+                .unwrap_or(false),
         });
 
         self.entries.write().unwrap().push(ParserEntry {

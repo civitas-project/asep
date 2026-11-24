@@ -196,29 +196,49 @@ fn default_include_ext() -> Vec<String> {
         // Rust
         "rs".into(),
         // TypeScript/JavaScript
-        "ts".into(), "tsx".into(), "js".into(), "jsx".into(), "mjs".into(), "cjs".into(),
+        "ts".into(),
+        "tsx".into(),
+        "js".into(),
+        "jsx".into(),
+        "mjs".into(),
+        "cjs".into(),
         // Python
-        "py".into(), "pyi".into(), "pyx".into(), "pyw".into(),
+        "py".into(),
+        "pyi".into(),
+        "pyx".into(),
+        "pyw".into(),
         // Dart
         "dart".into(),
         // Go
         "go".into(),
         // PHP
-        "php".into(), "php8".into(), "phtml".into(),
+        "php".into(),
+        "php8".into(),
+        "phtml".into(),
         // Java
         "java".into(),
         // Kotlin
-        "kt".into(), "kts".into(),
+        "kt".into(),
+        "kts".into(),
         // C#
         "cs".into(),
         // C/C++
-        "cpp".into(), "cc".into(), "cxx".into(), "hpp".into(), "h".into(), "c".into(),
+        "cpp".into(),
+        "cc".into(),
+        "cxx".into(),
+        "hpp".into(),
+        "h".into(),
+        "c".into(),
         // Ruby
         "rb".into(),
         // Perl
-        "pl".into(), "pm".into(),
+        "pl".into(),
+        "pm".into(),
         // Shell
-        "sh".into(), "bash".into(), "zsh".into(), "fish".into(),
+        "sh".into(),
+        "bash".into(),
+        "zsh".into(),
+        "fish".into(),
         // PowerShell
         "ps1".into(),
         // Lua
@@ -230,15 +250,19 @@ fn default_include_ext() -> Vec<String> {
         // Swift
         "swift".into(),
         // Objective-C
-        "m".into(), "mm".into(),
+        "m".into(),
+        "mm".into(),
         // Scala
         "scala".into(),
         // Clojure
-        "clj".into(), "cljs".into(),
+        "clj".into(),
+        "cljs".into(),
         // Haskell
         "hs".into(),
         // OCaml/F#
-        "ml".into(), "fs".into(), "fsx".into(),
+        "ml".into(),
+        "fs".into(),
+        "fsx".into(),
         // V
         "v".into(),
         // Zig
@@ -248,68 +272,147 @@ fn default_include_ext() -> Vec<String> {
         // D
         "d".into(),
         // Elixir
-        "ex".into(), "exs".into(),
+        "ex".into(),
+        "exs".into(),
         // Erlang
-        "erl".into(), "hrl".into(),
+        "erl".into(),
+        "hrl".into(),
         // Elm
         "elm".into(),
         // PureScript
         "purs".into(),
         // Reason/Rescript
-        "res".into(), "rei".into(),
+        "res".into(),
+        "rei".into(),
         // Config/Data
-        "toml".into(), "json".into(), "yaml".into(), "yml".into(),
+        "toml".into(),
+        "json".into(),
+        "yaml".into(),
+        "yml".into(),
         "xml".into(),
         // Web
-        "html".into(), "css".into(), "scss".into(), "sass".into(), "less".into(),
+        "html".into(),
+        "css".into(),
+        "scss".into(),
+        "sass".into(),
+        "less".into(),
         "svg".into(),
         // TeX/LaTeX
-        "tex".into(), "latex".into(),
+        "tex".into(),
+        "latex".into(),
         // Docs
-        "md".into(), "mdx".into(), "txt".into(), "rst".into(), "adoc".into(),
+        "md".into(),
+        "mdx".into(),
+        "txt".into(),
+        "rst".into(),
+        "adoc".into(),
     ]
 }
 
 fn default_exclude_ext() -> Vec<String> {
     vec![
         // Lock files
-        "lock".into(), "sum".into(), "mod".into(),
+        "lock".into(),
+        "sum".into(),
+        "mod".into(),
         // Package manager
-        "cargo".into(), "npm".into(), "pnpm".into(), "yarn".into(), "bun".into(),
-        "gem".into(), "pip".into(), "poetry".into(), "pipenv".into(),
-        "gradle".into(), "maven".into(),
+        "cargo".into(),
+        "npm".into(),
+        "pnpm".into(),
+        "yarn".into(),
+        "bun".into(),
+        "gem".into(),
+        "pip".into(),
+        "poetry".into(),
+        "pipenv".into(),
+        "gradle".into(),
+        "maven".into(),
         // Compiled
-        "class".into(), "jar".into(), "war".into(), "ear".into(),
-        "dll".into(), "so".into(), "dylib".into(), "exe".into(), "bin".into(),
-        "obj".into(), "o".into(), "a".into(), "lib".into(),
-        "pyc".into(), "pyo".into(), "pyd".into(),
+        "class".into(),
+        "jar".into(),
+        "war".into(),
+        "ear".into(),
+        "dll".into(),
+        "so".into(),
+        "dylib".into(),
+        "exe".into(),
+        "bin".into(),
+        "obj".into(),
+        "o".into(),
+        "a".into(),
+        "lib".into(),
+        "pyc".into(),
+        "pyo".into(),
+        "pyd".into(),
         // Minified
-        "min.js".into(), "min.css".into(),
+        "min.js".into(),
+        "min.css".into(),
         // Source maps
         "map".into(),
         // Archives
-        "gz".into(), "zip".into(), "tar".into(), "tgz".into(),
-        "xz".into(), "bz2".into(), "7z".into(), "rar".into(),
+        "gz".into(),
+        "zip".into(),
+        "tar".into(),
+        "tgz".into(),
+        "xz".into(),
+        "bz2".into(),
+        "7z".into(),
+        "rar".into(),
         // Images
-        "png".into(), "jpg".into(), "jpeg".into(), "gif".into(),
-        "bmp".into(), "ico".into(), "webp".into(), "avif".into(),
+        "png".into(),
+        "jpg".into(),
+        "jpeg".into(),
+        "gif".into(),
+        "bmp".into(),
+        "ico".into(),
+        "webp".into(),
+        "avif".into(),
         // Fonts
-        "ttf".into(), "woff".into(), "woff2".into(), "eot".into(), "otf".into(),
+        "ttf".into(),
+        "woff".into(),
+        "woff2".into(),
+        "eot".into(),
+        "otf".into(),
         // Audio/Video
-        "mp3".into(), "mp4".into(), "wav".into(), "ogg".into(),
-        "flac".into(), "mov".into(), "avi".into(), "mkv".into(), "webm".into(),
+        "mp3".into(),
+        "mp4".into(),
+        "wav".into(),
+        "ogg".into(),
+        "flac".into(),
+        "mov".into(),
+        "avi".into(),
+        "mkv".into(),
+        "webm".into(),
         // Documents
-        "pdf".into(), "doc".into(), "docx".into(),
-        "xls".into(), "xlsx".into(), "ppt".into(), "pptx".into(),
+        "pdf".into(),
+        "doc".into(),
+        "docx".into(),
+        "xls".into(),
+        "xlsx".into(),
+        "ppt".into(),
+        "pptx".into(),
         // Databases
-        "db".into(), "sqlite".into(), "sqlite3".into(),
-        "realm".into(), "mdb".into(), "accdb".into(),
+        "db".into(),
+        "sqlite".into(),
+        "sqlite3".into(),
+        "realm".into(),
+        "mdb".into(),
+        "accdb".into(),
         // Logs/Cache
-        "log".into(), "tmp".into(), "temp".into(), "cache".into(),
-        "swp".into(), "swo".into(), "bak".into(), "backup".into(),
-        "orig".into(), "old".into(),
+        "log".into(),
+        "tmp".into(),
+        "temp".into(),
+        "cache".into(),
+        "swp".into(),
+        "swo".into(),
+        "bak".into(),
+        "backup".into(),
+        "orig".into(),
+        "old".into(),
         // OS
-        "DS_Store".into(), "Thumbs.db".into(), "ehthumbs.db".into(),
+        "DS_Store".into(),
+        "Thumbs.db".into(),
+        "ehthumbs.db".into(),
         "desktop.ini".into(),
     ]
 }

@@ -112,8 +112,7 @@ fn test_ci_gate_1_antislop_error_fails() {
         "anti-slop Error violation should fail Gate 1 at T1"
     );
     assert!(
-        report
-            .gates[0]
+        report.gates[0]
             .details
             .iter()
             .any(|d| d.contains("anti-slop")),
@@ -127,11 +126,7 @@ fn test_ci_gate_1_antislop_error_fails() {
 fn test_ci_gate_1_cov02_strict_promotion() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();
-    fs::write(
-        root.join("spec.md"),
-        "# Spec\n\n@req:FR-CO-02:SHOULD\n",
-    )
-    .unwrap();
+    fs::write(root.join("spec.md"), "# Spec\n\n@req:FR-CO-02:SHOULD\n").unwrap();
 
     let opts = || CiOptions {
         gate: Some(1),

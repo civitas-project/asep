@@ -18,7 +18,9 @@ fn bench_ast_tag_lexing(c: &mut Criterion) {
         } else if i % 50 == 0 {
             lines.push("<!-- @gov:BENCH-LEXER -->".to_string());
         } else {
-            lines.push(format!("pub fn process_step_{i}(val: u64) -> u64 {{ val + 1 }}"));
+            lines.push(format!(
+                "pub fn process_step_{i}(val: u64) -> u64 {{ val + 1 }}"
+            ));
         }
     }
 
@@ -123,4 +125,3 @@ criterion_group!(
     bench_doc_contract_parsing
 );
 criterion_main!(benches);
-

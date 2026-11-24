@@ -66,7 +66,10 @@ pub fn walk_files(config: &Config) -> Result<Vec<PathBuf>> {
         }
 
         // Check include patterns
-        let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
+        let path_str = path
+            .strip_prefix(&config.root)
+            .unwrap_or(path)
+            .to_string_lossy();
         if !config.include_patterns.is_empty()
             && !include_patterns.iter().any(|p| p.matches(&path_str))
         {
@@ -74,7 +77,10 @@ pub fn walk_files(config: &Config) -> Result<Vec<PathBuf>> {
         }
 
         // Check exclude patterns (glob) - post-filter
-        let rel_path = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
+        let rel_path = path
+            .strip_prefix(&config.root)
+            .unwrap_or(path)
+            .to_string_lossy();
         if exclude_patterns.iter().any(|p| p.matches(&rel_path)) {
             continue;
         }
@@ -112,7 +118,10 @@ fn symlink_should_skip(path: &Path, config: &Config, visited_paths: &mut HashSet
         circular = !visited_paths.insert(canonical_str);
     }
     if circular {
-        eprintln!("Warning: Circular symlink detected, skipping: {}", path.display());
+        eprintln!(
+            "Warning: Circular symlink detected, skipping: {}",
+            path.display()
+        );
         return true;
     }
 
@@ -131,7 +140,10 @@ fn symlink_should_skip(path: &Path, config: &Config, visited_paths: &mut HashSet
         Err(_) => return false,
     };
     if !canonical_target.starts_with(&canonical_root) {
-        eprintln!("Warning: Symlink escapes root, skipping: {}", path.display());
+        eprintln!(
+            "Warning: Symlink escapes root, skipping: {}",
+            path.display()
+        );
         return true;
     }
     false
@@ -146,7 +158,10 @@ fn extension_should_skip(path: &Path, config: &Config, include_patterns: &[Patte
             if config.include_patterns.is_empty() {
                 return false;
             }
-            let path_str = path.strip_prefix(&config.root).unwrap_or(path).to_string_lossy();
+            let path_str = path
+                .strip_prefix(&config.root)
+                .unwrap_or(path)
+                .to_string_lossy();
             !include_patterns.iter().any(|p| p.matches(&path_str))
         }
     }

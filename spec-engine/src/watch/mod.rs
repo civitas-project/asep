@@ -16,13 +16,13 @@ pub fn start_watch_mode(
     let (tx, rx) = channel();
 
     let mut watcher = RecommendedWatcher::new(
-        move |res: Result<Event, notify::Error>| {
-            match res {
-                Ok(event) if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() => {
-                    let _ = tx.send(());
-                }
-                _ => {}
+        move |res: Result<Event, notify::Error>| match res {
+            Ok(event)
+                if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() =>
+            {
+                let _ = tx.send(());
             }
+            _ => {}
         },
         Config::default().with_poll_interval(Duration::from_millis(300)),
     )?;
@@ -71,8 +71,8 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
                 start.elapsed()
             );
 
-            if let Some(cov_map) = coverage_path
-                .and_then(|cov_p| crate::coverage::parse_lcov_file(cov_p).ok())
+            if let Some(cov_map) =
+                coverage_path.and_then(|cov_p| crate::coverage::parse_lcov_file(cov_p).ok())
             {
                 let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
                 println!(
@@ -106,8 +106,14 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
 /// cycle. Watch mode reports these every cycle but never exits non-zero.
 pub fn anti_slop_summary(dir: &Path) -> (usize, usize) {
     let violations = audit_project_anti_slop(dir).unwrap_or_default();
-    let errors = violations.iter().filter(|v| v.severity == Severity::Error).count();
-    let warnings = violations.iter().filter(|v| v.severity == Severity::Warning).count();
+    let errors = violations
+        .iter()
+        .filter(|v| v.severity == Severity::Error)
+        .count();
+    let warnings = violations
+        .iter()
+        .filter(|v| v.severity == Severity::Warning)
+        .count();
     (errors, warnings)
 }
 

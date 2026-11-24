@@ -15,11 +15,15 @@ pub struct NdjsonEmitter {
 
 impl NdjsonEmitter {
     pub fn new() -> Self {
-        Self { include_schema: true }
+        Self {
+            include_schema: true,
+        }
     }
 
     pub fn without_schema() -> Self {
-        Self { include_schema: false }
+        Self {
+            include_schema: false,
+        }
     }
 }
 
@@ -160,7 +164,9 @@ mod tests {
     fn test_ndjson_emit_and_read() {
         let mut index = SymbolIndex::new("/test".to_string());
         index.header.files = 1;
-        index.header = index.header.with_fields(crate::index::generate_index_fields());
+        index.header = index
+            .header
+            .with_fields(crate::index::generate_index_fields());
         index.add_symbol(Symbol {
             kind: SymbolKind::Fn,
             name: "test_fn".to_string(),

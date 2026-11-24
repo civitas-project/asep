@@ -102,20 +102,16 @@ impl RustParser {
                 continue;
             }
             match &attr.meta {
-                syn::Meta::NameValue(meta) => {
-                    match &meta.value {
-                        syn::Expr::Lit(expr) => {
-                            match &expr.lit {
-                                syn::Lit::Str(lit) => {
-                                    let s = lit.value();
-                                    docs.push(s.trim_start_matches(' ').to_string());
-                                }
-                                _ => {}
-                            }
+                syn::Meta::NameValue(meta) => match &meta.value {
+                    syn::Expr::Lit(expr) => match &expr.lit {
+                        syn::Lit::Str(lit) => {
+                            let s = lit.value();
+                            docs.push(s.trim_start_matches(' ').to_string());
                         }
                         _ => {}
-                    }
-                }
+                    },
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -133,7 +129,10 @@ impl RustParser {
         };
         for line in doc.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("@impl:") || trimmed.starts_with("@test:") || trimmed.starts_with("@criticality:") {
+            if trimmed.starts_with("@impl:")
+                || trimmed.starts_with("@test:")
+                || trimmed.starts_with("@criticality:")
+            {
                 tags.push(trimmed.to_string());
             }
         }
@@ -178,7 +177,18 @@ impl RustParser {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn add_symbol(&self, symbols: &mut Vec<Symbol>, kind: SymbolKind, name: String, signature: String, line: u32, end_line: u32, doc: Option<String>, visibility: Visibility, attrs: Vec<String>) {
+    fn add_symbol(
+        &self,
+        symbols: &mut Vec<Symbol>,
+        kind: SymbolKind,
+        name: String,
+        signature: String,
+        line: u32,
+        end_line: u32,
+        doc: Option<String>,
+        visibility: Visibility,
+        attrs: Vec<String>,
+    ) {
         let module_prefix = self.current_module();
         let qualified_name = match module_prefix.is_empty() {
             true => name.clone(),
@@ -220,7 +230,9 @@ impl RustParser {
                 }
                 signature.push('(');
                 for (i, input) in node.sig.inputs.iter().enumerate() {
-                    if i > 0 { signature.push_str(", "); }
+                    if i > 0 {
+                        signature.push_str(", ");
+                    }
                     signature.push_str(&quote::quote!(#input).to_string());
                 }
                 signature.push(')');
@@ -231,7 +243,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Fn, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Fn,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Struct(node) => {
                 let name = node.ident.to_string();
@@ -247,7 +269,9 @@ impl RustParser {
                 }
                 signature.push_str(" { ");
                 for (i, field) in node.fields.iter().enumerate() {
-                    if i > 0 { signature.push_str(", "); }
+                    if i > 0 {
+                        signature.push_str(", ");
+                    }
                     let ty = &field.ty;
                     match &field.ident {
                         Some(ident) => {
@@ -263,7 +287,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Struct, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Struct,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Enum(node) => {
                 let name = node.ident.to_string();
@@ -279,7 +313,9 @@ impl RustParser {
                 }
                 signature.push_str(" { ");
                 for (i, variant) in node.variants.iter().enumerate() {
-                    if i > 0 { signature.push_str(", "); }
+                    if i > 0 {
+                        signature.push_str(", ");
+                    }
                     signature.push_str(&variant.ident.to_string());
                     if !variant.fields.is_empty() {
                         signature.push_str(" { ... }");
@@ -290,7 +326,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Enum, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Enum,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Trait(node) => {
                 let name = node.ident.to_string();
@@ -312,7 +358,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Trait, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Trait,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Impl(node) => {
                 let line = self.span_line(node.impl_token.span);
@@ -328,7 +384,11 @@ impl RustParser {
                 let self_ty = &node.self_ty;
                 let name = match &node.trait_ {
                     Some((_, trait_ref, _)) => {
-                        signature.push_str(&format!(" {} for {}", quote::quote!(#trait_ref), quote::quote!(#self_ty)));
+                        signature.push_str(&format!(
+                            " {} for {}",
+                            quote::quote!(#trait_ref),
+                            quote::quote!(#self_ty)
+                        ));
                         let trait_name = clean_path_name(trait_ref);
                         let type_name = clean_type_name(self_ty);
                         format!("impl_{}_for_{}", trait_name, type_name)
@@ -344,7 +404,17 @@ impl RustParser {
                 let attrs = self.extract_attrs(&node.attrs);
                 let visibility = Visibility::Private;
 
-                self.add_symbol(symbols, SymbolKind::Impl, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Impl,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Mod(node) => {
                 let name = node.ident.to_string();
@@ -356,7 +426,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Mod, name.clone(), signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Mod,
+                    name.clone(),
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
 
                 // For inline modules, visit contents recursively
                 if let Some((_, items)) = &node.content {
@@ -375,12 +455,27 @@ impl RustParser {
 
                 let ty = &node.ty;
                 let expr = &node.expr;
-                let signature = format!("const {}: {} = {}", name, quote::quote!(#ty), quote::quote!(#expr));
+                let signature = format!(
+                    "const {}: {} = {}",
+                    name,
+                    quote::quote!(#ty),
+                    quote::quote!(#expr)
+                );
 
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Const, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Const,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Type(node) => {
                 let name = node.ident.to_string();
@@ -394,7 +489,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Type, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Type,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Static(node) => {
                 let name = node.ident.to_string();
@@ -412,7 +517,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Variable, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Variable,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Union(node) => {
                 let name = node.ident.to_string();
@@ -431,7 +546,9 @@ impl RustParser {
                     false => {
                         signature.push_str(" { ");
                         for (i, field) in node.fields.named.iter().enumerate() {
-                            if i > 0 { signature.push_str(", "); }
+                            if i > 0 {
+                                signature.push_str(", ");
+                            }
                             let ty = &field.ty;
                             if let Some(ident) = &field.ident {
                                 signature.push_str(&format!("{}: {}", ident, quote::quote!(#ty)));
@@ -444,7 +561,17 @@ impl RustParser {
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
 
-                self.add_symbol(symbols, SymbolKind::Struct, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Struct,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::Macro(node) => {
                 let path = &node.mac.path;
@@ -469,12 +596,23 @@ impl RustParser {
                 let end_line = self.span_line_end(syn::spanned::Spanned::span(node));
                 let doc = self.extract_doc(&node.attrs);
                 let attrs = self.extract_attrs(&node.attrs);
-                let visibility = match node.attrs.iter().any(|a| a.path().is_ident("macro_export")) {
+                let visibility = match node.attrs.iter().any(|a| a.path().is_ident("macro_export"))
+                {
                     true => Visibility::Pub,
                     false => Visibility::Private,
                 };
 
-                self.add_symbol(symbols, SymbolKind::Macro, name, signature, line, end_line, doc, visibility, attrs);
+                self.add_symbol(
+                    symbols,
+                    SymbolKind::Macro,
+                    name,
+                    signature,
+                    line,
+                    end_line,
+                    doc,
+                    visibility,
+                    attrs,
+                );
             }
             Item::ForeignMod(_) => {}
             Item::ExternCrate(_) => {}
@@ -502,12 +640,19 @@ impl SourceParser for RustParser {
         }
 
         // Set file paths for all symbols
-        let rel_path = path.strip_prefix(std::env::current_dir().unwrap_or(PathBuf::from("."))).unwrap_or(path).to_string_lossy().to_string();
+        let rel_path = path
+            .strip_prefix(std::env::current_dir().unwrap_or(PathBuf::from(".")))
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
         for symbol in &mut symbols {
             symbol.file = rel_path.clone();
         }
 
-        ParseResult { symbols, errors: Vec::new() }
+        ParseResult {
+            symbols,
+            errors: Vec::new(),
+        }
     }
 
     fn extensions(&self) -> &[&str] {
@@ -535,13 +680,21 @@ static mut BUFFER: [u8; 1024] = [0; 1024];
         let result = parser.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.errors.len(), 0);
 
-        let counter = result.symbols.iter().find(|s| s.name == "COUNTER").expect("COUNTER not found");
+        let counter = result
+            .symbols
+            .iter()
+            .find(|s| s.name == "COUNTER")
+            .expect("COUNTER not found");
         assert_eq!(counter.kind, SymbolKind::Variable);
         assert_eq!(counter.visibility, Visibility::Pub);
         assert_eq!(counter.signature, "static COUNTER: usize");
         assert_eq!(counter.doc.as_deref(), Some("Global configuration counter"));
 
-        let buffer = result.symbols.iter().find(|s| s.name == "BUFFER").expect("BUFFER not found");
+        let buffer = result
+            .symbols
+            .iter()
+            .find(|s| s.name == "BUFFER")
+            .expect("BUFFER not found");
         assert_eq!(buffer.kind, SymbolKind::Variable);
         assert_eq!(buffer.visibility, Visibility::Private);
         assert_eq!(buffer.signature, "static mut BUFFER: [u8 ; 1024]");
@@ -561,11 +714,18 @@ pub union Value {
         let result = parser.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.errors.len(), 0);
 
-        let union_sym = result.symbols.iter().find(|s| s.name == "Value").expect("Value not found");
+        let union_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.name == "Value")
+            .expect("Value not found");
         assert_eq!(union_sym.kind, SymbolKind::Struct);
         assert_eq!(union_sym.visibility, Visibility::Pub);
         assert_eq!(union_sym.signature, "union Value { i: i32, f: f32 }");
-        assert_eq!(union_sym.doc.as_deref(), Some("Untagged union representation"));
+        assert_eq!(
+            union_sym.doc.as_deref(),
+            Some("Untagged union representation")
+        );
     }
 
     #[test]
@@ -581,7 +741,11 @@ macro_rules! my_log {
         let result = parser.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.errors.len(), 0);
 
-        let mac = result.symbols.iter().find(|s| s.name == "my_log").expect("my_log not found");
+        let mac = result
+            .symbols
+            .iter()
+            .find(|s| s.name == "my_log")
+            .expect("my_log not found");
         assert_eq!(mac.kind, SymbolKind::Macro);
         assert_eq!(mac.visibility, Visibility::Pub);
         assert_eq!(mac.signature, "macro_rules! my_log");
@@ -610,7 +774,11 @@ impl<T> Vec<T> {}
         let result = parser.parse_file(Path::new("test.rs"), code);
         assert_eq!(result.errors.len(), 0);
 
-        let impls: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Impl).collect();
+        let impls: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Impl)
+            .collect();
         assert_eq!(impls.len(), 4);
 
         assert_eq!(impls[0].name, "impl_MyStruct");
@@ -623,13 +791,24 @@ impl<T> Vec<T> {}
         assert!(impls[2].signature.contains("std :: fmt :: Display for Vec"));
 
         assert_eq!(impls[3].name, "impl_Vec");
-        assert!(impls[3].signature.contains("impl < T > Vec < T >") || impls[3].signature.contains("impl<T> Vec<T>"));
+        assert!(
+            impls[3].signature.contains("impl < T > Vec < T >")
+                || impls[3].signature.contains("impl<T> Vec<T>")
+        );
 
         for imp in &impls {
-            assert!(!imp.name.ends_with('_'), "impl name {} ends with underscore", imp.name);
+            assert!(
+                !imp.name.ends_with('_'),
+                "impl name {} ends with underscore",
+                imp.name
+            );
             assert!(!imp.name.contains('<'), "impl name {} contains <", imp.name);
             assert!(!imp.name.contains('>'), "impl name {} contains >", imp.name);
-            assert!(!imp.name.contains(' '), "impl name {} contains space", imp.name);
+            assert!(
+                !imp.name.contains(' '),
+                "impl name {} contains space",
+                imp.name
+            );
         }
     }
 }

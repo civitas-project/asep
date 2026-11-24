@@ -1,4 +1,4 @@
-use asep::policy::{CoverageRule, Policy, Severity, TierId, load_policy};
+use asep::policy::{load_policy, CoverageRule, Policy, Severity, TierId};
 use regex::Regex;
 
 fn rule_by_id<'a>(policy: &'a Policy, id: &str) -> &'a CoverageRule {

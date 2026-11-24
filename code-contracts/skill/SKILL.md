@@ -1,6 +1,7 @@
 ---
 name: code-contracts
 description: Use when authoring or auditing function docstrings, enforcing strict conditionality, eliminating comment parroting, or documenting memory ownership and lock hierarchies
+requires: []
 version: 2.1.0
 depends: []
 ---

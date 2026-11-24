@@ -1,6 +1,7 @@
 ---
 name: system-architecture
 description: Use when orchestrating Phase 1 Spikes, Phase 2 Vertical-Slice TDD, Systematic Debugging, Rich ADRs, Alloy/TLA+ formal proofs, or running the 5-Gate CI verification pipeline
+requires: []
 version: 2.1.0
 depends: []
 ---

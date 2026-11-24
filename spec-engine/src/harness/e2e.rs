@@ -45,8 +45,12 @@ pub fn new_run(root: &Path, run_id: &str) -> Result<PathBuf, String> {
     }
 
     let run_dir = root.join(run_id);
-    fs::create_dir_all(&run_dir)
-        .map_err(|e| format!("failed to create run directory '{}': {e}", run_dir.display()))?;
+    fs::create_dir_all(&run_dir).map_err(|e| {
+        format!(
+            "failed to create run directory '{}': {e}",
+            run_dir.display()
+        )
+    })?;
 
     let manifest = Manifest {
         schema_version: 1,
@@ -58,11 +62,15 @@ pub fn new_run(root: &Path, run_id: &str) -> Result<PathBuf, String> {
         created_at: now_rfc3339(),
     };
 
-    let manifest_json =
-        serde_json::to_string_pretty(&manifest).map_err(|e| format!("failed to serialize manifest: {e}"))?;
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("failed to serialize manifest: {e}"))?;
     let manifest_path = run_dir.join("manifest.json");
-    fs::write(&manifest_path, format!("{manifest_json}\n"))
-        .map_err(|e| format!("failed to write manifest '{0}': {e}", manifest_path.display()))?;
+    fs::write(&manifest_path, format!("{manifest_json}\n")).map_err(|e| {
+        format!(
+            "failed to write manifest '{0}': {e}",
+            manifest_path.display()
+        )
+    })?;
 
     Ok(run_dir)
 }
@@ -108,10 +116,7 @@ fn now_rfc3339() -> String {
     let h = sod / 3600;
     let mi = (sod % 3600) / 60;
     let s = sod % 60;
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, m, d, h, mi, s
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, h, mi, s)
 }
 
 fn rustc_version() -> Result<String, String> {
@@ -148,7 +153,9 @@ fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
         .map_err(|e| format!("failed to read directory '{}': {e}", src.display()))?
     {
         let entry = entry.map_err(|e| format!("failed to read directory entry: {e}"))?;
-        let file_type = entry.file_type().map_err(|e| format!("failed to get file type: {e}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("failed to get file type: {e}"))?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if !file_type.is_dir() {
@@ -441,7 +448,10 @@ fn test_hash_lock(run_dir: &Path) -> (bool, String) {
         return (true, "hash lock matches 03-hash.txt".to_string());
     }
     if single_ok {
-        return (true, "hash lock matches a single test file in 03-hash.txt".to_string());
+        return (
+            true,
+            "hash lock matches a single test file in 03-hash.txt".to_string(),
+        );
     }
     (
         false,
@@ -586,7 +596,9 @@ fn is_executable_file(path: &Path) -> bool {
 
 #[cfg(not(unix))]
 fn is_executable_file(path: &Path) -> bool {
-    let is_file = fs::metadata(path).map(|metadata| metadata.is_file()).unwrap_or(false);
+    let is_file = fs::metadata(path)
+        .map(|metadata| metadata.is_file())
+        .unwrap_or(false);
     if !is_file {
         return false;
     }

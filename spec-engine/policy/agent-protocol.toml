@@ -1,8 +1,8 @@
-version = 1
+version = 2
 statuses = ["sent", "accepted", "rejected", "done"]
 
 [[roles]]
-name = "lead"
+name = "leader"
 kinds = ["TASK_DISPATCH", "RULING"]
 
 [[roles]]
@@ -29,6 +29,8 @@ required = ["finding", "decision", "cost_if_wrong"]
 name = "TASK_REPORT"
 required = ["status", "commits", "tests", "concerns"]
 array_fields = ["concerns"]
+optional_numeric = ["tool_call_count"]
+optional_array = ["duplicate_calls"]
 [[kinds.nested]]
 field = "tests"
 required = ["exit_code", "ref"]

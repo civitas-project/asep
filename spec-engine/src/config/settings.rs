@@ -1,4 +1,6 @@
+// @impl:FR-ACC-05
 //! Persistent TOML configuration manager for spec-engine.
+// @impl:FR-CAP-01 // @impl:FR-CAP-03 // @impl:FR-CAP-04 // @impl:FR-CAP-08
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -59,6 +61,9 @@ pub struct CapabilityProfile {
     pub subagents: bool,
     pub web: bool,
     pub context_window: usize,
+    pub supported_media: Vec<String>,
+    pub tool_domains: Vec<String>,
+    pub delegation_threshold: usize,
 }
 
 impl Default for CapabilityProfile {
@@ -71,6 +76,9 @@ impl Default for CapabilityProfile {
             subagents: true,
             web: true,
             context_window: 200_000,
+            supported_media: vec!["text".to_string(), "code".to_string()],
+            tool_domains: vec!["code".to_string()],
+            delegation_threshold: 3,
         }
     }
 }
@@ -95,6 +103,28 @@ impl CapabilityProfile {
             })
             .collect()
     }
+
+    /// Returns true if `media` is empty or present in `supported_media`
+    /// (case-sensitive match).
+    pub fn supports_media(&self, media: &str) -> bool {
+        media.is_empty() || self.supported_media.iter().any(|m| m == media)
+    }
+
+    /// Checks required capabilities via `missing()`, then optional media.
+    /// Returns Err describing the first blocking requirement, else Ok(()).
+    pub fn covers(&self, required: &[&str], media: Option<&str>) -> Result<(), String> {
+        if let Some(first) = self.missing(required).into_iter().next() {
+            return Err(format!("BLOCKED: requires {first}"));
+        }
+        let media = match media.filter(|m| !m.is_empty()) {
+            Some(media) => media,
+            None => return Ok(()),
+        };
+        if !self.supports_media(media) {
+            return Err(format!("BLOCKED: requires media:{media}"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -107,6 +137,9 @@ pub struct EngineConfig {
 
     #[serde(default)]
     pub capabilities: CapabilityProfile,
+
+    #[serde(default)]
+    pub evidence_dir: Option<String>,
 }
 
 /// Resolves the canonical path to `config.toml` in target directory (`.spec-engine/config.toml`).

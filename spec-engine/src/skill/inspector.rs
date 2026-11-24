@@ -1,4 +1,5 @@
 //! Status inspector comparing local skills against binary embedded originals.
+// @impl:FR-AMB-05
 
 use crate::pack::embedded::{get_embedded_skills, EmbeddedSkill};
 use crate::skill::model::{SkillEntry, SkillStatus};
@@ -89,6 +90,62 @@ pub fn extract_skill_metadata(content: &str) -> (String, String) {
     (name, desc)
 }
 
+/// Extracts YAML frontmatter `requires` field: `[a, b]` inline list or
+/// `- item` dash list. Returns empty vec when `requires` is absent.
+pub fn extract_skill_requires(content: &str) -> Vec<String> {
+    let mut requires: Vec<String> = Vec::new();
+
+    // Guard-clause mandate: no if/else and no match guards; explicit matches
+    // with empty None arms replace if-let chains here.
+    #[allow(clippy::single_match)]
+    match content.strip_prefix("---") {
+        Some(rest) =>
+        {
+            #[allow(clippy::single_match)]
+            match rest.find("\n---") {
+                Some(end_idx) => {
+                    let frontmatter = &rest[..end_idx];
+                    let mut current_field: Option<&str> = None;
+
+                    for raw_line in frontmatter.lines() {
+                        let line = raw_line.trim_end();
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+
+                        let trimmed = line.trim();
+                        match (
+                            trimmed.starts_with("requires:"),
+                            trimmed.starts_with("- ") && current_field == Some("requires"),
+                        ) {
+                            (true, _) => {
+                                let v = trimmed["requires:".len()..].trim();
+                                parse_depends_list(v, &mut requires);
+                                current_field = Some("requires");
+                            }
+                            (_, true) => {
+                                let item = trimmed[2..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .trim();
+                                if !item.is_empty() {
+                                    requires.push(item.to_string());
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+        None => {}
+    }
+
+    requires
+}
+
 /// Extracts full frontmatter metadata including version and depends.
 pub fn extract_skill_full_metadata(content: &str) -> (String, String, Option<String>, Vec<String>) {
     let mut name = String::new();
@@ -107,81 +164,81 @@ pub fn extract_skill_full_metadata(content: &str) -> (String, String, Option<Str
                     let frontmatter = &rest[..end_idx];
                     let mut current_field: Option<&str> = None;
 
-                for raw_line in frontmatter.lines() {
-                    let line = raw_line.trim_end();
-                    if line.trim().is_empty() {
-                        continue;
-                    }
+                    for raw_line in frontmatter.lines() {
+                        let line = raw_line.trim_end();
+                        if line.trim().is_empty() {
+                            continue;
+                        }
 
-                    let trimmed = line.trim();
-                    // Priority-ordered replacement of the if/else-if chain.
-                    // Match on a tuple of bools: no match guards, no else.
-                    match (
-                        trimmed.starts_with("name:"),
-                        trimmed.starts_with("description:"),
-                        trimmed.starts_with("version:"),
-                        trimmed.starts_with("depends:"),
-                        trimmed.starts_with("- ") && current_field == Some("depends"),
-                        (line.starts_with("  ") || line.starts_with("    "))
-                            && current_field == Some("description"),
-                    ) {
-                        (true, _, _, _, _, _) => {
-                            name = trimmed["name:".len()..]
-                                .trim()
-                                .trim_matches('"')
-                                .trim_matches('\'')
-                                .to_string();
-                            current_field = Some("name");
-                        }
-                        (_, true, _, _, _, _) => {
-                            let clean = trimmed["description:".len()..]
-                                .trim()
-                                .trim_matches('>')
-                                .trim()
-                                .trim_matches('"')
-                                .trim_matches('\'');
-                            description = clean.to_string();
-                            current_field = Some("description");
-                        }
-                        (_, _, true, _, _, _) => {
-                            let v = trimmed["version:".len()..]
-                                .trim()
-                                .trim_matches('"')
-                                .trim_matches('\'')
-                                .to_string();
-                            if !v.is_empty() {
-                                version = Some(v);
+                        let trimmed = line.trim();
+                        // Priority-ordered replacement of the if/else-if chain.
+                        // Match on a tuple of bools: no match guards, no else.
+                        match (
+                            trimmed.starts_with("name:"),
+                            trimmed.starts_with("description:"),
+                            trimmed.starts_with("version:"),
+                            trimmed.starts_with("depends:"),
+                            trimmed.starts_with("- ") && current_field == Some("depends"),
+                            (line.starts_with("  ") || line.starts_with("    "))
+                                && current_field == Some("description"),
+                        ) {
+                            (true, _, _, _, _, _) => {
+                                name = trimmed["name:".len()..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .to_string();
+                                current_field = Some("name");
                             }
-                            current_field = Some("version");
-                        }
-                        (_, _, _, true, _, _) => {
-                            let v = trimmed["depends:".len()..].trim();
-                            parse_depends_list(v, &mut depends);
-                            current_field = Some("depends");
-                        }
-                        (_, _, _, _, true, _) => {
-                            let item = trimmed[2..]
-                                .trim()
-                                .trim_matches('"')
-                                .trim_matches('\'')
-                                .trim();
-                            if !item.is_empty() {
-                                depends.push(item.to_string());
+                            (_, true, _, _, _, _) => {
+                                let clean = trimmed["description:".len()..]
+                                    .trim()
+                                    .trim_matches('>')
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'');
+                                description = clean.to_string();
+                                current_field = Some("description");
                             }
-                        }
-                        (_, _, _, _, false, true) => {
-                            if !description.is_empty() {
-                                description.push(' ');
+                            (_, _, true, _, _, _) => {
+                                let v = trimmed["version:".len()..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .to_string();
+                                if !v.is_empty() {
+                                    version = Some(v);
+                                }
+                                current_field = Some("version");
                             }
-                            description.push_str(line.trim());
+                            (_, _, _, true, _, _) => {
+                                let v = trimmed["depends:".len()..].trim();
+                                parse_depends_list(v, &mut depends);
+                                current_field = Some("depends");
+                            }
+                            (_, _, _, _, true, _) => {
+                                let item = trimmed[2..]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .trim_matches('\'')
+                                    .trim();
+                                if !item.is_empty() {
+                                    depends.push(item.to_string());
+                                }
+                            }
+                            (_, _, _, _, false, true) => {
+                                if !description.is_empty() {
+                                    description.push(' ');
+                                }
+                                description.push_str(line.trim());
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     }
                 }
+                None => {}
             }
-            None => {}
         }
-    }
 
         None => {}
     }

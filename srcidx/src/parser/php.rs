@@ -1,19 +1,16 @@
 //! PHP parser using tree-sitter.
 
 use crate::index::SymbolKind;
-use crate::parser::SourceParser;
 use crate::parser::tree_sitter_base::{TreeSitterConfig, TreeSitterParser};
-use tree_sitter::Query;
+use crate::parser::SourceParser;
 use anyhow::Result;
+use tree_sitter::Query;
 
 /// Create a PHP parser.
 pub fn create_php_parser() -> Result<Box<dyn SourceParser>> {
     let php_language = tree_sitter_php::LANGUAGE_PHP.into();
-    
-    let php_query = Query::new(
-        &php_language,
-        include_str!("queries/php/tags.scm"),
-    )?;
+
+    let php_query = Query::new(&php_language, include_str!("queries/php/tags.scm"))?;
 
     // Pattern kind map: maps pattern index to symbol kind
     // Pattern indices (0-based) correspond to patterns in queries/php/tags.scm:
@@ -34,21 +31,21 @@ pub fn create_php_parser() -> Result<Box<dyn SourceParser>> {
     // 14: doc comment
     // 15: attrs (attribute)
     let pattern_kind_map = vec![
-        SymbolKind::Fn,         // 0: function_definition
-        SymbolKind::Fn,         // 1: method_declaration
-        SymbolKind::Class,      // 2: class_declaration
-        SymbolKind::Interface,  // 3: interface_declaration
-        SymbolKind::Trait,      // 4: trait_declaration
-        SymbolKind::Enum,       // 5: enum_declaration
-        SymbolKind::Const,      // 6: const_declaration
-        SymbolKind::Variable,   // 7: property_declaration
-        SymbolKind::Import,     // 8: namespace_use_declaration (name)
-        SymbolKind::Import,     // 9: namespace_use_declaration (qualified_name)
-        SymbolKind::Import,     // 10: namespace_use_declaration (relative_name)
-        SymbolKind::Import,     // 11: namespace_use_declaration (namespace_use_group name)
-        SymbolKind::Import,     // 12: namespace_use_declaration (namespace_use_group qualified_name)
-        SymbolKind::Mod,        // 13: namespace_definition
-        SymbolKind::Other("doc".into()),   // 14: doc comment
+        SymbolKind::Fn,                    // 0: function_definition
+        SymbolKind::Fn,                    // 1: method_declaration
+        SymbolKind::Class,                 // 2: class_declaration
+        SymbolKind::Interface,             // 3: interface_declaration
+        SymbolKind::Trait,                 // 4: trait_declaration
+        SymbolKind::Enum,                  // 5: enum_declaration
+        SymbolKind::Const,                 // 6: const_declaration
+        SymbolKind::Variable,              // 7: property_declaration
+        SymbolKind::Import,                // 8: namespace_use_declaration (name)
+        SymbolKind::Import,                // 9: namespace_use_declaration (qualified_name)
+        SymbolKind::Import,                // 10: namespace_use_declaration (relative_name)
+        SymbolKind::Import, // 11: namespace_use_declaration (namespace_use_group name)
+        SymbolKind::Import, // 12: namespace_use_declaration (namespace_use_group qualified_name)
+        SymbolKind::Mod,    // 13: namespace_definition
+        SymbolKind::Other("doc".into()), // 14: doc comment
         SymbolKind::Other("attrs".into()), // 15: attrs
     ];
 
@@ -112,9 +109,17 @@ class Point {
 "#;
         let mut parser = create_php_parser().unwrap();
         let result = parser.parse_file(Path::new("test.php"), code);
-        let class_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Class).unwrap();
+        let class_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Class)
+            .unwrap();
         assert_eq!(class_sym.name, "Point");
-        let method_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "distance").unwrap();
+        let method_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "distance")
+            .unwrap();
         assert_eq!(method_sym.name, "distance");
     }
 
@@ -128,7 +133,11 @@ interface Shape {
 "#;
         let mut parser = create_php_parser().unwrap();
         let result = parser.parse_file(Path::new("test.php"), code);
-        let interfaces: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Interface).collect();
+        let interfaces: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface)
+            .collect();
         assert_eq!(interfaces.len(), 1);
         assert_eq!(interfaces[0].name, "Shape");
     }
@@ -145,7 +154,11 @@ trait Logger {
 "#;
         let mut parser = create_php_parser().unwrap();
         let result = parser.parse_file(Path::new("test.php"), code);
-        let traits: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Trait).collect();
+        let traits: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Trait)
+            .collect();
         assert_eq!(traits.len(), 1);
         assert_eq!(traits[0].name, "Logger");
     }
@@ -159,7 +172,11 @@ use function App\Helpers\format;
 "#;
         let mut parser = create_php_parser().unwrap();
         let result = parser.parse_file(Path::new("test.php"), code);
-        let imports: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Import).collect();
+        let imports: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .collect();
         assert_eq!(imports.len(), 2);
     }
 
@@ -174,7 +191,11 @@ enum Status: string {
 "#;
         let mut parser = create_php_parser().unwrap();
         let result = parser.parse_file(Path::new("test.php"), code);
-        let enums: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Enum).collect();
+        let enums: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Enum)
+            .collect();
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Status");
     }
