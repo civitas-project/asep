@@ -222,6 +222,16 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-IMPACT-06->FR-IMPACT-06 "affected tests assert legacy same-id fallback"
 @rel:verifies:FR-IMPACT-07->FR-IMPACT-07 "affected tests assert deterministic cycle-safe traversal"
 
+# Traceability relations (@rel:satisfies) — P3.2 ADR Annotation Coverage
+@rel:satisfies:FR-ADRCOV-01->FR-ADRCOV-01
+@rel:satisfies:FR-ADRCOV-02->FR-ADRCOV-02
+@rel:satisfies:FR-ADRCOV-03->FR-ADRCOV-03
+
+# Traceability relations (@rel:verifies) — P3.2 ADR Annotation Coverage
+@rel:verifies:FR-ADRCOV-01->FR-ADRCOV-01 "affected tests assert ADR start node propagates to dependents"
+@rel:verifies:FR-ADRCOV-02->FR-ADRCOV-02 "affected tests assert ADR sink prevents false propagation"
+@rel:verifies:FR-ADRCOV-03->FR-ADRCOV-03 "affected tests assert backward compatibility"
+
 # Traceability relations (@rel:satisfies) — Layer 5 Agent Runtime
 @rel:satisfies:FR-AUDIT-01->FR-AUDIT-01
 @rel:satisfies:FR-LEVEL-01->FR-LEVEL-01

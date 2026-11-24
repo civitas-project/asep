@@ -103,9 +103,13 @@ Reuse `build_relation_graph` (tanpa engine baru, database, atau dependency). Add
 <!-- @req:FR-IMPACT-06:MUST The legacy same-ID fallback (no `@rel` tags) shall remain functional. -->
 <!-- @req:FR-IMPACT-07:MUST Traversal shall be deterministic (sorted output) and shall not loop on cyclic graphs. -->
 
-### P3.2 — ADR annotation coverage (separate, not this slice)
+### P3.2 — ADR Annotation Coverage
 
-ADR-to-requirement links via `@rel:informs` and coverage. Deferred to next slice.
+Documentation-first, graph data-quality slice. Reuse existing graph builder, impact traversal, validators. No new engine, dependency, or abstraction.
+
+<!-- @req:FR-ADRCOV-01:MUST When an ADR is a changed path, `asep affected` shall traverse incoming `Informs` edges to report genuinely dependent requirements and implementations, without treating the ADR as a transit hub. -->
+<!-- @req:FR-ADRCOV-02:MUST Terminal-sink behavior shall be preserved for ADRs reached during traversal: no outgoing traversal from an ADR, and no incoming traversal from a non-start ADR. -->
+<!-- @req:FR-ADRCOV-03:MUST Existing impact report fields, traversal behavior for non-ADR nodes, coverage rules, and legacy fallback shall remain unchanged. -->
 
 ### P3.3 — Graph export (conditional)
 

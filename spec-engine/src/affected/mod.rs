@@ -1,5 +1,6 @@
 // @impl:FR-IMPACT-01 // @impl:FR-IMPACT-02 // @impl:FR-IMPACT-03 // @impl:FR-IMPACT-04
 // @impl:FR-IMPACT-05 // @impl:FR-IMPACT-06 // @impl:FR-IMPACT-07
+// @impl:FR-ADRCOV-01 // @impl:FR-ADRCOV-02 // @impl:FR-ADRCOV-03
 //! Impact analysis: compute the impls, requirements, tests, and cargo test
 //! commands affected by a set of changed files.
 //!
@@ -137,9 +138,14 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     }
 
     // We need provenance keyed by typed id. Re-run with typed keys in queue.
-    // Rework: queue holds (typed_id, node_id, kind, chain)
-    let mut queue2: std::collections::VecDeque<(String, String, NodeKind, Vec<ProvenanceHop>)> =
-        std::collections::VecDeque::new();
+    // Rework: queue holds (typed_id, node_id, kind, is_start, chain)
+    let mut queue2: std::collections::VecDeque<(
+        String,
+        String,
+        NodeKind,
+        bool,
+        Vec<ProvenanceHop>,
+    )> = std::collections::VecDeque::new();
     let mut visited2: HashSet<String> = HashSet::new();
     let mut provenance: std::collections::BTreeMap<String, Vec<ProvenanceHop>> =
         std::collections::BTreeMap::new();
@@ -152,7 +158,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                 edge: None,
             }];
             provenance.insert(tid.clone(), chain.clone());
-            queue2.push_back((tid, node.id.clone(), node.kind, chain));
+            queue2.push_back((tid, node.id.clone(), node.kind, true, chain));
         }
     }
 
@@ -181,17 +187,16 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         }
     }
 
-    while let Some((_tid, id, kind, chain)) = queue2.pop_front() {
-        if is_terminal(kind) {
-            continue;
-        }
-        // outgoing edges: edge.from == id
+    while let Some((_tid, id, kind, is_start, chain)) = queue2.pop_front() {
+        // Outgoing traversal: terminal kinds never traverse outgoing.
         for edge in &graph.edges {
+            if is_terminal(kind) {
+                continue;
+            }
             if edge.from != id {
                 continue;
             }
             for target in &edge.to {
-                // resolve target to nodes (any kind)
                 for (nk, nid) in resolve_id(&graph, target) {
                     let ttid = typed(nk, &nid);
                     if visited2.contains(&ttid) {
@@ -204,7 +209,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                         edge: Some(format!("{:?}:forward", edge.kind)),
                     });
                     provenance.insert(ttid.clone(), newchain.clone());
-                    queue2.push_back((ttid.clone(), nid.to_string(), nk, newchain));
+                    queue2.push_back((ttid.clone(), nid.to_string(), nk, false, newchain));
                     match nk {
                         NodeKind::Impl => {
                             reached_impl.insert(nid.to_string());
@@ -223,13 +228,16 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                 }
             }
         }
-        // incoming edges: edge.to contains id
+        // Incoming traversal: terminal kinds (Design) never; ADR only if start.
+        let allow_incoming = !is_terminal(kind) || (kind == NodeKind::Adr && is_start);
+        if !allow_incoming {
+            continue;
+        }
         for edge in &graph.edges {
             if !edge.to.contains(&id) {
                 continue;
             }
             let src = &edge.from;
-            // resolve src kind by finding node(s) with that id
             for (nk, nid) in resolve_id(&graph, src) {
                 let ttid = typed(nk, &nid);
                 if visited2.contains(&ttid) {
@@ -242,7 +250,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                     edge: Some(format!("{:?}:reverse", edge.kind)),
                 });
                 provenance.insert(ttid.clone(), newchain.clone());
-                queue2.push_back((ttid.clone(), nid.to_string(), nk, newchain));
+                queue2.push_back((ttid.clone(), nid.to_string(), nk, false, newchain));
                 match nk {
                     NodeKind::Impl => {
                         reached_impl.insert(nid.to_string());

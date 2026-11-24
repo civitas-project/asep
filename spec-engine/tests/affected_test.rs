@@ -391,6 +391,39 @@ fn test_affected_adr_sink_no_false_propagation() {
 }
 
 #[test]
+fn test_affected_adr_start_propagates_to_dependents() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(
+        root,
+        "docs/req-a.md",
+        "@req:req-a:MUST\n@rel:informs:req-a->adr-x\n",
+    );
+    write_tag_file(
+        root,
+        "docs/req-b.md",
+        "@req:req-b:MUST\n@rel:informs:req-b->adr-x\n",
+    );
+    write_tag_file(root, "docs/adr-x.md", "@adr:adr-x\n");
+
+    // Change the ADR itself: dependent reqs should be reported.
+    let report = affected(root, &[PathBuf::from("docs/adr-x.md")]).unwrap();
+
+    assert!(report.adrs.iter().any(|n| n.id == "adr-x"));
+    assert!(
+        report.requirements.iter().any(|n| n.id == "req-a"),
+        "req-a should be reported when adr-x changes: {:?}",
+        report.requirements
+    );
+    assert!(
+        report.requirements.iter().any(|n| n.id == "req-b"),
+        "req-b should be reported when adr-x changes: {:?}",
+        report.requirements
+    );
+}
+
+#[test]
 fn test_affected_same_id_impl_and_req() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
