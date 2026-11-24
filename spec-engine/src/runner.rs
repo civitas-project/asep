@@ -1,9 +1,8 @@
 use crate::adr::create_new_adr;
 use crate::affected::affected;
-use crate::auditor::{
-    audit_ambient_skills, audit_project_anti_slop, audit_project_docstrings,
-};
+use crate::auditor::{audit_ambient_skills, audit_project_anti_slop, audit_project_docstrings};
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands};
+use crate::config::EngineConfig;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::{build_relation_graph, build_trace_graph};
 use crate::harness::process::parse_size_bytes;
@@ -12,10 +11,9 @@ use crate::mcp::server::run_mcp_server;
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, Severity, TierId};
-use crate::skill::inspector::detect_skill_drift;
-use crate::config::EngineConfig;
 use crate::scanner::scan_project_tags;
 use crate::scanner::ScannedTag;
+use crate::skill::inspector::detect_skill_drift;
 use crate::verification::{evaluate, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
@@ -48,16 +46,22 @@ struct CheckJsonReport {
 /// Precedence: `--rigor` CLI flag wins; otherwise `@rigor:T<n>` tag wins;
 /// otherwise `config.rigor` (parsed via `TierId::from_str`); otherwise `T1`
 /// for code scans or `T0` when the scan finds only documentation files.
-pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &EngineConfig) -> TierId {
+pub fn resolve_rigor(
+    cli_rigor: Option<&str>,
+    tags: &[ScannedTag],
+    config: &EngineConfig,
+) -> TierId {
     // CLI override has highest precedence.
     let cli_tier = cli_rigor.and_then(|r| r.parse::<TierId>().ok());
     if let Some(t) = cli_tier {
         return t;
     }
-    let has_code_file = tags.iter().any(|t| matches!(
-        t.file_path.extension().and_then(|s| s.to_str()),
-        Some("rs" | "go" | "ts" | "js" | "py" | "cpp" | "c" | "h" | "hpp" | "java" | "cs")
-    ));
+    let has_code_file = tags.iter().any(|t| {
+        matches!(
+            t.file_path.extension().and_then(|s| s.to_str()),
+            Some("rs" | "go" | "ts" | "js" | "py" | "cpp" | "c" | "h" | "hpp" | "java" | "cs")
+        )
+    });
 
     #[allow(clippy::match_bool)]
     // `match bool` replaces `if/else` to keep zero `else` tokens (AS-CODE-ELSE).
@@ -76,7 +80,10 @@ pub fn resolve_rigor(cli_rigor: Option<&str>, tags: &[ScannedTag], config: &Engi
     }
 
     // Config value.
-    let config_tier = config.rigor.as_deref().and_then(|r| r.parse::<TierId>().ok());
+    let config_tier = config
+        .rigor
+        .as_deref()
+        .and_then(|r| r.parse::<TierId>().ok());
     if let Some(t) = config_tier {
         return t;
     }
@@ -122,7 +129,8 @@ pub fn run() -> ExitCode {
             let tier = resolve_rigor(rigor.as_deref(), &tags, &config);
 
             if watch {
-                return match crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref()) {
+                return match crate::watch::start_watch_mode(&target_path, tier, coverage.as_deref())
+                {
                     Ok(()) => ExitCode::SUCCESS,
                     Err(e) => {
                         eprintln!("{} Watch mode failed: {e}", "✖".red());
@@ -162,7 +170,9 @@ pub fn run() -> ExitCode {
                     return ExitCode::from(2);
                 }
             };
-            if let Err(e) = fs::create_dir_all(&spec_engine_dir).and_then(|_| fs::write(&verification_out, &json)) {
+            if let Err(e) = fs::create_dir_all(&spec_engine_dir)
+                .and_then(|_| fs::write(&verification_out, &json))
+            {
                 eprintln!("{} Failed to write verification report: {e}", "✖".red());
                 return ExitCode::from(2);
             }
@@ -197,18 +207,22 @@ pub fn run() -> ExitCode {
                 .iter()
                 .filter(|v| v.severity == Severity::Warning)
                 .collect();
-            let has_antislop_failure =
-                tier != TierId::T0 && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
+            let has_antislop_failure = tier != TierId::T0
+                && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
 
             // Structural verification: installed skill copies must match embedded canonicals.
             let skill_drift_dirs = [
                 target_path.join(".opencode").join("skills"),
-                target_path.join(".agents").join("plugins").join("asep").join("skills"),
+                target_path
+                    .join(".agents")
+                    .join("plugins")
+                    .join("asep")
+                    .join("skills"),
             ];
             let skill_drifts: Vec<_> = skill_drift_dirs
                 .iter()
-    .flat_map(|d| detect_skill_drift(d))
-    .collect();
+                .flat_map(|d| detect_skill_drift(d))
+                .collect();
             let has_skill_drift = !skill_drifts.is_empty();
 
             let has_must_failure = !report.is_closed;
@@ -335,7 +349,10 @@ pub fn run() -> ExitCode {
                     }
 
                     if report.draft_total > 0 {
-                        println!("\n{}", "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold());
+                        println!(
+                            "\n{}",
+                            "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold()
+                        );
                         for draft in &report.draft_pending {
                             let missing: Vec<&str> = [
                                 (draft.missing_design, "@design"),
@@ -345,7 +362,8 @@ pub fn run() -> ExitCode {
                             .into_iter()
                             .filter_map(|(cond, label)| cond.then_some(label))
                             .collect();
-                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            #[allow(clippy::match_bool)]
+                            // guard-clause policy requires matching on a bool
                             let missing_display = match missing.is_empty() {
                                 true => "none".to_string(),
                                 false => missing.join(", ").yellow().to_string(),
@@ -369,7 +387,9 @@ pub fn run() -> ExitCode {
                     if has_deny_drafts_failure {
                         println!(
                             "\n{}",
-                            "❌ Production Policy Violation (--deny-drafts):".red().bold()
+                            "❌ Production Policy Violation (--deny-drafts):"
+                                .red()
+                                .bold()
                         );
                         println!(
                             "   Discovered {} active @req:*:DRAFT tag(s). Graduate all drafts to MUST before merging into main trunk.",
@@ -378,31 +398,44 @@ pub fn run() -> ExitCode {
                     }
 
                     if !violations.is_empty() {
-                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        #[allow(clippy::match_bool)]
+                        // guard-clause policy requires matching on a bool
                         let header = match tier == TierId::T0 {
-                            true => "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):".yellow().bold(),
+                            true => "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):"
+                                .yellow()
+                                .bold(),
                             false => "❌ Docstring Contract Violations:".red().bold(),
                         };
                         println!("\n{header}");
                         for v in &violations {
-                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            #[allow(clippy::match_bool)]
+                            // guard-clause policy requires matching on a bool
                             let message = match tier == TierId::T0 {
                                 true => v.message.yellow(),
                                 false => v.message.red(),
                             };
-                            println!("   - {}:{}: {}", v.file_path.display(), v.line_number, message);
+                            println!(
+                                "   - {}:{}: {}",
+                                v.file_path.display(),
+                                v.line_number,
+                                message
+                            );
                         }
                     }
 
                     if !ambient_violations.is_empty() {
-                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        #[allow(clippy::match_bool)]
+                        // guard-clause policy requires matching on a bool
                         let header = match tier == TierId::T0 {
-                            true => "⚠️ Ambient Skills Warnings (Non-blocking in T0 Mode):".yellow().bold(),
+                            true => "⚠️ Ambient Skills Warnings (Non-blocking in T0 Mode):"
+                                .yellow()
+                                .bold(),
                             false => "❌ Ambient Skills Violations:".red().bold(),
                         };
                         println!("\n{header}");
                         for v in &ambient_violations {
-                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            #[allow(clippy::match_bool)]
+                            // guard-clause policy requires matching on a bool
                             let message = match tier == TierId::T0 {
                                 true => v.yellow(),
                                 false => v.red(),
@@ -412,19 +445,28 @@ pub fn run() -> ExitCode {
                     }
 
                     if !anti_errors.is_empty() {
-                        #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                        #[allow(clippy::match_bool)]
+                        // guard-clause policy requires matching on a bool
                         let header = match tier == TierId::T0 {
-                            true => "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):".yellow().bold(),
+                            true => "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):"
+                                .yellow()
+                                .bold(),
                             false => "❌ Anti-slop Violations:".red().bold(),
                         };
                         println!("\n{header}");
                         for v in &anti_errors {
-                            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                            #[allow(clippy::match_bool)]
+                            // guard-clause policy requires matching on a bool
                             let message = match tier == TierId::T0 {
                                 true => v.message.yellow(),
                                 false => v.message.red(),
                             };
-                            println!("   - {}:{}: {}", v.file_path.display(), v.line_number, message);
+                            println!(
+                                "   - {}:{}: {}",
+                                v.file_path.display(),
+                                v.line_number,
+                                message
+                            );
                         }
                     }
 
@@ -440,7 +482,12 @@ pub fn run() -> ExitCode {
                         }
                     }
                     if !anti_warnings.is_empty() && !strict {
-                        eprintln!("{}", "⚠️ Anti-slop Warnings (reported, non-blocking):".yellow().bold());
+                        eprintln!(
+                            "{}",
+                            "⚠️ Anti-slop Warnings (reported, non-blocking):"
+                                .yellow()
+                                .bold()
+                        );
                         for v in &anti_warnings {
                             eprintln!(
                                 "   - {}:{}: {}",
@@ -470,13 +517,21 @@ pub fn run() -> ExitCode {
                     if let Some(ref cov_path) = coverage {
                         match crate::coverage::parse_lcov_file(cov_path) {
                             Ok(cov_map) => {
-                                let cov_rep = crate::coverage::map_coverage_to_requirements(&tags, &cov_map, 80.0);
-                                println!("\n{}", "🎯 Requirement Traceability Test Coverage:".bold().cyan());
+                                let cov_rep = crate::coverage::map_coverage_to_requirements(
+                                    &tags, &cov_map, 80.0,
+                                );
+                                println!(
+                                    "\n{}",
+                                    "🎯 Requirement Traceability Test Coverage:".bold().cyan()
+                                );
                                 for item in &cov_rep.items {
-                                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+                                    #[allow(clippy::match_bool)]
+                                    // guard-clause policy requires matching on a bool
                                     let badge = match item.passed {
                                         true => format!("{:.1}% PASS", item.percentage).green(),
-                                        false => format!("{:.1}% FAIL (< 80%)", item.percentage).red(),
+                                        false => {
+                                            format!("{:.1}% FAIL (< 80%)", item.percentage).red()
+                                        }
                                     };
                                     println!(
                                         "   - {}: {} ({}/{} impl lines covered)",
@@ -489,7 +544,11 @@ pub fn run() -> ExitCode {
                                 passed = passed && (cov_rep.all_passed || tier == TierId::T0);
                             }
                             Err(e) => {
-                                eprintln!("{} Failed to parse coverage file {}: {e}", "⚠".yellow(), cov_path.display());
+                                eprintln!(
+                                    "{} Failed to parse coverage file {}: {e}",
+                                    "⚠".yellow(),
+                                    cov_path.display()
+                                );
                             }
                         }
                     }
@@ -511,8 +570,12 @@ pub fn run() -> ExitCode {
 
                     #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
                     match passed {
-                        true => println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold()),
-                        false => println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold()),
+                        true => {
+                            println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold())
+                        }
+                        false => {
+                            println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold())
+                        }
                     }
 
                     println!(
@@ -544,11 +607,7 @@ pub fn run() -> ExitCode {
             }
         }
 
-        Some(Commands::Affected {
-            paths,
-            stdin,
-            root,
-        }) => {
+        Some(Commands::Affected { paths, stdin, root }) => {
             let root_path = root.unwrap_or_else(|| PathBuf::from("."));
 
             let mut changed: Vec<PathBuf> = paths;
@@ -580,10 +639,7 @@ pub fn run() -> ExitCode {
                 match serde_json::to_string_pretty(&report) {
                     Ok(json) => println!("{json}"),
                     Err(e) => {
-                        eprintln!(
-                            "{} Failed to serialize affected report: {e}",
-                            "✖".red()
-                        );
+                        eprintln!("{} Failed to serialize affected report: {e}", "✖".red());
                         return ExitCode::from(2);
                     }
                 }
@@ -697,19 +753,17 @@ pub fn run() -> ExitCode {
                 );
             }
             if !args.json {
-                println!("\n{}", "=== 5-Gate Local CI Verification Pipeline ===".bold());
+                println!(
+                    "\n{}",
+                    "=== 5-Gate Local CI Verification Pipeline ===".bold()
+                );
                 for g in &report.gates {
                     let status_badge = match (g.skipped, g.passed) {
                         (true, _) => "⊘ SKIPPED".yellow(),
                         (_, true) => "✔ PASSED".green(),
                         (false, false) => "✖ FAILED".red(),
                     };
-                    println!(
-                        "[{}] {} ({}ms)",
-                        status_badge,
-                        g.name.bold(),
-                        g.duration_ms
-                    );
+                    println!("[{}] {} ({}ms)", status_badge, g.name.bold(), g.duration_ms);
                     for d in &g.details {
                         println!("     {}", d);
                     }
@@ -739,7 +793,7 @@ pub fn run() -> ExitCode {
                 (false, true) => ExitCode::SUCCESS,
                 (false, false) => ExitCode::from(1),
             }
-        },
+        }
 
         Some(Commands::Render { dir, path }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
@@ -800,94 +854,94 @@ pub fn run() -> ExitCode {
 
             let mut agents = Vec::new();
             for item in agent.iter().flat_map(|s| s.split(',')) {
-                    let trimmed = item.trim();
-                    if trimmed.is_empty() {
-                        continue;
+                let trimmed = item.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                match trimmed.to_lowercase().as_str() {
+                    "antigravity" | "agy" => {
+                        if !agents.contains(&TargetAgent::Antigravity) {
+                            agents.push(TargetAgent::Antigravity);
+                        }
                     }
-                    match trimmed.to_lowercase().as_str() {
-                        "antigravity" | "agy" => {
-                            if !agents.contains(&TargetAgent::Antigravity) {
-                                agents.push(TargetAgent::Antigravity);
+                    "opencode" => {
+                        if !agents.contains(&TargetAgent::OpenCode) {
+                            agents.push(TargetAgent::OpenCode);
+                        }
+                    }
+                    "claude" | "claudecode" => {
+                        if !agents.contains(&TargetAgent::ClaudeCode) {
+                            agents.push(TargetAgent::ClaudeCode);
+                        }
+                    }
+                    "cursor" => {
+                        if !agents.contains(&TargetAgent::Cursor) {
+                            agents.push(TargetAgent::Cursor);
+                        }
+                    }
+                    "windsurf" | "codeium" => {
+                        if !agents.contains(&TargetAgent::Windsurf) {
+                            agents.push(TargetAgent::Windsurf);
+                        }
+                    }
+                    "continue" => {
+                        if !agents.contains(&TargetAgent::Continue) {
+                            agents.push(TargetAgent::Continue);
+                        }
+                    }
+                    "roo" | "roocode" | "cline" => {
+                        if !agents.contains(&TargetAgent::RooCode) {
+                            agents.push(TargetAgent::RooCode);
+                        }
+                    }
+                    "copilot" | "github-copilot" => {
+                        if !agents.contains(&TargetAgent::Copilot) {
+                            agents.push(TargetAgent::Copilot);
+                        }
+                    }
+                    "goose" => {
+                        if !agents.contains(&TargetAgent::Goose) {
+                            agents.push(TargetAgent::Goose);
+                        }
+                    }
+                    "zed" => {
+                        if !agents.contains(&TargetAgent::Zed) {
+                            agents.push(TargetAgent::Zed);
+                        }
+                    }
+                    "aider" => {
+                        if !agents.contains(&TargetAgent::Aider) {
+                            agents.push(TargetAgent::Aider);
+                        }
+                    }
+                    "detected" => {
+                        let current_scope = scope
+                            .as_ref()
+                            .cloned()
+                            .unwrap_or_else(|| InstallScope::Local(target_path.clone()));
+                        for a in TargetAgent::ALL {
+                            if a.is_detected(&current_scope) && !agents.contains(&a) {
+                                agents.push(a);
                             }
                         }
-                        "opencode" => {
-                            if !agents.contains(&TargetAgent::OpenCode) {
-                                agents.push(TargetAgent::OpenCode);
+                        if agents.is_empty() {
+                            agents.push(TargetAgent::Antigravity);
+                            agents.push(TargetAgent::OpenCode);
+                        }
+                    }
+                    "all" => {
+                        for a in TargetAgent::ALL {
+                            if !agents.contains(&a) {
+                                agents.push(a);
                             }
                         }
-                        "claude" | "claudecode" => {
-                            if !agents.contains(&TargetAgent::ClaudeCode) {
-                                agents.push(TargetAgent::ClaudeCode);
-                            }
-                        }
-                        "cursor" => {
-                            if !agents.contains(&TargetAgent::Cursor) {
-                                agents.push(TargetAgent::Cursor);
-                            }
-                        }
-                        "windsurf" | "codeium" => {
-                            if !agents.contains(&TargetAgent::Windsurf) {
-                                agents.push(TargetAgent::Windsurf);
-                            }
-                        }
-                        "continue" => {
-                            if !agents.contains(&TargetAgent::Continue) {
-                                agents.push(TargetAgent::Continue);
-                            }
-                        }
-                        "roo" | "roocode" | "cline" => {
-                            if !agents.contains(&TargetAgent::RooCode) {
-                                agents.push(TargetAgent::RooCode);
-                            }
-                        }
-                        "copilot" | "github-copilot" => {
-                            if !agents.contains(&TargetAgent::Copilot) {
-                                agents.push(TargetAgent::Copilot);
-                            }
-                        }
-                        "goose" => {
-                            if !agents.contains(&TargetAgent::Goose) {
-                                agents.push(TargetAgent::Goose);
-                            }
-                        }
-                        "zed" => {
-                            if !agents.contains(&TargetAgent::Zed) {
-                                agents.push(TargetAgent::Zed);
-                            }
-                        }
-                        "aider" => {
-                            if !agents.contains(&TargetAgent::Aider) {
-                                agents.push(TargetAgent::Aider);
-                            }
-                        }
-                        "detected" => {
-                            let current_scope = scope
-                                .as_ref()
-                                .cloned()
-                                .unwrap_or_else(|| InstallScope::Local(target_path.clone()));
-                            for a in TargetAgent::ALL {
-                                if a.is_detected(&current_scope) && !agents.contains(&a) {
-                                    agents.push(a);
-                                }
-                            }
-                            if agents.is_empty() {
-                                agents.push(TargetAgent::Antigravity);
-                                agents.push(TargetAgent::OpenCode);
-                            }
-                        }
-                        "all" => {
-                            for a in TargetAgent::ALL {
-                                if !agents.contains(&a) {
-                                    agents.push(a);
-                                }
-                            }
-                        }
-                        other => {
-                            eprintln!("{} Unknown target agent: {}", "✖".red(), other);
-                            return ExitCode::from(1);
-                        }
+                    }
+                    other => {
+                        eprintln!("{} Unknown target agent: {}", "✖".red(), other);
+                        return ExitCode::from(1);
                     }
                 }
+            }
 
             let opts = PackOptions {
                 scope,
@@ -919,18 +973,16 @@ pub fn run() -> ExitCode {
             }
         }
 
-        Some(Commands::Update {}) => {
-            match crate::self_update::self_update() {
-                Ok(tag) => {
-                    println!("{} Updated to {}", "✔".green(), tag);
-                    ExitCode::SUCCESS
-                }
-                Err(e) => {
-                    eprintln!("{} Self-update failed: {}", "✖".red(), e);
-                    ExitCode::from(1)
-                }
+        Some(Commands::Update {}) => match crate::self_update::self_update() {
+            Ok(tag) => {
+                println!("{} Updated to {}", "✔".green(), tag);
+                ExitCode::SUCCESS
             }
-        }
+            Err(e) => {
+                eprintln!("{} Self-update failed: {}", "✖".red(), e);
+                ExitCode::from(1)
+            }
+        },
 
         Some(Commands::Skill { sub, dir, path }) => {
             let base_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
@@ -982,7 +1034,12 @@ pub fn run() -> ExitCode {
                         }
                     }
                 }
-                Some(SkillCommands::Edit { id, sync, dir, path }) => {
+                Some(SkillCommands::Edit {
+                    id,
+                    sync,
+                    dir,
+                    path,
+                }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let skills = crate::skill::inspector::inspect_skills(&skills_dir);
@@ -1010,18 +1067,21 @@ pub fn run() -> ExitCode {
                             if !sync {
                                 return ExitCode::SUCCESS;
                             }
-                            let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
+                            let scope =
+                                crate::pack::targets::InstallScope::Local(target_dir.clone());
                             let agents: Vec<_> = crate::pack::targets::TargetAgent::ALL
                                 .iter()
                                 .copied()
                                 .filter(|a| a.is_detected(&scope))
                                 .collect();
-                            #[allow(clippy::match_bool)] // avoid `else` branch; keep fetched agents when non-empty
+                            #[allow(clippy::match_bool)]
+                            // avoid `else` branch; keep fetched agents when non-empty
                             let agents = match agents.is_empty() {
                                 true => vec![crate::pack::targets::TargetAgent::OpenCode],
                                 false => agents,
                             };
-                            let report = crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
+                            let report =
+                                crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
                             println!(
                                 "{} Synced {} skill(s) after edit",
                                 "✔".green(),
@@ -1039,13 +1099,14 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path);
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
 
-                    let confirmed = yes || inquire::Confirm::new(&format!(
-                        "Are you sure you want to delete skill '{}'?",
-                        id
-                    ))
-                    .with_default(false)
-                    .prompt()
-                    .unwrap_or(false);
+                    let confirmed = yes
+                        || inquire::Confirm::new(&format!(
+                            "Are you sure you want to delete skill '{}'?",
+                            id
+                        ))
+                        .with_default(false)
+                        .prompt()
+                        .unwrap_or(false);
                     if !confirmed {
                         println!("{}", "Deletion cancelled.".yellow());
                         return ExitCode::SUCCESS;
@@ -1168,7 +1229,8 @@ pub fn run() -> ExitCode {
                                     config.editor.preference = crate::config::EditorPreference::Ask
                                 }
                                 "terminal" => {
-                                    config.editor.preference = crate::config::EditorPreference::Terminal
+                                    config.editor.preference =
+                                        crate::config::EditorPreference::Terminal
                                 }
                                 "gui" => {
                                     config.editor.preference = crate::config::EditorPreference::Gui
@@ -1211,18 +1273,38 @@ pub fn run() -> ExitCode {
                         }
                     };
                     if entry.status == crate::skill::model::SkillStatus::Missing {
-                        eprintln!("{} Skill '{}' is missing on disk. Restore it first.", "✖".red(), id);
+                        eprintln!(
+                            "{} Skill '{}' is missing on disk. Restore it first.",
+                            "✖".red(),
+                            id
+                        );
                         return ExitCode::from(1);
                     }
                     let content = std::fs::read_to_string(&entry.file_path).unwrap_or_default();
                     let errors = crate::skill::validator::validate_skill_content(&content);
                     if errors.is_empty() {
-                        println!("{} Skill '{}' passed validation (0 errors, 0 warnings)", "✔".green(), id);
+                        println!(
+                            "{} Skill '{}' passed validation (0 errors, 0 warnings)",
+                            "✔".green(),
+                            id
+                        );
                         return ExitCode::SUCCESS;
                     }
-                    let err_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Error).count();
-                    let warn_count = errors.iter().filter(|e| e.level == crate::skill::validator::ValidationLevel::Warning).count();
-                    println!("{} Skill '{}' validation results: {} errors, {} warnings", "✖".red(), id, err_count, warn_count);
+                    let err_count = errors
+                        .iter()
+                        .filter(|e| e.level == crate::skill::validator::ValidationLevel::Error)
+                        .count();
+                    let warn_count = errors
+                        .iter()
+                        .filter(|e| e.level == crate::skill::validator::ValidationLevel::Warning)
+                        .count();
+                    println!(
+                        "{} Skill '{}' validation results: {} errors, {} warnings",
+                        "✖".red(),
+                        id,
+                        err_count,
+                        warn_count
+                    );
                     for e in &errors {
                         let level = match e.level {
                             crate::skill::validator::ValidationLevel::Error => "ERROR",
@@ -1230,7 +1312,8 @@ pub fn run() -> ExitCode {
                         };
                         println!("   - {} [{}] {}", e.code, level, e.message);
                     }
-                    #[allow(clippy::match_bool)] // avoid `else` branch; warning-only validation succeeds
+                    #[allow(clippy::match_bool)]
+                    // avoid `else` branch; warning-only validation succeeds
                     match crate::skill::validator::has_errors(&errors) {
                         true => ExitCode::from(1),
                         false => ExitCode::SUCCESS,
@@ -1256,7 +1339,8 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
-                    #[allow(clippy::match_bool)] // avoid `else` branch; empty selection defaults to OpenCode
+                    #[allow(clippy::match_bool)]
+                    // avoid `else` branch; empty selection defaults to OpenCode
                     let agents: Vec<crate::pack::targets::TargetAgent> = match agent {
                         Some(a) => {
                             let mut v = Vec::new();
@@ -1277,11 +1361,19 @@ pub fn run() -> ExitCode {
                                             }
                                         }
                                     }
-                                    "opencode" => v.push(crate::pack::targets::TargetAgent::OpenCode),
+                                    "opencode" => {
+                                        v.push(crate::pack::targets::TargetAgent::OpenCode)
+                                    }
                                     "cursor" => v.push(crate::pack::targets::TargetAgent::Cursor),
-                                    "claude" | "claudecode" => v.push(crate::pack::targets::TargetAgent::ClaudeCode),
-                                    "windsurf" => v.push(crate::pack::targets::TargetAgent::Windsurf),
-                                    "antigravity" | "agy" => v.push(crate::pack::targets::TargetAgent::Antigravity),
+                                    "claude" | "claudecode" => {
+                                        v.push(crate::pack::targets::TargetAgent::ClaudeCode)
+                                    }
+                                    "windsurf" => {
+                                        v.push(crate::pack::targets::TargetAgent::Windsurf)
+                                    }
+                                    "antigravity" | "agy" => {
+                                        v.push(crate::pack::targets::TargetAgent::Antigravity)
+                                    }
                                     "goose" => v.push(crate::pack::targets::TargetAgent::Goose),
                                     _ => {}
                                 }
@@ -1304,19 +1396,32 @@ pub fn run() -> ExitCode {
                         }
                     };
                     let report = crate::skill::sync::sync_skills(&skills_dir, &scope, &agents);
-                    println!("{} Synced {} skill(s), skipped {}, errors: {}", "✔".green(), report.synced, report.skipped, report.errors.len());
+                    println!(
+                        "{} Synced {} skill(s), skipped {}, errors: {}",
+                        "✔".green(),
+                        report.synced,
+                        report.skipped,
+                        report.errors.len()
+                    );
                     for e in &report.errors {
                         eprintln!("   {}", e);
                     }
                     ExitCode::SUCCESS
                 }
 
-                Some(SkillCommands::Rollback { id, to, list, dir, path }) => {
+                Some(SkillCommands::Rollback {
+                    id,
+                    to,
+                    list,
+                    dir,
+                    path,
+                }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     if list {
                         let backups = crate::skill::rollback::list_backups(&skills_dir, &id);
-                        #[allow(clippy::match_bool)] // avoid `else` branch; both paths print then succeed
+                        #[allow(clippy::match_bool)]
+                        // avoid `else` branch; both paths print then succeed
                         match backups.is_empty() {
                             true => println!("No backups found for '{}'", id),
                             false => {
@@ -1341,69 +1446,84 @@ pub fn run() -> ExitCode {
                 }
 
                 Some(SkillCommands::Status { dir, path }) => {
-                let target_dir = path.or(dir).unwrap_or(base_path.clone());
-                let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
-                match crate::skill::state::check_drift(&skills_dir) {
-                    Ok(drifts) => {
-                        #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
-                        match drifts.is_empty() {
-                            true => println!("{} No drift detected", "✔".green()),
-                            false => {
-                                println!("{} Drift detected ({}):", "⚠".yellow(), drifts.len());
-                                for d in &drifts {
-                                    println!("   - {} [{}] {}", d.id, d.kind, d.detail);
+                    let target_dir = path.or(dir).unwrap_or(base_path.clone());
+                    let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
+                    match crate::skill::state::check_drift(&skills_dir) {
+                        Ok(drifts) => {
+                            #[allow(clippy::match_bool)]
+                            // avoid `else` branch; both paths fall through to success
+                            match drifts.is_empty() {
+                                true => println!("{} No drift detected", "✔".green()),
+                                false => {
+                                    println!("{} Drift detected ({}):", "⚠".yellow(), drifts.len());
+                                    for d in &drifts {
+                                        println!("   - {} [{}] {}", d.id, d.kind, d.detail);
+                                    }
                                 }
                             }
+                            ExitCode::SUCCESS
                         }
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        // No state file yet; offer rebuild
-                        eprintln!("{} {}", "✖".red(), e);
-                        println!("Hint: run 'asep skill state --rebuild' to create initial state.");
-                        ExitCode::from(1)
+                        Err(e) => {
+                            // No state file yet; offer rebuild
+                            eprintln!("{} {}", "✖".red(), e);
+                            println!(
+                                "Hint: run 'asep skill state --rebuild' to create initial state."
+                            );
+                            ExitCode::from(1)
+                        }
                     }
                 }
-            }
 
-            Some(SkillCommands::State { rebuild, dir, path }) => {
-                let target_dir = path.or(dir).unwrap_or(base_path.clone());
-                let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
-                if !rebuild {
-                    match crate::skill::state::load_state(&skills_dir) {
-                        Some(s) => {
-                            println!("State snapshot: {} skill(s), generated {}", s.skills.len(), s.generated_at);
-                            for sk in &s.skills {
-                                println!("   - {} v{:?} [{}]", sk.id, sk.version, sk.status);
+                Some(SkillCommands::State { rebuild, dir, path }) => {
+                    let target_dir = path.or(dir).unwrap_or(base_path.clone());
+                    let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
+                    if !rebuild {
+                        match crate::skill::state::load_state(&skills_dir) {
+                            Some(s) => {
+                                println!(
+                                    "State snapshot: {} skill(s), generated {}",
+                                    s.skills.len(),
+                                    s.generated_at
+                                );
+                                for sk in &s.skills {
+                                    println!("   - {} v{:?} [{}]", sk.id, sk.version, sk.status);
+                                }
+                                return ExitCode::SUCCESS;
                             }
-                            return ExitCode::SUCCESS;
+                            None => {
+                                eprintln!("{} No state file. Use --rebuild.", "✖".red());
+                                return ExitCode::from(1);
+                            }
                         }
-                        None => {
-                            eprintln!("{} No state file. Use --rebuild.", "✖".red());
-                            return ExitCode::from(1);
+                    }
+                    let state = crate::skill::state::rebuild_state(&skills_dir);
+                    match crate::skill::state::save_state(&skills_dir, &state) {
+                        Ok(_) => {
+                            println!(
+                                "{} State rebuilt with {} skill(s)",
+                                "✔".green(),
+                                state.skills.len()
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(e) => {
+                            eprintln!("{} {}", "✖".red(), e);
+                            ExitCode::from(1)
                         }
                     }
                 }
-                let state = crate::skill::state::rebuild_state(&skills_dir);
-                match crate::skill::state::save_state(&skills_dir, &state) {
-                    Ok(_) => {
-                        println!("{} State rebuilt with {} skill(s)", "✔".green(), state.skills.len());
-                        ExitCode::SUCCESS
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "✖".red(), e);
-                        ExitCode::from(1)
-                    }
-                }
-            }
 
-            Some(SkillCommands::Lock { verify, dir, path }) => {
+                Some(SkillCommands::Lock { verify, dir, path }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     if !verify {
                         match crate::skill::lock::generate_lock(&skills_dir) {
                             Ok(lock) => {
-                                println!("{} Generated skills.lock with {} skill(s)", "✔".green(), lock.skills.len());
+                                println!(
+                                    "{} Generated skills.lock with {} skill(s)",
+                                    "✔".green(),
+                                    lock.skills.len()
+                                );
                                 return ExitCode::SUCCESS;
                             }
                             Err(e) => {
@@ -1435,7 +1555,8 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let results = crate::skill::search::search_skills(&skills_dir, &query);
-                    #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
+                    #[allow(clippy::match_bool)]
+                    // avoid `else` branch; both paths fall through to success
                     match results.is_empty() {
                         true => println!("No skills found matching '{}'", query),
                         false => {
@@ -1458,9 +1579,16 @@ pub fn run() -> ExitCode {
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
                     let display_name = name.as_deref().unwrap_or(&id);
                     let desc = description.as_deref().unwrap_or("");
-                    match crate::skill::fork::fork_skill(&skills_dir, &src, &id, display_name, desc) {
+                    match crate::skill::fork::fork_skill(&skills_dir, &src, &id, display_name, desc)
+                    {
                         Ok(p) => {
-                            println!("{} Forked '{}' into '{}' at {}", "✔".green(), src, id, p.display());
+                            println!(
+                                "{} Forked '{}' into '{}' at {}",
+                                "✔".green(),
+                                src,
+                                id,
+                                p.display()
+                            );
                             ExitCode::SUCCESS
                         }
                         Err(e) => {
@@ -1485,7 +1613,11 @@ pub fn run() -> ExitCode {
                         | crate::skill::remote::SkillSource::Http { .. } => {
                             match crate::skill::remote::fetch_remote_skill(&source, &skills_dir) {
                                 Ok(p) => {
-                                    println!("{} Fetched and installed remote skill at {}", "✔".green(), p.display());
+                                    println!(
+                                        "{} Fetched and installed remote skill at {}",
+                                        "✔".green(),
+                                        p.display()
+                                    );
                                     ExitCode::SUCCESS
                                 }
                                 Err(e) => {
@@ -1495,13 +1627,25 @@ pub fn run() -> ExitCode {
                             }
                         }
                         crate::skill::remote::SkillSource::Registry { id: ref reg_id, .. } => {
-                            match crate::skill::install::install_skill(&skills_dir, reg_id, !no_deps) {
+                            match crate::skill::install::install_skill(
+                                &skills_dir,
+                                reg_id,
+                                !no_deps,
+                            ) {
                                 Ok(paths) => {
-                                    #[allow(clippy::match_bool)] // avoid `else` branch; both paths fall through to success
+                                    #[allow(clippy::match_bool)]
+                                    // avoid `else` branch; both paths fall through to success
                                     match paths.is_empty() {
-                                        true => println!("Skill '{}' (and its dependencies) already installed.", reg_id),
+                                        true => println!(
+                                            "Skill '{}' (and its dependencies) already installed.",
+                                            reg_id
+                                        ),
                                         false => {
-                                            println!("{} Installed {} skill(s):", "✔".green(), paths.len());
+                                            println!(
+                                                "{} Installed {} skill(s):",
+                                                "✔".green(),
+                                                paths.len()
+                                            );
                                             for p in paths {
                                                 println!("   - {}", p.display());
                                             }
@@ -1546,7 +1690,9 @@ pub fn run() -> ExitCode {
 
                     // Embedded original acts as base
                     let embedded = crate::pack::embedded::get_embedded_skills();
-                    let orig = embedded.iter().find(|e| e.id == id.as_str() || e.directory == id.as_str());
+                    let orig = embedded
+                        .iter()
+                        .find(|e| e.id == id.as_str() || e.directory == id.as_str());
                     let base_content = match orig {
                         Some(o) => o.content,
                         None => {
@@ -1566,12 +1712,16 @@ pub fn run() -> ExitCode {
                         None => base_content.to_string(),
                     };
 
-                    let (mut merged, has_conflict) =
-                        crate::skill::merge::three_way_merge(base_content, &local_content, &remote_content);
+                    let (mut merged, has_conflict) = crate::skill::merge::three_way_merge(
+                        base_content,
+                        &local_content,
+                        &remote_content,
+                    );
 
                     if has_conflict && interactive {
                         println!("Starting interactive conflict resolution for '{}'...", id);
-                        #[allow(clippy::match_wild_err_arm, clippy::single_match)] // `if let` would nest inside an enclosing `if`; match keeps guard-clause style
+                        #[allow(clippy::match_wild_err_arm, clippy::single_match)]
+                        // `if let` would nest inside an enclosing `if`; match keeps guard-clause style
                         match crate::skill::merge::interactive_resolve_conflicts(&merged) {
                             Ok(resolved) => {
                                 merged = resolved;
@@ -1594,11 +1744,7 @@ pub fn run() -> ExitCode {
                         );
                     }
                     if !has_conflict || interactive {
-                        println!(
-                            "{} Successfully merged skill '{}'.",
-                            "✔".green(),
-                            id
-                        );
+                        println!("{} Successfully merged skill '{}'.", "✔".green(), id);
                     }
                     ExitCode::SUCCESS
                 }
@@ -1626,21 +1772,26 @@ pub fn run() -> ExitCode {
                     }
 
                     let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
-                    let parsed_agents: Option<Vec<crate::pack::targets::TargetAgent>> = agents.map(|a_str| {
-                        a_str
-                            .split(',')
-                            .filter_map(|s| match s.trim().to_lowercase().as_str() {
-                                "cursor" => Some(crate::pack::targets::TargetAgent::Cursor),
-                                "opencode" => Some(crate::pack::targets::TargetAgent::OpenCode),
-                                "antigravity" => Some(crate::pack::targets::TargetAgent::Antigravity),
-                                "claude" | "claude-code" => Some(crate::pack::targets::TargetAgent::ClaudeCode),
-                                "windsurf" => Some(crate::pack::targets::TargetAgent::Windsurf),
-                                "zed" => Some(crate::pack::targets::TargetAgent::Zed),
-                                "aider" => Some(crate::pack::targets::TargetAgent::Aider),
-                                _ => None,
-                            })
-                            .collect()
-                    });
+                    let parsed_agents: Option<Vec<crate::pack::targets::TargetAgent>> =
+                        agents.map(|a_str| {
+                            a_str
+                                .split(',')
+                                .filter_map(|s| match s.trim().to_lowercase().as_str() {
+                                    "cursor" => Some(crate::pack::targets::TargetAgent::Cursor),
+                                    "opencode" => Some(crate::pack::targets::TargetAgent::OpenCode),
+                                    "antigravity" => {
+                                        Some(crate::pack::targets::TargetAgent::Antigravity)
+                                    }
+                                    "claude" | "claude-code" => {
+                                        Some(crate::pack::targets::TargetAgent::ClaudeCode)
+                                    }
+                                    "windsurf" => Some(crate::pack::targets::TargetAgent::Windsurf),
+                                    "zed" => Some(crate::pack::targets::TargetAgent::Zed),
+                                    "aider" => Some(crate::pack::targets::TargetAgent::Aider),
+                                    _ => None,
+                                })
+                                .collect()
+                        });
 
                     match crate::skill::purge::purge_skill(
                         &skills_dir,
@@ -1649,7 +1800,8 @@ pub fn run() -> ExitCode {
                         &scope,
                     ) {
                         Ok(rep) => {
-                            #[allow(clippy::match_bool)] // avoid `else` branch; empty list prints "none"
+                            #[allow(clippy::match_bool)]
+                            // avoid `else` branch; empty list prints "none"
                             let agents_cleaned = match rep.agents_cleaned.is_empty() {
                                 true => "none".to_string(),
                                 false => rep.agents_cleaned.join(", "),
@@ -1709,7 +1861,6 @@ pub fn run() -> ExitCode {
                         }
                     }
                 }
-
             }
         }
 
@@ -1765,11 +1916,7 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
-            HarnessCommands::Memory {
-                cmd,
-                peak,
-                timeout,
-            } => {
+            HarnessCommands::Memory { cmd, peak, timeout } => {
                 let budget = match parse_size_bytes(&peak) {
                     Ok(b) => b,
                     Err(e) => {
@@ -1819,8 +1966,12 @@ pub fn run() -> ExitCode {
                 vendor_path,
                 offline: _,
             } => {
-                let vendor_src = vendor_path
-                    .unwrap_or_else(|| crate::harness::e2e::repo_root().join("harness").join("e2e").join("vendor-loom"));
+                let vendor_src = vendor_path.unwrap_or_else(|| {
+                    crate::harness::e2e::repo_root()
+                        .join("harness")
+                        .join("e2e")
+                        .join("vendor-loom")
+                });
                 match crate::harness::e2e::vendor_loom(&run_dir, &vendor_src) {
                     Ok(()) => {
                         println!("VENDOR_OK");
@@ -1865,8 +2016,8 @@ pub fn run() -> ExitCode {
             dry_run,
             measure,
         }) => {
-            let root =
-                root.unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            let root = root
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
             let target_dir = target.clone().unwrap_or_else(|| root.join("target"));
             const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
@@ -1938,15 +2089,13 @@ pub fn run() -> ExitCode {
                     #[allow(clippy::match_bool)]
                     // Policy AS-CODE-ELSE forbids `else`; match the bool explicitly instead.
                     match args.json {
-                        true => {
-                            match serde_json::to_string_pretty(&report) {
-                                Ok(j) => println!("{j}"),
-                                Err(e) => {
-                                    eprintln!("{} Failed to serialize report: {e}", "✖".red());
-                                    return ExitCode::from(2);
-                                }
+                        true => match serde_json::to_string_pretty(&report) {
+                            Ok(j) => println!("{j}"),
+                            Err(e) => {
+                                eprintln!("{} Failed to serialize report: {e}", "✖".red());
+                                return ExitCode::from(2);
                             }
-                        }
+                        },
                         false => {
                             println!("{} {}", "ASEP clean".bold().cyan(), target_dir.display());
                             println!("  before: {} bytes", report.before_bytes);
@@ -1979,8 +2128,10 @@ pub fn run() -> ExitCode {
         }
 
         None => {
-            let banner =
-                format!("Spec-Engine SDLC Validation Engine v{} (Rust)", env!("CARGO_PKG_VERSION"));
+            let banner = format!(
+                "Spec-Engine SDLC Validation Engine v{} (Rust)",
+                env!("CARGO_PKG_VERSION")
+            );
             println!("{}", banner.bold().cyan());
             println!("Run 'spec-engine --help' for available subcommands.");
             ExitCode::SUCCESS
@@ -1994,7 +2145,11 @@ pub fn run() -> ExitCode {
 fn run_skill_drift_report(target: &Path) -> ExitCode {
     let drift_dirs = [
         target.join(".opencode").join("skills"),
-        target.join(".agents").join("plugins").join("asep").join("skills"),
+        target
+            .join(".agents")
+            .join("plugins")
+            .join("asep")
+            .join("skills"),
     ];
     let mut drifts: Vec<crate::skill::inspector::SkillDrift> = drift_dirs
         .iter()
@@ -2009,7 +2164,12 @@ fn run_skill_drift_report(target: &Path) -> ExitCode {
 
     println!("{} Skill drift detected ({}):", "⚠".yellow(), drifts.len());
     for d in &drifts {
-        println!("   - {} [{}] {}", d.skill_id.bold(), d.kind, d.path.display());
+        println!(
+            "   - {} [{}] {}",
+            d.skill_id.bold(),
+            d.kind,
+            d.path.display()
+        );
     }
     ExitCode::from(1)
 }

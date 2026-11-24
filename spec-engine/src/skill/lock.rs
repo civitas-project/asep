@@ -55,9 +55,8 @@ pub fn generate_lock(skills_dir: &Path) -> Result<SkillLockFile, std::io::Error>
         asep_version: "2.1.0".to_string(),
         skills: lock_entries,
     };
-    let json = serde_json::to_string_pretty(&lock).map_err(|e| {
-        std::io::Error::other(e.to_string())
-    })?;
+    let json =
+        serde_json::to_string_pretty(&lock).map_err(|e| std::io::Error::other(e.to_string()))?;
     fs::write(lock_path(skills_dir), json)?;
     Ok(lock)
 }
@@ -78,7 +77,12 @@ pub struct LockDrift {
 pub fn verify_lock(skills_dir: &Path) -> Result<Vec<LockDrift>, std::io::Error> {
     let lock = match read_lock(skills_dir) {
         Some(l) => l,
-        None => return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no skills.lock found")),
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no skills.lock found",
+            ))
+        }
     };
     let entries = inspect_skills(skills_dir);
     let mut drifts = Vec::new();
@@ -106,10 +110,7 @@ pub fn verify_lock(skills_dir: &Path) -> Result<Vec<LockDrift>, std::io::Error> 
                     drifts.push(LockDrift {
                         id: le.id.clone(),
                         kind: "version_changed".to_string(),
-                        detail: format!(
-                            "version changed: {:?} -> {:?}",
-                            le.version, e.version
-                        ),
+                        detail: format!("version changed: {:?} -> {:?}", le.version, e.version),
                     });
                 }
             }

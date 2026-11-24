@@ -108,11 +108,11 @@ fn test_mcp_tools_call_srcidx() {
     assert_eq!(val["id"], 5);
     assert!(val["result"]["isError"].is_boolean());
     let text = val["result"]["content"][0]["text"].as_str().unwrap();
-    
+
     // Should be valid NDJSON with header
     let lines: Vec<&str> = text.lines().collect();
     assert!(!lines.is_empty(), "srcidx should produce output");
-    
+
     // First line should be header with schema
     let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(header["schema"], "srcdump.v1");
@@ -130,16 +130,16 @@ fn test_mcp_tools_call_srcdump() {
     assert_eq!(val["id"], 6);
     assert!(val["result"]["isError"].is_boolean());
     let text = val["result"]["content"][0]["text"].as_str().unwrap();
-    
+
     // Should be valid NDJSON with header
     let lines: Vec<&str> = text.lines().collect();
     assert!(!lines.is_empty(), "srcdump should produce output");
-    
+
     // First line should be header with schema
     let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(header["schema"], "srcdump.v1");
     assert!(header["files"].is_number());
-    
+
     // Should have at least one file entry
     if lines.len() > 1 {
         let entry: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
@@ -236,7 +236,11 @@ fn test_agent_recv_filters_by_agent() {
     .expect("recv must succeed");
     let text = res["content"][0]["text"].as_str().expect("text content");
     let list: Vec<serde_json::Value> = serde_json::from_str(text).expect("recv list is JSON");
-    assert_eq!(list.len(), 1, "executor inbox must exclude messages to other agents");
+    assert_eq!(
+        list.len(),
+        1,
+        "executor inbox must exclude messages to other agents"
+    );
     assert!(list[0]["id"].is_string());
     assert!(list[0]["path"].is_string());
     assert!(
@@ -277,10 +281,7 @@ fn test_agent_send_sets_reply_to() {
     let id = val["id"].as_str().expect("id is string");
 
     // Raw envelope file must use semantic key "reply_to".
-    let raw = fs::read_to_string(
-        dir.path().join("messages").join(format!("{id}.json")),
-    )
-    .unwrap();
+    let raw = fs::read_to_string(dir.path().join("messages").join(format!("{id}.json"))).unwrap();
     assert!(
         raw.contains("\"reply_to\":\"msg-prev\""),
         "raw envelope must contain reply_to key with msg-prev value"
@@ -377,8 +378,11 @@ fn test_agent_send_blocks_missing_required_capability() {
 
     let config_dir = default_dir.path().join(".spec-engine");
     fs::create_dir_all(&config_dir).unwrap();
-    fs::write(config_dir.join("config.toml"), "[capabilities]\nweb = false\n")
-        .unwrap();
+    fs::write(
+        config_dir.join("config.toml"),
+        "[capabilities]\nweb = false\n",
+    )
+    .unwrap();
 
     let res = execute_tool(
         "asep_agent_send",

@@ -28,7 +28,11 @@ fn test_affected_graph_relations() {
         "@req:FR-A:MUST\n@rel:satisfies:impl-a->FR-A\n@rel:verifies:test-a->FR-A \"note\"\n",
     );
     write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
-    write_tag_file(root, "tests/a_test.rs", "// @test:test-a\nfn verifies_a() {}\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:test-a\nfn verifies_a() {}\n",
+    );
 
     let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
 
@@ -124,7 +128,11 @@ fn test_affected_changed_req_finds_verifying_test() {
         "docs/spec.md",
         "@req:FR-C:MUST\n@rel:verifies:test-c->FR-C \"note\"\n",
     );
-    write_tag_file(root, "tests/c_test.rs", "// @test:test-c\nfn verifies_c() {}\n");
+    write_tag_file(
+        root,
+        "tests/c_test.rs",
+        "// @test:test-c\nfn verifies_c() {}\n",
+    );
 
     // Changing the requirement file itself must surface its verification test.
     let report = affected(root, &[PathBuf::from("docs/spec.md")]).unwrap();
@@ -181,7 +189,11 @@ fn test_affected_legacy_same_id_fallback() {
     // No @rel lines: impl, req, and test share the same id FR-A.
     write_tag_file(root, "docs/spec.md", "@req:FR-A:MUST\n");
     write_tag_file(root, "src/lib.rs", "// @impl:FR-A\n");
-    write_tag_file(root, "tests/a_test.rs", "// @test:FR-A\nfn verifies_a() {}\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:FR-A\nfn verifies_a() {}\n",
+    );
 
     let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
 
@@ -245,7 +257,11 @@ fn test_affected_test_without_fn_still_emits_command() {
     write_tag_file(root, "docs/spec.md", "@req:FR-X:MUST\n");
     write_tag_file(root, "src/lib.rs", "// @impl:FR-X\n");
     // @test tag with no `fn` in the tag line or the next six lines.
-    write_tag_file(root, "tests/b_test.rs", "// @test:FR-X\n// some comment\nlet x = 1;\n");
+    write_tag_file(
+        root,
+        "tests/b_test.rs",
+        "// @test:FR-X\n// some comment\nlet x = 1;\n",
+    );
 
     let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
 

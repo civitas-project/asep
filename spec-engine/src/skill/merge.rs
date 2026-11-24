@@ -37,7 +37,10 @@ pub fn three_way_merge(base: &str, local: &str, remote: &str) -> (String, bool) 
     let mut out = String::new();
     let mut has_conflict = false;
 
-    let max_len = base_lines.len().max(local_lines.len()).max(remote_lines.len());
+    let max_len = base_lines
+        .len()
+        .max(local_lines.len())
+        .max(remote_lines.len());
     let mut i = 0;
 
     while i < max_len {
@@ -139,7 +142,10 @@ pub fn interactive_resolve_conflicts(conflicted_text: &str) -> Result<String, St
     let mut chunk_idx = 1;
     let resolved = resolve_conflict_chunks(conflicted_text, |local, remote| {
         println!("\nConflict #{}", chunk_idx);
-        println!("<<<<<<< LOCAL\n{}\n=======\n{}\n>>>>>>> REMOTE", local, remote);
+        println!(
+            "<<<<<<< LOCAL\n{}\n=======\n{}\n>>>>>>> REMOTE",
+            local, remote
+        );
         chunk_idx += 1;
 
         let options = vec![

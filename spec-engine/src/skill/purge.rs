@@ -36,7 +36,12 @@ pub fn purge_skill(
     let state = load_state(skills_dir);
     let tracked_agents: Vec<String> = state
         .as_ref()
-        .and_then(|s| s.skills.iter().find(|e| e.id == id).map(|e| e.agents.clone()))
+        .and_then(|s| {
+            s.skills
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| e.agents.clone())
+        })
         .unwrap_or_default();
 
     let all_agents = [

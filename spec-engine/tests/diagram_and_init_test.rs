@@ -63,7 +63,10 @@ fn test_init_writes_ambient_skill_files_idempotently() {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().join("SKILL.md").exists())
         .count();
-    assert!(skill_count >= 1, "skills/ must contain at least one SKILL.md");
+    assert!(
+        skill_count >= 1,
+        "skills/ must contain at least one SKILL.md"
+    );
 
     // Calling init twice is idempotent: no duplicate markers.
     init_asep_project(root).expect("second init succeeds");

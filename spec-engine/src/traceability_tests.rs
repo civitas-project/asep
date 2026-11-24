@@ -70,11 +70,13 @@ fn test_cli_parses_init_adr_render_commands() {
     let cli = Cli::try_parse_from(["asep", "init", "/tmp/x"]).expect("init must parse");
     assert!(matches!(cli.command, Some(Commands::Init { .. })));
 
-    let cli =
-        Cli::try_parse_from(["asep", "adr", "new", "Record the decision"]).expect("adr new must parse");
+    let cli = Cli::try_parse_from(["asep", "adr", "new", "Record the decision"])
+        .expect("adr new must parse");
     match cli.command {
         Some(Commands::Adr { sub }) => {
-            assert!(matches!(sub, AdrCommands::New { title, .. } if title == "Record the decision"));
+            assert!(
+                matches!(sub, AdrCommands::New { title, .. } if title == "Record the decision")
+            );
         }
         other => panic!("expected Adr command, got {:?}", other),
     }
@@ -88,9 +90,14 @@ fn test_cli_parses_init_adr_render_commands() {
 fn test_docstring_auditor_detects_parroting_violation() {
     let content = "/// frobnicate prepares the frobnicate widget.\npub fn frobnicate() {}\n";
     let violations = audit_doc_contracts(Path::new("lib.rs"), content);
-    assert!(!violations.is_empty(), "expected at least one docstring contract violation");
     assert!(
-        violations.iter().any(|v| matches!(v.kind, DocContractViolationKind::Parroting { .. })),
+        !violations.is_empty(),
+        "expected at least one docstring contract violation"
+    );
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v.kind, DocContractViolationKind::Parroting { .. })),
         "expected a parroting violation when the docstring repeats the fn name"
     );
 }
@@ -123,15 +130,14 @@ fn test_config_round_trip_and_capability_missing() {
 // @test:FR-MCP-01
 #[test]
 fn test_jsonrpc_request_deserialization_and_processing() {
-    let req: JsonRpcRequest = serde_json::from_str(
-        r#"{"jsonrpc":"2.0","id":42,"method":"initialize","params":{}}"#,
-    )
-    .expect("typed JSON-RPC request must deserialize");
+    let req: JsonRpcRequest =
+        serde_json::from_str(r#"{"jsonrpc":"2.0","id":42,"method":"initialize","params":{}}"#)
+            .expect("typed JSON-RPC request must deserialize");
     assert_eq!(req.method, "initialize");
     assert_eq!(req.id, Some(Value::from(42)));
 
-    let res =
-        process_jsonrpc_request("{broken json", Path::new(".")).expect("must return an error frame");
+    let res = process_jsonrpc_request("{broken json", Path::new("."))
+        .expect("must return an error frame");
     let val: Value = serde_json::from_str(&res).unwrap();
     assert_eq!(val["error"]["code"], -32700); // parse error
 }
@@ -140,7 +146,9 @@ fn test_jsonrpc_request_deserialization_and_processing() {
 #[test]
 fn test_mcp_tool_catalogue_contains_expected_tools() {
     let tools = get_tools_list();
-    let arr = tools["tools"].as_array().expect("tools list must be an array");
+    let arr = tools["tools"]
+        .as_array()
+        .expect("tools list must be an array");
     assert_eq!(arr.len(), 10);
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
@@ -165,9 +173,10 @@ fn test_generate_plugin_json_and_embedded_skills_contain_real_content() {
     let plugin: Value =
         serde_json::from_str(&generate_plugin_json()).expect("plugin.json must be valid JSON");
     assert_eq!(plugin["name"], "asep");
-    assert!(
-        plugin["description"].as_str().unwrap().contains("Deterministic SDLC validator")
-    );
+    assert!(plugin["description"]
+        .as_str()
+        .unwrap()
+        .contains("Deterministic SDLC validator"));
 
     let skills = get_embedded_skills();
     assert!(!skills.is_empty(), "embedded skills must be non-empty");
@@ -213,7 +222,10 @@ fn test_target_agent_detection_and_path_resolution() {
 fn test_detect_skill_drift_on_empty_dir_returns_empty() {
     let tmp = tempdir().expect("tempdir created");
     let drifts = detect_skill_drift(tmp.path());
-    assert!(drifts.is_empty(), "empty skills dir must yield no drift records");
+    assert!(
+        drifts.is_empty(),
+        "empty skills dir must yield no drift records"
+    );
 }
 
 // @test:FR-SKILL-02
@@ -230,7 +242,13 @@ fn test_skill_add_normalizes_id_and_delete_removes_dir() {
         "SKILL.md"
     );
     assert_eq!(
-        skill_file.parent().unwrap().file_name().unwrap().to_str().unwrap(),
+        skill_file
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "my-skill",
         "skill id must be normalized: lowercase, spaces to dashes"
     );
@@ -280,12 +298,22 @@ fn test_evaluate_returns_fail_unproven_pass_for_controlled_inputs() {
     assert!(!report.structural);
 
     // Closed graph, missing semantic evidence at T2 -> Unproven.
-    let report = evaluate(&closed_graph(), evidence_dir.as_path(), TierId::T2, &behavioral);
+    let report = evaluate(
+        &closed_graph(),
+        evidence_dir.as_path(),
+        TierId::T2,
+        &behavioral,
+    );
     assert_eq!(report.status, VerificationStatus::Unproven);
     assert!(report.structural && report.behavioral && !report.semantic);
 
     // T1 skips semantic evidence -> Pass.
-    let report = evaluate(&closed_graph(), evidence_dir.as_path(), TierId::T1, &behavioral);
+    let report = evaluate(
+        &closed_graph(),
+        evidence_dir.as_path(),
+        TierId::T1,
+        &behavioral,
+    );
     assert_eq!(report.status, VerificationStatus::Pass);
     assert!(report.skipped.contains(&"semantic".to_string()));
 }
@@ -315,10 +343,11 @@ fn test_init_asep_project_creates_docs_tree_and_prd() {
 // @test:FR-ANTISLOP-05
 #[test]
 fn test_else_branch_is_flagged() {
-    let violations =
-        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { return; } else {} }");
+    let violations = audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { return; } else {} }");
     assert!(
-        violations.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
+        violations
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
         "expected an ElseBranch violation, got {violations:?}"
     );
 }
@@ -326,15 +355,15 @@ fn test_else_branch_is_flagged() {
 // @test:FR-ANTISLOP-06
 #[test]
 fn test_nested_if_is_excessive_but_sequential_ifs_are_not() {
-    let nested =
-        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { if b {} } }");
+    let nested = audit_anti_slop(Path::new("t.rs"), "fn f(){ if a { if b {} } }");
     assert!(
-        nested.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
+        nested
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::ExcessiveNesting { .. })),
         "nested if must yield ExcessiveNesting, got {nested:?}"
     );
 
-    let sequential =
-        audit_anti_slop(Path::new("t.rs"), "fn f(){ if a {} if b {} }");
+    let sequential = audit_anti_slop(Path::new("t.rs"), "fn f(){ if a {} if b {} }");
     assert!(
         !sequential
             .iter()
@@ -379,8 +408,7 @@ fn test_asepignore_excluded_directory_is_not_audited() {
     .unwrap();
     fs::write(tmp.path().join(".asepignore"), "excluded/").unwrap();
 
-    let violations =
-        audit_project_anti_slop(tmp.path()).expect("project audit must succeed");
+    let violations = audit_project_anti_slop(tmp.path()).expect("project audit must succeed");
     let excluded: Vec<_> = violations
         .iter()
         .filter(|v| v.file_path.to_string_lossy().contains("excluded"))
@@ -390,7 +418,9 @@ fn test_asepignore_excluded_directory_is_not_audited() {
         "files under .asepignore must not be audited: {violations:?}"
     );
     assert!(
-        violations.iter().any(|v| v.file_path == Path::new("violate.rs")),
+        violations
+            .iter()
+            .any(|v| v.file_path == Path::new("violate.rs")),
         "non-excluded file must be audited, got {violations:?}"
     );
 }
@@ -403,7 +433,9 @@ fn test_else_branch_not_suppressed_by_allow_marker() {
         "fn f(){ if a { return; } else {} } // asep:allow-antislop",
     );
     assert!(
-        violations.iter().any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
+        violations
+            .iter()
+            .any(|v| matches!(v.kind, AntiSlopViolationKind::ElseBranch { .. })),
         "ElseBranch must not be suppressible via asep:allow-antislop, got {violations:?}"
     );
 }

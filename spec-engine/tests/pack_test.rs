@@ -73,7 +73,10 @@ fn test_run_pack_installer_with_selective_skills() {
     run_pack_installer(opts).expect("Selective installer must succeed");
 
     let plugin_dir = tmp.path().join(".agents").join("plugins").join("asep");
-    assert!(plugin_dir.join("plugin.json").exists(), "plugin.json must exist");
+    assert!(
+        plugin_dir.join("plugin.json").exists(),
+        "plugin.json must exist"
+    );
     assert!(
         plugin_dir.join("mcp_config.json").exists(),
         "mcp_config.json must exist"
@@ -97,7 +100,10 @@ fn test_run_pack_installer_headless_cursor_and_zed() {
     run_pack_installer(opts).expect("Installer must succeed for Cursor and Zed");
 
     let cursor_rules = tmp.path().join(".cursor").join("rules");
-    assert!(!cursor_rules.exists(), "Cursor rules must not be created by pack");
+    assert!(
+        !cursor_rules.exists(),
+        "Cursor rules must not be created by pack"
+    );
 
     let zed_rules = tmp.path().join(".zed").join("rules");
     assert!(!zed_rules.exists(), "Zed rules must not be created by pack");
@@ -120,8 +126,7 @@ fn test_run_pack_installer_headless_detection_default() {
 
     // Pack must not write skill files even for auto-detected agents
     assert!(
-        !tmp
-            .path()
+        !tmp.path()
             .join(".zed")
             .join("rules")
             .join("code-contracts.md")

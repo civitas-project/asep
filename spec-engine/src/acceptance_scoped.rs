@@ -12,8 +12,12 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const ACCEPTANCE_POLICY: &str = ".spec-engine/acceptance.json";
-const PRD_PATH: &str = "docs/PRD.md";
 const BWRAP: &str = "bwrap";
+
+/// Path the current exe is bound to inside the sandbox; gate commands must
+/// invoke this in-sandbox path since the host exe path is invisible inside
+/// bwrap.
+const SANDBOX_EXE: &str = "/asep/bin/asep";
 
 fn bwrap_bin() -> String {
     std::env::var("ASEP_BWRAP").unwrap_or_else(|_| BWRAP.to_string())
@@ -59,18 +63,17 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         )
     })?;
     let base = bwrap_args(root, &sysroot, &target_dir);
-    let exe = current_exe();
 
     // Gate (a): Formal.
     run_bwrap(
         &base,
-        &[exe.as_str(), "ci", "--gate", "0", "--json"],
+        &[SANDBOX_EXE, "ci", "--gate", "0", "--json"],
         "formal (ci --gate 0 --json)",
     )?;
     // Gate (b): Structural.
     run_bwrap(
         &base,
-        &[exe.as_str(), "check", "--rigor", "T1"],
+        &[SANDBOX_EXE, "check", "--rigor", "T1"],
         "structural (check --rigor T1)",
     )?;
     // Gate (c): ScopedTests from `asep affected <changed_paths>`.
@@ -87,7 +90,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
 
     // Evidence: one semantic file per `@req:*:MUST` in docs/PRD.md.
     let evidence_dir = resolve_evidence_dir(root, &policy.evidence_dir)?;
-    let req_ids = must_req_ids(&root.join(PRD_PATH))?;
+    let req_ids = must_req_ids(root)?;
     let semantic_dir = evidence_dir.join("semantic");
     fs::create_dir_all(&semantic_dir).map_err(|e| {
         format!(
@@ -100,9 +103,8 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         let content = format!(
             "reviewer: scoped-trusted-runner\nverdict: ACCEPTED\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n"
         );
-        fs::write(semantic_dir.join(format!("{req_id}.md")), content).map_err(|e| {
-            format!("failed to write evidence for {req_id}: {e}")
-        })?;
+        fs::write(semantic_dir.join(format!("{req_id}.md")), content)
+            .map_err(|e| format!("failed to write evidence for {req_id}: {e}"))?;
     }
 
     Ok(evidence_dir)
@@ -124,9 +126,7 @@ fn sysroot() -> Result<PathBuf, String> {
     if !out.status.success() {
         return Err("rustc --print sysroot failed".to_string());
     }
-    Ok(PathBuf::from(
-        String::from_utf8_lossy(&out.stdout).trim(),
-    ))
+    Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
 /// Locate `bwrap` in PATH. Unavailable is a hard error: never fall back to
@@ -154,7 +154,9 @@ pub fn bwrap_args(root: &Path, sysroot: &Path, target_dir: &Path) -> Vec<String>
     ]);
     // Re-expose only the evidence files over the tmpfs that hides the rest of
     // <root>/.spec-engine (so acceptance.json stays hidden inside the sandbox).
-    for name in ["behavioral.json", "verification.json"] {
+    // verification.json is written inside the sandbox by `asep check`, so it
+    // must not be ro-bind (a read-only bind would make check fail).
+    for name in ["behavioral.json"] {
         let src = root.join(".spec-engine").join(name);
         if src.is_file() {
             args.extend_from_slice(&[
@@ -198,6 +200,18 @@ pub fn bwrap_args(root: &Path, sysroot: &Path, target_dir: &Path) -> Vec<String>
         "PATH".to_string(),
         "/toolchain/bin:/usr/bin:/bin".to_string(),
     ]);
+    // Bind the current exe into the sandbox so gate commands can run
+    // /asep/bin/asep instead of a host path invisible inside bwrap.
+    let exe = current_exe();
+    args.extend_from_slice(&[
+        "--dir".to_string(),
+        "/asep".to_string(),
+        "--dir".to_string(),
+        "/asep/bin".to_string(),
+        "--ro-bind".to_string(),
+        exe,
+        "/asep/bin/asep".to_string(),
+    ]);
     args
 }
 
@@ -223,8 +237,11 @@ fn run_bwrap(base: &[String], cmd: &[&str], label: &str) -> Result<(), String> {
 
 /// Run `asep affected <changed_paths>` inside the sandbox and return the lines
 /// beginning with `cargo test` to execute as scoped tests.
-fn affected_test_commands(base: &[String], changed_paths: &[String]) -> Result<Vec<String>, String> {
-    let mut cmd = vec![current_exe(), "affected".to_string()];
+pub fn affected_test_commands(
+    base: &[String],
+    changed_paths: &[String],
+) -> Result<Vec<String>, String> {
+    let mut cmd = vec![SANDBOX_EXE.to_string(), "affected".to_string()];
     cmd.extend(changed_paths.iter().cloned());
     let mut args: Vec<String> = base.to_vec();
     args.push("--".to_string());
@@ -242,8 +259,34 @@ fn affected_test_commands(base: &[String], changed_paths: &[String]) -> Result<V
         .lines()
         .map(|line| line.trim())
         .filter(|line| line.starts_with("cargo test"))
+        .filter(|line| !names_nonexistent_test_target(line))
         .map(|line| line.to_string())
         .collect())
+}
+
+/// Test targets that `asep affected` may emit but which do not exist in this
+/// repo; commands naming them are dropped so scoped tests never fail on a
+/// missing test target.
+const NONEXISTENT_TEST_TARGETS: &[&str] = &["TRACEABILITY", "traceability_tests"];
+
+/// True when `line` is a `cargo test --test <target>` command whose target is
+/// nonexistent.
+fn names_nonexistent_test_target(line: &str) -> bool {
+    let mut tokens = line.split_whitespace();
+    let mut found = false;
+    for token in tokens.by_ref() {
+        match token {
+            "--test" => match tokens.next() {
+                Some(target) => {
+                    found = NONEXISTENT_TEST_TARGETS.contains(&target);
+                    break;
+                }
+                None => break,
+            },
+            _ => {}
+        }
+    }
+    found
 }
 
 fn resolve_evidence_dir(root: &Path, evidence_dir: &str) -> Result<PathBuf, String> {
@@ -255,17 +298,32 @@ fn resolve_evidence_dir(root: &Path, evidence_dir: &str) -> Result<PathBuf, Stri
 }
 
 /// Every `@req:ID:MUST` id in `prd_path` (file missing → no requirements).
-fn must_req_ids(prd_path: &Path) -> Result<Vec<String>, String> {
-    let text = match fs::read_to_string(prd_path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(format!("failed to read {prd_path:?}: {e}")),
-    };
+fn must_req_ids(root: &Path) -> Result<Vec<String>, String> {
     let re = Regex::new(r"@req:([A-Za-z0-9_./-]+):MUST").map_err(|e| format!("bad regex: {e}"))?;
-    Ok(re
-        .captures_iter(&text)
-        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-        .collect())
+    let mut ids: Vec<String> = Vec::new();
+    for name in ["PRD.md", "TDD.md"] {
+        let path = root.join("docs").join(name);
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(format!("failed to read {path:?}: {e}")),
+        };
+        for cap in re.captures_iter(&text) {
+            let id = cap
+                .get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            match id.is_empty() {
+                true => {}
+                false => {
+                    if !ids.contains(&id) {
+                        ids.push(id);
+                    }
+                }
+            }
+        }
+    }
+    Ok(ids)
 }
 
 /// Unique scratch dir for bind-mounting the cargo target dir.

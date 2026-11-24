@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use asep::acceptance_scoped::{bwrap_args, run_scoped_acceptance};
+use asep::acceptance_scoped::{affected_test_commands, bwrap_args, run_scoped_acceptance};
 
 #[test]
 fn scoped_acceptance_writes_accepted_evidence() {
@@ -12,7 +12,10 @@ fn scoped_acceptance_writes_accepted_evidence() {
     let root_path = root.path();
 
     // Minimal temp git repo.
-    run(root_path, &["git", "init", "-q", root_path.to_str().unwrap()]);
+    run(
+        root_path,
+        &["git", "init", "-q", root_path.to_str().unwrap()],
+    );
     Command::new("git")
         .arg("-C")
         .arg(root_path)
@@ -63,16 +66,7 @@ fn scoped_acceptance_writes_accepted_evidence() {
     fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
 
     // Fake bwrap shim: every gate exits 0 without running anything.
-    let shim_dir = tempfile::tempdir().expect("shim dir");
-    let shim_path = shim_dir.path().join("bwrap");
-    let mut shim = fs::File::create(&shim_path).expect("create shim");
-    writeln!(shim, "#!/bin/sh\nexit 0\n").expect("write shim");
-    drop(shim);
-    let mut perms = fs::metadata(&shim_path).expect("shim metadata").permissions();
-    use std::os::unix::fs::PermissionsExt;
-    perms.set_mode(0o755);
-    fs::set_permissions(&shim_path, perms).expect("shim perms");
-
+    let shim_path = bwrap_shim();
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
     let commit = "abc123";
@@ -84,16 +78,24 @@ fn scoped_acceptance_writes_accepted_evidence() {
     for id in ["REQ-ALPHA", "REQ-BETA"] {
         let file = semantic.join(format!("{id}.md"));
         assert!(file.is_file(), "missing evidence for {id}");
-        let content = fs::read_to_string(&file)
-            .unwrap_or_else(|e| panic!("read {id} evidence: {e}"));
-        assert!(content.contains("reviewer: scoped-trusted-runner"), "{id} reviewer");
+        let content =
+            fs::read_to_string(&file).unwrap_or_else(|e| panic!("read {id} evidence: {e}"));
+        assert!(
+            content.contains("reviewer: scoped-trusted-runner"),
+            "{id} reviewer"
+        );
         assert!(content.contains("verdict: ACCEPTED"), "{id} verdict");
         assert!(
-            content.contains(&format!("rationale: commit {commit}, scoped gates passed, changed paths docs/PRD.md")),
+            content.contains(&format!(
+                "rationale: commit {commit}, scoped gates passed, changed paths docs/PRD.md"
+            )),
             "{id} rationale"
         );
     }
-    assert!(!semantic.join("REQ-GAMMA.md").exists(), "SHOULD must not have evidence");
+    assert!(
+        !semantic.join("REQ-GAMMA.md").exists(),
+        "SHOULD must not have evidence"
+    );
 }
 
 #[test]
@@ -102,17 +104,38 @@ fn bwrap_args_binds_evidence_files_when_present() {
     let root_path = root.path();
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
     fs::write(root_path.join(".spec-engine/behavioral.json"), "{}").expect("write behavioral.json");
-    fs::write(root_path.join(".spec-engine/verification.json"), "{}").expect("write verification.json");
+    fs::write(root_path.join(".spec-engine/verification.json"), "{}")
+        .expect("write verification.json");
 
     let behavioral = root_path.join(".spec-engine/behavioral.json");
     let verification = root_path.join(".spec-engine/verification.json");
 
-    let args = bwrap_args(root_path, Path::new("/toolchain"), Path::new("/workspace/target"));
+    let args = bwrap_args(
+        root_path,
+        Path::new("/toolchain"),
+        Path::new("/workspace/target"),
+    );
     let windows: Vec<Vec<String>> = args.windows(3).map(|w| w.to_vec()).collect();
 
+    let exe = std::env::current_exe().expect("current exe path");
     assert!(
-        args.windows(2).any(|w| w == ["--tmpfs", "/workspace/.spec-engine"]),
+        args.windows(2)
+            .any(|w| w == ["--tmpfs", "/workspace/.spec-engine"]),
         "tmpfs hides .spec-engine"
+    );
+    assert!(
+        args.windows(7).any(|w| {
+            w == [
+                "--dir".to_string(),
+                "/asep".to_string(),
+                "--dir".to_string(),
+                "/asep/bin".to_string(),
+                "--ro-bind".to_string(),
+                exe.to_str().unwrap().to_string(),
+                "/asep/bin/asep".to_string(),
+            ]
+        }),
+        "missing --dir /asep --dir /asep/bin --ro-bind <exe> /asep/bin/asep"
     );
     assert!(
         windows.contains(&vec![
@@ -123,21 +146,31 @@ fn bwrap_args_binds_evidence_files_when_present() {
         "behavioral.json bind missing"
     );
     assert!(
-        windows.contains(&vec![
-            "--ro-bind".to_string(),
-            verification.to_str().unwrap().to_string(),
-            "/workspace/.spec-engine/verification.json".to_string(),
-        ]),
-        "verification.json bind missing"
+        !windows.iter().any(|w| {
+            w == &vec![
+                "--ro-bind".to_string(),
+                verification.to_str().unwrap().to_string(),
+                "/workspace/.spec-engine/verification.json".to_string(),
+            ]
+        }),
+        "verification.json must not be ro-bind (check writes it inside the sandbox)"
     );
-    let tmpfs_pos = args.iter().position(|a| a == "--tmpfs").expect("tmpfs flag present");
+    let tmpfs_pos = args
+        .iter()
+        .position(|a| a == "--tmpfs")
+        .expect("tmpfs flag present");
     let behavioral_pos = args
         .iter()
         .position(|a| a == "/workspace/.spec-engine/behavioral.json")
         .expect("behavioral bind target present");
-    assert!(tmpfs_pos < behavioral_pos, "binds must come after tmpfs overlay");
+    assert!(
+        tmpfs_pos < behavioral_pos,
+        "binds must come after tmpfs overlay"
+    );
     // The acceptance policy and the whole .spec-engine dir stay hidden.
-    assert!(!args.iter().any(|a| a == "acceptance.json" || a.ends_with("/acceptance.json")));
+    assert!(!args
+        .iter()
+        .any(|a| a == "acceptance.json" || a.ends_with("/acceptance.json")));
     assert!(
         !args
             .windows(2)
@@ -147,15 +180,59 @@ fn bwrap_args_binds_evidence_files_when_present() {
 
     // Files absent => no binds.
     let empty = tempfile::tempdir().expect("temp dir");
-    let empty_args = bwrap_args(empty.path(), Path::new("/toolchain"), Path::new("/workspace/target"));
+    let empty_args = bwrap_args(
+        empty.path(),
+        Path::new("/toolchain"),
+        Path::new("/workspace/target"),
+    );
     assert!(
-        !empty_args.iter().any(|a| a.contains("behavioral.json") || a.contains("verification.json")),
+        !empty_args
+            .iter()
+            .any(|a| a.contains("behavioral.json") || a.contains("verification.json")),
         "binds must not appear when evidence files are missing"
     );
 }
 
+/// Gate commands must invoke /asep/bin/asep (the exe bound into the
+/// sandbox), not a host path invisible inside bwrap.
+#[test]
+fn scoped_gate_commands_use_sandbox_exe() {
+    let root = scoped_acceptance_root();
+    let root_path = root.path();
+
+    // Recording bwrap shim: log every invocation, then exit 0 so gates
+    // "succeed" without a real sandbox.
+    let record = bwrap_log();
+    fs::remove_file(&record).ok();
+    let shim_path = bwrap_shim();
+    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
+
+    run_scoped_acceptance(root_path, "abc123")
+        .unwrap_or_else(|e| panic!("run_scoped_acceptance failed: {e}"));
+
+    let log = fs::read_to_string(&record).expect("read gate command log");
+    assert!(
+        log.lines()
+            .any(|line| line.contains("/asep/bin/asep ci --gate 0 --json")),
+        "gate (a) did not use /asep/bin/asep: {log}"
+    );
+    assert!(
+        log.lines()
+            .any(|line| line.contains("/asep/bin/asep check --rigor T1")),
+        "gate (b) did not use /asep/bin/asep: {log}"
+    );
+    assert!(
+        log.lines()
+            .any(|line| line.contains("/asep/bin/asep affected docs/PRD.md")),
+        "gate (c) did not use /asep/bin/asep: {log}"
+    );
+}
+
 fn run(root: &Path, args: &[&str]) {
-    let status = Command::new(args[0]).args(&args[1..]).current_dir(root).status();
+    let status = Command::new(args[0])
+        .args(&args[1..])
+        .current_dir(root)
+        .status();
     let status = status.unwrap_or_else(|e| panic!("failed to run {}: {e}", args[0]));
     assert!(status.success(), "command {:?} failed", args);
 }
@@ -165,15 +242,26 @@ fn run(root: &Path, args: &[&str]) {
 /// the same path that outlives any single test's temp dirs.
 fn bwrap_shim() -> PathBuf {
     let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap");
-    if !shim_path.is_file() {
-        let mut shim = fs::File::create(&shim_path).expect("create shim");
-        writeln!(shim, "#!/bin/sh\nexit 0\n").expect("write shim");
-        let mut perms = fs::metadata(&shim_path).expect("shim metadata").permissions();
-        use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o755);
-        fs::set_permissions(&shim_path, perms).expect("shim perms");
-    }
+    let log = bwrap_log();
+    let mut shim = fs::File::create(&shim_path).expect("create shim");
+    writeln!(
+        shim,
+        "#!/bin/sh\necho \"$@\" >> {}\nexit 0\n",
+        log.display()
+    )
+    .expect("write shim");
+    drop(shim);
+    let mut perms = fs::metadata(&shim_path)
+        .expect("shim metadata")
+        .permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).expect("shim perms");
     shim_path
+}
+
+fn bwrap_log() -> PathBuf {
+    std::env::temp_dir().join("asep-acceptance-test-bwrap.log")
 }
 
 /// Minimal temp git repo with an acceptance policy, a PRD with two MUST
@@ -183,7 +271,10 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temp dir");
     let root_path = root.path();
 
-    run(root_path, &["git", "init", "-q", root_path.to_str().unwrap()]);
+    run(
+        root_path,
+        &["git", "init", "-q", root_path.to_str().unwrap()],
+    );
     Command::new("git")
         .arg("-C")
         .arg(root_path)
@@ -300,10 +391,62 @@ fn accept_scoped_cli_rejects_unapproved_commit() {
         .output()
         .expect("spawn asep accept-scoped");
 
-    assert!(!output.status.success(), "expected failure for unapproved commit");
+    assert!(
+        !output.status.success(),
+        "expected failure for unapproved commit"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("not the approved commit"),
         "missing diagnostic: {stderr}"
     );
+}
+
+#[test]
+fn affected_test_commands_filters_nonexistent_test_targets() {
+    // Fake `asep affected` output: two commands naming nonexistent test
+    // targets plus one valid command. Only the valid command must be returned.
+    let shim_path = fake_affected_bwrap_shim(&[
+        "cargo test --test TRACEABILITY",
+        "cargo test --test traceability_tests",
+        "cargo test --test scoped_traceability",
+    ]);
+    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
+
+    let base = bwrap_args(
+        Path::new("/workspace"),
+        Path::new("/toolchain"),
+        Path::new("/workspace/target"),
+    );
+    let commands = affected_test_commands(&base, &["docs/PRD.md".to_string()])
+        .unwrap_or_else(|e| panic!("affected_test_commands failed: {e}"));
+
+    assert_eq!(
+        commands,
+        vec!["cargo test --test scoped_traceability".to_string()],
+        "only the valid test command must survive the filter"
+    );
+
+    // Restore the shared shim so other tests see the default bwrap behavior.
+    std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
+}
+
+/// bwrap shim that prints `lines` to stdout and exits 0, faking `asep
+/// affected` output without a real sandbox.
+fn fake_affected_bwrap_shim(lines: &[&str]) -> PathBuf {
+    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-fake-affected");
+    let mut shim = fs::File::create(&shim_path).expect("create shim");
+    writeln!(shim, "#!/bin/sh").expect("write shebang");
+    for line in lines {
+        writeln!(shim, "echo {}", line).expect("write echo");
+    }
+    writeln!(shim, "exit 0").expect("write exit");
+    drop(shim);
+    let mut perms = fs::metadata(&shim_path)
+        .expect("shim metadata")
+        .permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).expect("shim perms");
+    shim_path
 }

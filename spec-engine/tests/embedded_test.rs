@@ -73,7 +73,12 @@ fn test_skills_reference_antislop_rule_ids() {
     let expected: &[(&str, &[&str])] = &[
         (
             "engineering-specs",
-            &["AS-DESIGN-VAGUE", "AS-DESIGN-TBD", "AS-DOCS-PLACEHOLDER", "AS-DOCS-WORDY"],
+            &[
+                "AS-DESIGN-VAGUE",
+                "AS-DESIGN-TBD",
+                "AS-DOCS-PLACEHOLDER",
+                "AS-DOCS-WORDY",
+            ],
         ),
         (
             "code-contracts",
@@ -87,7 +92,12 @@ fn test_skills_reference_antislop_rule_ids() {
         ),
         (
             "repository-governance",
-            &["AS-COPY-FILLER", "AS-COPY-HYPE", "AS-COPY-BUZZWORD", "AS-DOCS-WORDY"],
+            &[
+                "AS-COPY-FILLER",
+                "AS-COPY-HYPE",
+                "AS-COPY-BUZZWORD",
+                "AS-DOCS-WORDY",
+            ],
         ),
         ("design-tokens", &["AS-COPY-HYPE", "AS-DOCS-PLACEHOLDER"]),
         (
@@ -119,9 +129,7 @@ fn test_skills_reference_antislop_rule_ids() {
             "Skill {} must contain 'Canonical Anti-Slop Rules' section",
             id
         );
-        let has_rule_id = rule_ids
-            .iter()
-            .any(|rid| skill.content.contains(rid));
+        let has_rule_id = rule_ids.iter().any(|rid| skill.content.contains(rid));
         assert!(
             has_rule_id,
             "Skill {} must reference at least one canonical anti-slop AS- rule id",

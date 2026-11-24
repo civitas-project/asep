@@ -16,11 +16,13 @@ line 3
 "#;
 
     // Test resolving by taking local
-    let resolved_local = resolve_conflict_chunks(conflicted_text, |local, _remote| local.to_string());
+    let resolved_local =
+        resolve_conflict_chunks(conflicted_text, |local, _remote| local.to_string());
     assert_eq!(resolved_local, "line 1\nmy local change\nline 3\n");
 
     // Test resolving by taking remote
-    let resolved_remote = resolve_conflict_chunks(conflicted_text, |_local, remote| remote.to_string());
+    let resolved_remote =
+        resolve_conflict_chunks(conflicted_text, |_local, remote| remote.to_string());
     assert_eq!(resolved_remote, "line 1\ntheir remote change\nline 3\n");
 }
 
@@ -45,10 +47,12 @@ fn test_skill_purge_cascade() {
     fs::write(agent_target.join("SKILL.md"), "installed in cursor").unwrap();
 
     // Record in state
-    asep::skill::state::record_agent_install(&skills_dir, "test-purge", &TargetAgent::Cursor).unwrap();
+    asep::skill::state::record_agent_install(&skills_dir, "test-purge", &TargetAgent::Cursor)
+        .unwrap();
 
     let scope = InstallScope::Local(root.to_path_buf());
-    let report = purge_skill(&skills_dir, "test-purge", None, &scope).expect("purge should succeed");
+    let report =
+        purge_skill(&skills_dir, "test-purge", None, &scope).expect("purge should succeed");
 
     assert!(report.workspace_removed);
     assert!(!skill_folder.exists());

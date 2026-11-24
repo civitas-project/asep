@@ -385,7 +385,10 @@ pub fn execute_tool(
             let has_doc_contract_failure = !is_relaxed && !violations.is_empty();
             let has_strict_failure = strict && !report.should_pending.is_empty();
             let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
-            let passed = !has_must_failure && !has_doc_contract_failure && !has_strict_failure && !has_deny_drafts_failure;
+            let passed = !has_must_failure
+                && !has_doc_contract_failure
+                && !has_strict_failure
+                && !has_deny_drafts_failure;
 
             let mut summary = String::new();
             let mut gate = "FAILED";
@@ -505,13 +508,21 @@ pub fn execute_tool(
             let include_ext: Vec<String> = arguments
                 .get("include_ext")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let exclude_ext: Vec<String> = arguments
                 .get("exclude_ext")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let mode = arguments
@@ -569,15 +580,16 @@ pub fn execute_tool(
             let mut formatter = Formatter::new(config, parsers)
                 .map_err(|e| format!("Failed to create formatter: {e}"))?;
 
-            let files = walk_files(formatter.config())
-                .map_err(|e| format!("Failed to walk files: {e}"))?;
+            let files =
+                walk_files(formatter.config()).map_err(|e| format!("Failed to walk files: {e}"))?;
 
             let mut output = Vec::new();
-            formatter.format_files(files, &mut output)
+            formatter
+                .format_files(files, &mut output)
                 .map_err(|e| format!("Failed to format files: {e}"))?;
 
-            let output_str = String::from_utf8(output)
-                .map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
+            let output_str =
+                String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
 
             Ok(serde_json::json!({
                 "content": [
@@ -695,15 +707,16 @@ pub fn execute_tool(
             let mut formatter = Formatter::new(config, parsers)
                 .map_err(|e| format!("Failed to create formatter: {e}"))?;
 
-            let files = walk_files(formatter.config())
-                .map_err(|e| format!("Failed to walk files: {e}"))?;
+            let files =
+                walk_files(formatter.config()).map_err(|e| format!("Failed to walk files: {e}"))?;
 
             let mut output = Vec::new();
-            formatter.format_files(files, &mut output)
+            formatter
+                .format_files(files, &mut output)
                 .map_err(|e| format!("Failed to format files: {e}"))?;
 
-            let output_str = String::from_utf8(output)
-                .map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
+            let output_str =
+                String::from_utf8(output).map_err(|e| format!("Invalid UTF-8 in output: {e}"))?;
 
             Ok(serde_json::json!({
                 "content": [
@@ -725,13 +738,11 @@ pub fn execute_tool(
                 .get("body")
                 .ok_or_else(|| "Missing required parameter 'body'".to_string())?
                 .clone();
-            let ref_path = arguments
-                .get("ref")
-                .and_then(|v| v.as_str())
-                .map(Path::new);
+            let ref_path = arguments.get("ref").and_then(|v| v.as_str()).map(Path::new);
             let reply_to = arguments.get("reply_to").and_then(|v| v.as_str());
 
-            let required_capabilities = mcp_opt_array_of_strings(arguments, "required_capabilities")?;
+            let required_capabilities =
+                mcp_opt_array_of_strings(arguments, "required_capabilities")?;
             let media = mcp_opt_string(arguments, "media")?;
             let domain = mcp_opt_string(arguments, "domain")?;
             let tool_filter = mcp_opt_array_of_strings(arguments, "tool_filter")?;
@@ -891,10 +902,7 @@ fn mcp_opt_string(arguments: &serde_json::Value, key: &str) -> Result<Option<Str
 fn mcp_opt_i64(arguments: &serde_json::Value, key: &str) -> Result<Option<i64>, String> {
     match arguments.get(key) {
         None => Ok(None),
-        Some(v) => v
-            .as_i64()
-            .ok_or_else(|| format!("invalid {key}"))
-            .map(Some),
+        Some(v) => v.as_i64().ok_or_else(|| format!("invalid {key}")).map(Some),
     }
 }
 

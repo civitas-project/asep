@@ -25,7 +25,9 @@ pub struct EmitterRegistry {
 
 impl EmitterRegistry {
     pub fn new() -> Self {
-        Self { emitters: Vec::new() }
+        Self {
+            emitters: Vec::new(),
+        }
     }
 
     pub fn register(&mut self, emitter: Box<dyn IndexEmitter>) {
@@ -33,11 +35,21 @@ impl EmitterRegistry {
     }
 
     pub fn get(&self, format: &str) -> Option<&dyn IndexEmitter> {
-        self.emitters.iter().find(|e| e.format_name() == format).map(|e| e.as_ref())
+        self.emitters
+            .iter()
+            .find(|e| e.format_name() == format)
+            .map(|e| e.as_ref())
     }
 
-    pub fn emit_to_file(&self, index: &SymbolIndex, format: &str, path: &Path) -> anyhow::Result<()> {
-        let emitter = self.get(format).ok_or_else(|| anyhow::anyhow!("Unknown format: {}", format))?;
+    pub fn emit_to_file(
+        &self,
+        index: &SymbolIndex,
+        format: &str,
+        path: &Path,
+    ) -> anyhow::Result<()> {
+        let emitter = self
+            .get(format)
+            .ok_or_else(|| anyhow::anyhow!("Unknown format: {}", format))?;
         let mut file = std::fs::File::create(path)?;
         emitter.emit(index, &mut file)
     }

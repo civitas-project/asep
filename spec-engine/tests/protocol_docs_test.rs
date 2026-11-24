@@ -8,8 +8,14 @@ fn test_engineering_specs_zero_antislop_and_puml_templates() {
     let specs_dir = root.join("engineering-specs");
 
     // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
-    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
-    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("antislop").exists(),
+        "antislop/ directory must not exist"
+    );
+    assert!(
+        !root.join(".superpowers").exists(),
+        ".superpowers/ directory must not exist"
+    );
     assert!(
         !root.join("docs").join("superpowers").exists(),
         "docs/superpowers/ directory must not exist"
@@ -71,8 +77,14 @@ fn test_code_contracts_multilang_and_zero_antislop() {
     let contracts_dir = root.join("code-contracts");
 
     // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
-    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
-    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("antislop").exists(),
+        "antislop/ directory must not exist"
+    );
+    assert!(
+        !root.join(".superpowers").exists(),
+        ".superpowers/ directory must not exist"
+    );
     assert!(
         !root.join("docs").join("superpowers").exists(),
         "docs/superpowers/ directory must not exist"
@@ -123,8 +135,14 @@ fn test_repository_governance_zero_antislop_and_readme_template() {
     let gov_dir = root.join("repository-governance");
 
     // 1. Verify no antislop/, .superpowers/, or docs/superpowers/ directory under repo root
-    assert!(!root.join("antislop").exists(), "antislop/ directory must not exist");
-    assert!(!root.join(".superpowers").exists(), ".superpowers/ directory must not exist");
+    assert!(
+        !root.join("antislop").exists(),
+        "antislop/ directory must not exist"
+    );
+    assert!(
+        !root.join(".superpowers").exists(),
+        ".superpowers/ directory must not exist"
+    );
     assert!(
         !root.join("docs").join("superpowers").exists(),
         "docs/superpowers/ directory must not exist"
@@ -195,5 +213,3 @@ fn contains_cov_table(content: &str) -> bool {
         .lines()
         .any(|line| line.trim_start().starts_with('|') && line.contains("COV-01"))
 }
-
-

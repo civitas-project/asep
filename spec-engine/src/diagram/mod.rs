@@ -62,7 +62,9 @@ pub fn render_plantuml_diagrams(root: &Path) -> Result<usize, AsepError> {
                 )));
             }
             Err(e) => {
-                return Err(AsepError::Diagram(format!("failed to execute plantuml: {e}")));
+                return Err(AsepError::Diagram(format!(
+                    "failed to execute plantuml: {e}"
+                )));
             }
         }
     }

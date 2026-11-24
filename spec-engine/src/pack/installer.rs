@@ -3,9 +3,7 @@
 // @impl:FR-AMB-02
 
 use crate::config::settings::load_config;
-use crate::pack::embedded::{
-    get_default_mcp_config_json, get_default_plugin_json,
-};
+use crate::pack::embedded::{get_default_mcp_config_json, get_default_plugin_json};
 use crate::pack::manifest::{scaffold_opencode_agents, update_opencode_json};
 use crate::pack::targets::{default_global_home, resolve_target_paths, InstallScope, TargetAgent};
 use colored::Colorize;
@@ -240,20 +238,12 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
 
             TargetAgent::Windsurf => {
                 let target = resolve_target_paths(&scope, TargetAgent::Windsurf);
-                println!(
-                    "{} Installed Windsurf at {}",
-                    "✔".green(),
-                    target.display()
-                );
+                println!("{} Installed Windsurf at {}", "✔".green(), target.display());
             }
 
             TargetAgent::Continue => {
                 let target = resolve_target_paths(&scope, TargetAgent::Continue);
-                println!(
-                    "{} Installed Continue at {}",
-                    "✔".green(),
-                    target.display()
-                );
+                println!("{} Installed Continue at {}", "✔".green(), target.display());
             }
 
             TargetAgent::RooCode => {
@@ -276,11 +266,7 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
 
             TargetAgent::Goose => {
                 let target = resolve_target_paths(&scope, TargetAgent::Goose);
-                println!(
-                    "{} Installed Goose at {}",
-                    "✔".green(),
-                    target.display()
-                );
+                println!("{} Installed Goose at {}", "✔".green(), target.display());
             }
 
             TargetAgent::Zed => {
@@ -294,11 +280,7 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
 
             TargetAgent::Aider => {
                 let target = resolve_target_paths(&scope, TargetAgent::Aider);
-                println!(
-                    "{} Installed Aider at {}",
-                    "✔".green(),
-                    target.display()
-                );
+                println!("{} Installed Aider at {}", "✔".green(), target.display());
             }
         }
     }

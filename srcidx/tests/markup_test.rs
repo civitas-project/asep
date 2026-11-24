@@ -40,7 +40,8 @@ fn test_markup_parser_constructors() {
 
 #[test]
 fn test_html_symbols_and_tags() {
-    let content = "<title>Document Title</title>\n<h2 id=\"sec\">Section</h2>\n<!-- @req:FR-H:MUST -->\n";
+    let content =
+        "<title>Document Title</title>\n<h2 id=\"sec\">Section</h2>\n<!-- @req:FR-H:MUST -->\n";
     let (_dir, path) = write_doc(content, "html");
     let registry = ParserRegistry::default();
     let result = registry.parse_file(&path, content);

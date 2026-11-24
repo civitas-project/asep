@@ -55,16 +55,28 @@ pub enum Commands {
         )]
         rigor: Option<String>,
 
-        #[arg(long, help = "Path to write `.spec-engine/behavioral.json` (Gate 3 behavioral report)")]
+        #[arg(
+            long,
+            help = "Path to write `.spec-engine/behavioral.json` (Gate 3 behavioral report)"
+        )]
         behavioral_report: Option<PathBuf>,
 
-        #[arg(long, help = "Deny all @req:*:DRAFT tags (enforced on main production branch)")]
+        #[arg(
+            long,
+            help = "Deny all @req:*:DRAFT tags (enforced on main production branch)"
+        )]
         deny_drafts: bool,
 
-        #[arg(long, help = "Live continuous monitoring mode (re-evaluates on file changes)")]
+        #[arg(
+            long,
+            help = "Live continuous monitoring mode (re-evaluates on file changes)"
+        )]
         watch: bool,
 
-        #[arg(long, help = "Path to LCOV or coverage file to correlate with requirements")]
+        #[arg(
+            long,
+            help = "Path to LCOV or coverage file to correlate with requirements"
+        )]
         coverage: Option<PathBuf>,
 
         #[arg(
@@ -94,7 +106,10 @@ pub enum Commands {
         #[arg(short, long, help = "Target project directory")]
         path: Option<PathBuf>,
 
-        #[arg(long, help = "Run single gate only: 0 (Formal), 1 (Traceability), 2 (Clippy), 3 (Test), 4 (Bench)")]
+        #[arg(
+            long,
+            help = "Run single gate only: 0 (Formal), 1 (Traceability), 2 (Clippy), 3 (Test), 4 (Bench)"
+        )]
         gate: Option<u8>,
 
         #[arg(long, help = "Comma-separated gates to skip (e.g. '0,4')")]
@@ -573,11 +588,7 @@ pub enum HarnessCommands {
             help = "Comma-separated input sizes"
         )]
         sizes: String,
-        #[arg(
-            long,
-            default_value_t = 1.2,
-            help = "Maximum acceptable log-log slope"
-        )]
+        #[arg(long, default_value_t = 1.2, help = "Maximum acceptable log-log slope")]
         max_slope: f64,
         #[arg(long, default_value = "10s", help = "Timeout per run")]
         timeout: String,
@@ -586,10 +597,7 @@ pub enum HarnessCommands {
     Memory {
         #[arg(long, help = "Command to run")]
         cmd: String,
-        #[arg(
-            long,
-            help = "Peak memory budget (e.g. '64MB', '512KB')"
-        )]
+        #[arg(long, help = "Peak memory budget (e.g. '64MB', '512KB')")]
         peak: String,
         #[arg(long, default_value = "30s", help = "Timeout")]
         timeout: String,

@@ -174,7 +174,10 @@ fn check_no_dropped_keys(
 /// profile, starting from a deny-by-default ceiling and allowing only the
 /// declared capabilities. `extra` holds agent-specific rules that are always
 /// kept (e.g. `*.env` denies for read-only agents, explorer tool allows).
-fn agent_permissions(profile: &CapabilityProfile, extra: &[serde_json::Value]) -> Vec<serde_json::Value> {
+fn agent_permissions(
+    profile: &CapabilityProfile,
+    extra: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
     let mut rules: Vec<serde_json::Value> =
         vec![json!({"action": "*", "resource": "*", "effect": "deny"})];
 
@@ -554,7 +557,10 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
         .expect("agents object was just ensured")
         .as_object_mut()
         .expect("agents value is an object");
-    for (key, default_value) in default_agents.as_object().expect("default_agents is an object") {
+    for (key, default_value) in default_agents
+        .as_object()
+        .expect("default_agents is an object")
+    {
         match agents_obj.get(key) {
             // Missing agent: insert the full default preset.
             None => {
@@ -564,7 +570,10 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             // existing rules; merge in only the missing default permission
             // rules, appended after existing ones (last-match-wins).
             Some(existing) => {
-                agents_obj.insert(key.clone(), merge_agent_permissions(existing, default_value));
+                agents_obj.insert(
+                    key.clone(),
+                    merge_agent_permissions(existing, default_value),
+                );
             }
         }
     }

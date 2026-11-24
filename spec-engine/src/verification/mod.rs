@@ -89,7 +89,10 @@ fn read_behavioral_passed(path: &Path) -> bool {
         Ok(v) => v,
         Err(_) => return false,
     };
-    value.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)
+    value
+        .get("passed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 // @impl:FR-VERIFY-01-C
@@ -130,9 +133,9 @@ pub fn evaluate(
 
     let mut semantic = true;
     if semantic_required {
-        semantic = req_ids
-            .iter()
-            .all(|subject| load_semantic_evidence(evidence_dir, subject).is_some_and(|e| e.verdict == "ACCEPTED"));
+        semantic = req_ids.iter().all(|subject| {
+            load_semantic_evidence(evidence_dir, subject).is_some_and(|e| e.verdict == "ACCEPTED")
+        });
     }
     if !semantic_required {
         skipped.push("semantic".to_string());
@@ -191,7 +194,12 @@ mod tests {
         fs::create_dir_all(behavioral.parent().unwrap()).unwrap();
         fs::write(&behavioral, r#"{"passed": true}"#).unwrap();
 
-        let report = evaluate(&closed_graph(), root.path().join("evidence").as_path(), TierId::T2, &behavioral);
+        let report = evaluate(
+            &closed_graph(),
+            root.path().join("evidence").as_path(),
+            TierId::T2,
+            &behavioral,
+        );
         assert_eq!(report.status, VerificationStatus::Unproven);
         assert!(report.structural);
         assert!(report.behavioral);
@@ -206,7 +214,12 @@ mod tests {
         fs::create_dir_all(behavioral.parent().unwrap()).unwrap();
         fs::write(&behavioral, r#"{"passed": true}"#).unwrap();
 
-        let report = evaluate(&closed_graph(), root.path().join("evidence").as_path(), TierId::T2, &behavioral);
+        let report = evaluate(
+            &closed_graph(),
+            root.path().join("evidence").as_path(),
+            TierId::T2,
+            &behavioral,
+        );
         assert_eq!(report.status, VerificationStatus::Pass);
     }
 
@@ -217,7 +230,12 @@ mod tests {
         fs::create_dir_all(behavioral.parent().unwrap()).unwrap();
         fs::write(&behavioral, r#"{"passed": true}"#).unwrap();
 
-        let report = evaluate(&closed_graph(), root.path().join("evidence").as_path(), TierId::T1, &behavioral);
+        let report = evaluate(
+            &closed_graph(),
+            root.path().join("evidence").as_path(),
+            TierId::T1,
+            &behavioral,
+        );
         assert_eq!(report.status, VerificationStatus::Pass);
         assert!(report.skipped.contains(&"semantic".to_string()));
     }
@@ -237,8 +255,12 @@ mod tests {
             found: 0,
             required: 1,
         });
-        let report = evaluate(&broken, root.path().join("evidence").as_path(), TierId::T2, &behavioral);
+        let report = evaluate(
+            &broken,
+            root.path().join("evidence").as_path(),
+            TierId::T2,
+            &behavioral,
+        );
         assert_eq!(report.status, VerificationStatus::Fail);
     }
-
 }

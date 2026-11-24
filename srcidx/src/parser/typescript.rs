@@ -1,21 +1,18 @@
 //! TypeScript/JavaScript parser using tree-sitter.
 
 use crate::index::SymbolKind;
-use crate::parser::{SourceParser};
 use crate::parser::tree_sitter_base::{TreeSitterConfig, TreeSitterParser};
-use tree_sitter::Query;
+use crate::parser::SourceParser;
 use anyhow::Result;
+use tree_sitter::Query;
 
 /// Create a TypeScript/JavaScript parser.
 pub fn create_typescript_parser() -> Result<Box<dyn SourceParser>> {
     // TypeScript language
     let ts_language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    
+
     // Query for TypeScript symbols
-    let ts_query = Query::new(
-        &ts_language,
-        include_str!("queries/typescript/tags.scm"),
-    )?;
+    let ts_query = Query::new(&ts_language, include_str!("queries/typescript/tags.scm"))?;
 
     // Pattern kind map: maps pattern index to symbol kind
     // Pattern indices (0-based) correspond to patterns in queries/typescript/tags.scm:
@@ -37,19 +34,19 @@ pub fn create_typescript_parser() -> Result<Box<dyn SourceParser>> {
     // 15: override_modifier -> Other (visibility only)
     // 15: decorator -> Other (attrs only)
     let pattern_kind_map = vec![
-        SymbolKind::Fn,      // 0: function_declaration
-        SymbolKind::Fn,      // 1: generator_function_declaration
-        SymbolKind::Fn,      // 2: method_definition
-        SymbolKind::Fn,      // 3: arrow_function
-        SymbolKind::Class,   // 4: class_declaration
-        SymbolKind::Class,   // 5: class
-        SymbolKind::Interface, // 6: interface_declaration
-        SymbolKind::Type,    // 7: type_alias_declaration
-        SymbolKind::Enum,    // 8: enum_declaration
-        SymbolKind::Variable, // 9: variable_declaration
-        SymbolKind::Import,  // 10: import_statement
-        SymbolKind::Import,  // 11: export_statement (re-exports)
-        SymbolKind::Export,  // 12: export_statement (@kind)
+        SymbolKind::Fn,                              // 0: function_declaration
+        SymbolKind::Fn,                              // 1: generator_function_declaration
+        SymbolKind::Fn,                              // 2: method_definition
+        SymbolKind::Fn,                              // 3: arrow_function
+        SymbolKind::Class,                           // 4: class_declaration
+        SymbolKind::Class,                           // 5: class
+        SymbolKind::Interface,                       // 6: interface_declaration
+        SymbolKind::Type,                            // 7: type_alias_declaration
+        SymbolKind::Enum,                            // 8: enum_declaration
+        SymbolKind::Variable,                        // 9: variable_declaration
+        SymbolKind::Import,                          // 10: import_statement
+        SymbolKind::Import,                          // 11: export_statement (re-exports)
+        SymbolKind::Export,                          // 12: export_statement (@kind)
         SymbolKind::Other("typescript".to_string()), // 13: comment (doc only)
         SymbolKind::Other("typescript".to_string()), // 14: accessibility_modifier
         SymbolKind::Other("typescript".to_string()), // 15: override_modifier
@@ -94,7 +91,10 @@ export function add(a: number, b: number): number {
         let result = parser.parse_file(Path::new("test.ts"), code);
         eprintln!("Symbols found: {}", result.symbols.len());
         for sym in &result.symbols {
-            eprintln!("  - {} ({:?}) at {}:{}-{} kind_node={:?}", sym.name, sym.kind, sym.file, sym.line, sym.end_line, sym.kind);
+            eprintln!(
+                "  - {} ({:?}) at {}:{}-{} kind_node={:?}",
+                sym.name, sym.kind, sym.file, sym.line, sym.end_line, sym.kind
+            );
         }
         assert_eq!(result.symbols.len(), 1);
         let sym = &result.symbols[0];
@@ -119,9 +119,17 @@ export class Point {
 "#;
         let mut parser = create_typescript_parser().unwrap();
         let result = parser.parse_file(Path::new("test.ts"), code);
-        let class_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Class).unwrap();
+        let class_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Class)
+            .unwrap();
         assert_eq!(class_sym.name, "Point");
-        let method_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "constructor").unwrap();
+        let method_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "constructor")
+            .unwrap();
         assert_eq!(method_sym.name, "constructor");
     }
 
@@ -134,7 +142,11 @@ export interface Shape {
 "#;
         let mut parser = create_typescript_parser().unwrap();
         let result = parser.parse_file(Path::new("test.ts"), code);
-        let interfaces: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Interface).collect();
+        let interfaces: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Interface)
+            .collect();
         assert_eq!(interfaces.len(), 1);
         assert_eq!(interfaces[0].name, "Shape");
     }
@@ -146,7 +158,11 @@ export type Point = { x: number; y: number };
 "#;
         let mut parser = create_typescript_parser().unwrap();
         let result = parser.parse_file(Path::new("test.ts"), code);
-        let types: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Type).collect();
+        let types: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Type)
+            .collect();
         assert_eq!(types.len(), 1);
         assert_eq!(types[0].name, "Point");
     }
@@ -161,7 +177,11 @@ export default add;
 "#;
         let mut parser = create_typescript_parser().unwrap();
         let result = parser.parse_file(Path::new("test.js"), code);
-        let fn_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn).unwrap();
+        let fn_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn)
+            .unwrap();
         assert_eq!(fn_sym.name, "add");
     }
 }

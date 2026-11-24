@@ -78,11 +78,7 @@ fn test_check_uses_explicit_evidence_dir() {
 
     // 1. Without --evidence-dir: Unproven => failure, exit 3.
     let mut cmd_without = Command::cargo_bin("asep").expect("binary exists");
-    cmd_without
-        .arg("check")
-        .arg("--rigor")
-        .arg("T2")
-        .arg(root);
+    cmd_without.arg("check").arg("--rigor").arg("T2").arg(root);
     cmd_without.assert().failure().code(3);
 
     // 2. With --evidence-dir: Pass => exit 0.
@@ -166,11 +162,7 @@ fn test_check_velocity_mode_and_deny_drafts() {
 
     // 1. Velocity mode passes (draft does not fail build)
     let mut cmd_velocity = Command::cargo_bin("asep").expect("binary exists");
-    cmd_velocity
-        .arg("check")
-        .arg("--rigor")
-        .arg("T0")
-        .arg(root);
+    cmd_velocity.arg("check").arg("--rigor").arg("T0").arg(root);
     cmd_velocity
         .assert()
         .success()
@@ -216,7 +208,11 @@ fn write_t2_closed_project(root: &std::path::Path, req_id: &str) {
 
     let spec_engine_dir = root.join(".spec-engine");
     fs::create_dir_all(&spec_engine_dir).expect("create .spec-engine");
-    fs::write(spec_engine_dir.join("behavioral.json"), r#"{"passed": true}"#).expect("write behavioral");
+    fs::write(
+        spec_engine_dir.join("behavioral.json"),
+        r#"{"passed": true}"#,
+    )
+    .expect("write behavioral");
 
     let evidence_dir = root.join("evidence").join("semantic");
     fs::create_dir_all(&evidence_dir).expect("create evidence dir");
@@ -263,7 +259,10 @@ fn test_missing_semantic_evidence_is_unproven() {
         TierId::T2,
         &behavioral,
     );
-    assert_eq!(report.status, asep::verification::VerificationStatus::Unproven);
+    assert_eq!(
+        report.status,
+        asep::verification::VerificationStatus::Unproven
+    );
     assert!(report.structural);
     assert!(report.behavioral);
     assert!(!report.semantic);
@@ -271,7 +270,8 @@ fn test_missing_semantic_evidence_is_unproven() {
     // CLI end-to-end: `asep check` exits 3.
     fs::write(
         root.join("spec.md"),
-        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string() + "T2 -->\n",
+        "<!-- @req:FR-UNPROVEN-01:MUST Unproven requirement -->\n<!-- @rigor:".to_string()
+            + "T2 -->\n",
     )
     .expect("write spec");
     fs::write(
@@ -359,7 +359,9 @@ fn test_check_messages_missing_dir_fails() {
     cmd.assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+        .stderr(predicate::str::contains(
+            "messages directory missing or unreadable",
+        ));
 }
 
 // @test:FR-CLI-CHECK-MESSAGES-04
@@ -375,11 +377,16 @@ fn test_check_messages_wrong_messages_folder_fails() {
 
     // Passing the messages/ folder itself (not its parent run dir) must fail closed.
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg(root).arg("--messages").arg(&messages_dir);
+    cmd.arg("check")
+        .arg(root)
+        .arg("--messages")
+        .arg(&messages_dir);
     cmd.assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("messages directory missing or unreadable"));
+        .stderr(predicate::str::contains(
+            "messages directory missing or unreadable",
+        ));
 }
 
 // @test:FR-CLI-CHECK-ANTISLOP-01
@@ -399,11 +406,7 @@ fn test_check_antislop_warning_only_passes_without_strict() {
 
     // T1, no --strict: Warning does not block => pass, reported on stderr.
     let mut cmd_lenient = Command::cargo_bin("asep").expect("binary exists");
-    cmd_lenient
-        .arg("check")
-        .arg("--rigor")
-        .arg("T1")
-        .arg(root);
+    cmd_lenient.arg("check").arg("--rigor").arg("T1").arg(root);
     cmd_lenient
         .assert()
         .success()
@@ -434,15 +437,14 @@ fn test_check_antislop_error_banner_fails_at_t1() {
     // Closed T2 project so the exit code reflects anti-slop only.
     write_t2_closed_project(root, "FR-ANTISLOP-ERR");
     // Decorative banner comment is Error-severity and blocks at T1.
-    fs::write(
-        root.join("main.rs"),
-        "// ==========\nfn main() {}\n",
-    )
-    .expect("write main.rs");
+    fs::write(root.join("main.rs"), "// ==========\nfn main() {}\n").expect("write main.rs");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
     cmd.arg("check").arg("--rigor").arg("T1").arg(root);
-    cmd.assert().failure().code(1).stdout(predicate::str::contains("=="));
+    cmd.assert()
+        .failure()
+        .code(1)
+        .stdout(predicate::str::contains("=="));
 }
 
 // @test:FR-VERIFY-01

@@ -17,9 +17,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-static FN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"fn\s+([A-Za-z_][A-Za-z0-9_]*)").expect("valid fn regex")
-});
+static FN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"fn\s+([A-Za-z_][A-Za-z0-9_]*)").expect("valid fn regex"));
 
 /// A traced implementation node (impl, design, requirement, ...).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -69,9 +68,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     let graph = build_relation_graph(&tags, &policy);
 
     let changed: Vec<PathBuf> = changed.iter().map(|p| normalize_path(root, p)).collect();
-    let is_changed = |node: &TraceNode| {
-        changed.iter().any(|p| matches_path(&node.file_path, p))
-    };
+    let is_changed = |node: &TraceNode| changed.iter().any(|p| matches_path(&node.file_path, p));
 
     // 3. Nodes living in changed files: impls are the usual starting point,
     //    but changed requirement and test files start tracing too.
@@ -165,27 +162,31 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     let mut requirements: Vec<AffectedNode> = req_ids
         .iter()
         .filter_map(|id| {
-            graph.nodes.iter().find(|n| n.kind == NodeKind::Req && n.id == *id).map(|n| {
-                AffectedNode {
+            graph
+                .nodes
+                .iter()
+                .find(|n| n.kind == NodeKind::Req && n.id == *id)
+                .map(|n| AffectedNode {
                     id: n.id.clone(),
                     file: n.file_path.clone(),
                     line: n.line_number,
-                }
-            })
+                })
         })
         .collect();
 
     let mut tests: Vec<AffectedTest> = test_ids
         .iter()
         .filter_map(|id| {
-            graph.nodes.iter().find(|n| n.kind == NodeKind::Test && n.id == *id).map(|n| {
-                AffectedTest {
+            graph
+                .nodes
+                .iter()
+                .find(|n| n.kind == NodeKind::Test && n.id == *id)
+                .map(|n| AffectedTest {
                     id: n.id.clone(),
                     file: n.file_path.clone(),
                     line: n.line_number,
                     function: extract_function(root, n),
-                }
-            })
+                })
         })
         .collect();
 
@@ -295,10 +296,7 @@ fn matches_path(node_file: &Path, changed: &Path) -> bool {
 /// `src/`, and `--test <stem>` as the fallback.
 fn cargo_test_base(root: &Path, file: &Path) -> String {
     let norm = normalize_components(file);
-    let stem = norm
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("test");
+    let stem = norm.file_stem().and_then(|s| s.to_str()).unwrap_or("test");
     let mut components = norm.components();
     let base = match (components.next(), components.next()) {
         (Some(Component::Normal(dir)), _) if dir == "tests" => {

@@ -240,7 +240,14 @@ impl<K: Ord, V> MvccStore<K, V> {
 
             if seq > min_seq {
                 // Must retain all revisions above min_active_seq for concurrent snapshots
-                kept.insert(InternalKey { user_key, seq, kind }, value);
+                kept.insert(
+                    InternalKey {
+                        user_key,
+                        seq,
+                        kind,
+                    },
+                    value,
+                );
                 continue;
             }
             if kept_at_or_below_min {
@@ -255,7 +262,14 @@ impl<K: Ord, V> MvccStore<K, V> {
                 pruned += 1;
                 continue;
             }
-            kept.insert(InternalKey { user_key, seq, kind }, value);
+            kept.insert(
+                InternalKey {
+                    user_key,
+                    seq,
+                    kind,
+                },
+                value,
+            );
         }
 
         *entries = kept;

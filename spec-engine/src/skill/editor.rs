@@ -1,7 +1,7 @@
-use crate::config::EngineConfig;
 use crate::config::load_config;
 use crate::config::save_config;
 use crate::config::settings::EditorPreference;
+use crate::config::EngineConfig;
 use colored::Colorize;
 use inquire::{Confirm, Select};
 use std::env;

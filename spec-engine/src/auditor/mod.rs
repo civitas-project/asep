@@ -10,8 +10,7 @@ pub use anti_slop::{
 pub mod doc_contracts;
 
 pub use doc_contracts::{
-    audit_doc_contracts, audit_project_docstrings, DocContractViolation,
-    DocContractViolationKind,
+    audit_doc_contracts, audit_project_docstrings, DocContractViolation, DocContractViolationKind,
 };
 
 // @impl:FR-AMB-06

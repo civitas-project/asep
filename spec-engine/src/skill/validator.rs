@@ -143,7 +143,9 @@ fn is_semver(v: &str) -> bool {
     if parts.len() != 3 {
         return false;
     }
-    parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty())
+    parts
+        .iter()
+        .all(|p| p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty())
 }
 
 /// Validates and returns whether there are any errors (not warnings).

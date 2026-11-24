@@ -48,7 +48,10 @@ pub fn self_update() -> Result<String, String> {
 
     println!("{}", "Checking latest release...".cyan());
 
-    let url = format!("{}/repos/{}/{}/releases/latest", API_BASE, REPO_OWNER, REPO_NAME);
+    let url = format!(
+        "{}/repos/{}/{}/releases/latest",
+        API_BASE, REPO_OWNER, REPO_NAME
+    );
     let resp = reqwest::blocking::get(&url).map_err(|e| format!("network error: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("failed to fetch release: HTTP {}", resp.status()));
@@ -69,12 +72,7 @@ pub fn self_update() -> Result<String, String> {
             )
         })?;
 
-    println!(
-        "{} Downloading {} ({})...",
-        "✔".green(),
-        asset.name,
-        tag
-    );
+    println!("{} Downloading {} ({})...", "✔".green(), asset.name, tag);
 
     let bytes = reqwest::blocking::get(&asset.browser_download_url)
         .map_err(|e| format!("download error: {}", e))?
@@ -95,7 +93,9 @@ pub fn self_update() -> Result<String, String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&tmp_path).map_err(|e| e.to_string())?.permissions();
+        let mut perms = fs::metadata(&tmp_path)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&tmp_path, perms).map_err(|e| e.to_string())?;
     }

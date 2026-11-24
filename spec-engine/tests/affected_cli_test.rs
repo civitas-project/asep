@@ -28,7 +28,11 @@ fn test_cli_affected_human_report() {
         "@req:FR-A:MUST\n@rel:satisfies:impl-a->FR-A\n@rel:verifies:test-a->FR-A \"note\"\n",
     );
     write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
-    write_tag_file(root, "tests/a_test.rs", "// @test:test-a\nfn verifies_a() {}\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:test-a\nfn verifies_a() {}\n",
+    );
 
     let mut cmd = asep_bin();
     cmd.arg("affected")
@@ -50,7 +54,11 @@ fn test_cli_affected_json_report() {
     // Legacy same-id fallback: @impl/@req/@test share id FR-A without @rel edges.
     write_tag_file(root, "docs/spec.md", "@req:FR-A:MUST\n");
     write_tag_file(root, "src/lib.rs", "// @impl:FR-A\n");
-    write_tag_file(root, "tests/a_test.rs", "// @test:FR-A\nfn verifies_a() {}\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:FR-A\nfn verifies_a() {}\n",
+    );
 
     let mut cmd = asep_bin();
     cmd.arg("affected")
@@ -76,7 +84,11 @@ fn test_cli_affected_reads_paths_from_stdin() {
 
     write_tag_file(root, "docs/spec.md", "@req:FR-A:MUST\n");
     write_tag_file(root, "src/lib.rs", "// @impl:FR-A\n");
-    write_tag_file(root, "tests/a_test.rs", "// @test:FR-A\nfn verifies_a() {}\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:FR-A\nfn verifies_a() {}\n",
+    );
 
     let mut cmd = asep_bin();
     cmd.arg("affected")

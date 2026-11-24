@@ -1,5 +1,8 @@
-use asep::graph::{build_relation_graph, build_trace_graph, CoverageViolation, GraphReport, NodeKind, Priority, TagKind};
-use asep::policy::{EdgeKind, load_policy, Policy};
+use asep::graph::{
+    build_relation_graph, build_trace_graph, CoverageViolation, GraphReport, NodeKind, Priority,
+    TagKind,
+};
+use asep::policy::{load_policy, EdgeKind, Policy};
 use asep::scanner::ScannedTag;
 use std::path::PathBuf;
 
@@ -136,10 +139,32 @@ fn has_violation(report: &GraphReport, rule_id: &str) -> bool {
 fn test_relation_graph_many_to_many() {
     let policy = policy();
     let tags = vec![
-        scanned_tag(TagKind::Req { id: "R-1".to_string(), priority: Priority::Must }, 1),
-        scanned_tag(TagKind::Req { id: "R-2".to_string(), priority: Priority::Must }, 2),
-        scanned_tag(TagKind::Impl { id: "I-1".to_string() }, 10),
-        scanned_tag(TagKind::Test { id: "T-1".to_string() }, 20),
+        scanned_tag(
+            TagKind::Req {
+                id: "R-1".to_string(),
+                priority: Priority::Must,
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Req {
+                id: "R-2".to_string(),
+                priority: Priority::Must,
+            },
+            2,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "I-1".to_string(),
+            },
+            10,
+        ),
+        scanned_tag(
+            TagKind::Test {
+                id: "T-1".to_string(),
+            },
+            20,
+        ),
         scanned_tag(
             TagKind::Rel {
                 kind: EdgeKind::Satisfies,
@@ -173,9 +198,25 @@ fn test_relation_graph_many_to_many() {
 fn test_relation_graph_rejects_dangling_and_duplicate() {
     let policy = policy();
     let tags = vec![
-        scanned_tag(TagKind::Req { id: "R-1".to_string(), priority: Priority::Must }, 1),
-        scanned_tag(TagKind::Impl { id: "I-1".to_string() }, 10),
-        scanned_tag(TagKind::Impl { id: "I-1".to_string() }, 11), // duplicate ID within NodeKind
+        scanned_tag(
+            TagKind::Req {
+                id: "R-1".to_string(),
+                priority: Priority::Must,
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "I-1".to_string(),
+            },
+            10,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "I-1".to_string(),
+            },
+            11,
+        ), // duplicate ID within NodeKind
         scanned_tag(
             TagKind::Rel {
                 kind: EdgeKind::Satisfies,
@@ -194,8 +235,14 @@ fn test_relation_graph_rejects_dangling_and_duplicate() {
         .filter(|v| v.rule_id == "COV-06")
         .collect();
     assert_eq!(cov06.len(), 2, "expected two COV-06 violations: {report:?}");
-    assert!(cov06.iter().any(|v| v.subject == "GHOST-99"), "dangling endpoint not flagged");
-    assert!(cov06.iter().any(|v| v.subject == "I-1"), "duplicate ID not flagged");
+    assert!(
+        cov06.iter().any(|v| v.subject == "GHOST-99"),
+        "dangling endpoint not flagged"
+    );
+    assert!(
+        cov06.iter().any(|v| v.subject == "I-1"),
+        "duplicate ID not flagged"
+    );
 }
 
 // @test:FR-CLI-GRAPH-04
@@ -203,8 +250,19 @@ fn test_relation_graph_rejects_dangling_and_duplicate() {
 fn test_cov05_requires_verifies_note() {
     let policy = policy();
     let tags = vec![
-        scanned_tag(TagKind::Test { id: "T-1".to_string() }, 1),
-        scanned_tag(TagKind::Req { id: "R-1".to_string(), priority: Priority::Must }, 2),
+        scanned_tag(
+            TagKind::Test {
+                id: "T-1".to_string(),
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Req {
+                id: "R-1".to_string(),
+                priority: Priority::Must,
+            },
+            2,
+        ),
         scanned_tag(
             TagKind::Rel {
                 kind: EdgeKind::Verifies,
@@ -233,9 +291,25 @@ fn test_cov05_requires_verifies_note() {
 fn test_relation_graph_allows_same_id_across_node_kinds() {
     let policy = policy();
     let tags = vec![
-        scanned_tag(TagKind::Req { id: "X".to_string(), priority: Priority::Must }, 1),
-        scanned_tag(TagKind::Impl { id: "X".to_string() }, 10),
-        scanned_tag(TagKind::Test { id: "Xt".to_string() }, 20),
+        scanned_tag(
+            TagKind::Req {
+                id: "X".to_string(),
+                priority: Priority::Must,
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "X".to_string(),
+            },
+            10,
+        ),
+        scanned_tag(
+            TagKind::Test {
+                id: "Xt".to_string(),
+            },
+            20,
+        ),
         scanned_tag(
             TagKind::Rel {
                 kind: EdgeKind::Satisfies,
@@ -259,39 +333,31 @@ fn test_relation_graph_allows_same_id_across_node_kinds() {
     let report = build_relation_graph(&tags, &policy);
     // Req X and Impl X must be distinct nodes (IDs unique per NodeKind).
     let x_nodes: Vec<_> = report.nodes.iter().filter(|n| n.id == "X").collect();
-    assert_eq!(x_nodes.len(), 2, "expected Req X and Impl X as distinct nodes: {report:?}");
+    assert_eq!(
+        x_nodes.len(),
+        2,
+        "expected Req X and Impl X as distinct nodes: {report:?}"
+    );
     assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Req)));
     assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Impl)));
     // Cross-kind ID reuse must not produce COV-06.
     assert!(
-        !report
-            .violations
-            .iter()
-            .any(|v| v.rule_id == "COV-06"),
+        !report.violations.iter().any(|v| v.rule_id == "COV-06"),
         "unexpected COV-06 for cross-kind ID reuse: {report:?}"
     );
     // COV-04 satisfied: Impl X has satisfies to Req X.
     assert!(
-        !report
-            .violations
-            .iter()
-            .any(|v| v.rule_id == "COV-04"),
+        !report.violations.iter().any(|v| v.rule_id == "COV-04"),
         "unexpected COV-04: {report:?}"
     );
     // COV-01 satisfied: Req X has both satisfies and verifies incoming.
     assert!(
-        !report
-            .violations
-            .iter()
-            .any(|v| v.rule_id == "COV-01"),
+        !report.violations.iter().any(|v| v.rule_id == "COV-01"),
         "unexpected COV-01: {report:?}"
     );
     // COV-05 satisfied: Test Xt has verifies with non-empty note.
     assert!(
-        !report
-            .violations
-            .iter()
-            .any(|v| v.rule_id == "COV-05"),
+        !report.violations.iter().any(|v| v.rule_id == "COV-05"),
         "unexpected COV-05: {report:?}"
     );
     assert!(report.is_closed);

@@ -1,5 +1,7 @@
 // @test:FR-CAP-01 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-08
-use asep::config::settings::{load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig};
+use asep::config::settings::{
+    load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig,
+};
 use std::fs;
 use tempfile::tempdir;
 
@@ -81,7 +83,11 @@ fn test_capabilities_load_from_toml_with_defaults() {
     let tmp = tempdir().unwrap();
     let dir = tmp.path().join(".spec-engine");
     fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("config.toml"), "[capabilities]\nfile_read = true\nfile_write = false\n").unwrap();
+    fs::write(
+        dir.join("config.toml"),
+        "[capabilities]\nfile_read = true\nfile_write = false\n",
+    )
+    .unwrap();
 
     let config = load_config(tmp.path());
     assert!(config.capabilities.file_read);
@@ -100,12 +106,17 @@ fn test_capability_profile_missing_reports_disabled_only() {
     let mut profile = CapabilityProfile::default();
     profile.file_write = false;
 
-    assert_eq!(profile.missing(&["file_write", "terminal"]), vec!["file_write"]);
+    assert_eq!(
+        profile.missing(&["file_write", "terminal"]),
+        vec!["file_write"]
+    );
     assert_eq!(
         profile.missing(&["file_write", "terminal", "web"]),
         vec!["file_write"]
     );
-    assert!(CapabilityProfile::default().missing(&["file_read", "web"]).is_empty());
+    assert!(CapabilityProfile::default()
+        .missing(&["file_read", "web"])
+        .is_empty());
 }
 
 // @test:FR-CONFIG-CAP-MEDIA-01

@@ -35,7 +35,9 @@ fn test_clean_measure_writes_baseline() {
         .stdout(predicate::str::contains("threshold"));
 
     assert!(
-        root.join(".spec-engine").join("target-baseline.json").exists(),
+        root.join(".spec-engine")
+            .join("target-baseline.json")
+            .exists(),
         "baseline file must be written at <root>/.spec-engine/target-baseline.json"
     );
 }
@@ -60,7 +62,10 @@ fn test_clean_dry_run_does_not_delete() {
         .success()
         .stdout(predicate::str::contains("CleanPackage"));
 
-    assert!(target.join("big.rlib").exists(), "files must survive dry run");
+    assert!(
+        target.join("big.rlib").exists(),
+        "files must survive dry run"
+    );
     assert!(target.join("deps").join("lib.rlib").exists());
 }
 
@@ -80,9 +85,7 @@ fn test_clean_accepts_root_flag() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains(
-            target.to_string_lossy().as_ref(),
-        ));
+        .stdout(predicate::str::contains(target.to_string_lossy().as_ref()));
 }
 
 #[test]

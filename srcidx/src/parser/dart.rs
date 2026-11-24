@@ -1,19 +1,16 @@
 //! Dart parser using tree-sitter.
 
 use crate::index::SymbolKind;
-use crate::parser::SourceParser;
 use crate::parser::tree_sitter_base::{TreeSitterConfig, TreeSitterParser};
-use tree_sitter::Query;
+use crate::parser::SourceParser;
 use anyhow::Result;
+use tree_sitter::Query;
 
 /// Create a Dart parser.
 pub fn create_dart_parser() -> Result<Box<dyn SourceParser>> {
     let dart_language = tree_sitter_dart::LANGUAGE.into();
-    
-    let dart_query = Query::new(
-        &dart_language,
-        include_str!("queries/dart/tags.scm"),
-    )?;
+
+    let dart_query = Query::new(&dart_language, include_str!("queries/dart/tags.scm"))?;
 
     // Pattern kind map: maps pattern index to symbol kind
     // Pattern indices (0-based) correspond to patterns in queries/dart/tags.scm:
@@ -29,15 +26,15 @@ pub fn create_dart_parser() -> Result<Box<dyn SourceParser>> {
     // 9: doc comment
     // 10: attrs (annotation)
     let pattern_kind_map = vec![
-        SymbolKind::Fn,         // 0: function_declaration
-        SymbolKind::Fn,         // 1: method_declaration
-        SymbolKind::Fn,         // 2: constructor_signature
-        SymbolKind::Class,      // 3: class_declaration
-        SymbolKind::Enum,       // 4: enum_declaration
-        SymbolKind::Mixin,      // 5: mixin_declaration
-        SymbolKind::Extension,  // 6: extension_declaration
-        SymbolKind::Typedef,    // 7: type_alias
-        SymbolKind::Import,     // 8: import_or_export
+        SymbolKind::Fn,                    // 0: function_declaration
+        SymbolKind::Fn,                    // 1: method_declaration
+        SymbolKind::Fn,                    // 2: constructor_signature
+        SymbolKind::Class,                 // 3: class_declaration
+        SymbolKind::Enum,                  // 4: enum_declaration
+        SymbolKind::Mixin,                 // 5: mixin_declaration
+        SymbolKind::Extension,             // 6: extension_declaration
+        SymbolKind::Typedef,               // 7: type_alias
+        SymbolKind::Import,                // 8: import_or_export
         SymbolKind::Other("doc".into()),   // 9: doc comment
         SymbolKind::Other("attrs".into()), // 10: attrs
     ];
@@ -99,9 +96,17 @@ class Point {
 "#;
         let mut parser = create_dart_parser().unwrap();
         let result = parser.parse_file(Path::new("test.dart"), code);
-        let class_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Class).unwrap();
+        let class_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Class)
+            .unwrap();
         assert_eq!(class_sym.name, "Point");
-        let method_sym = result.symbols.iter().find(|s| s.kind == SymbolKind::Fn && s.name == "distance").unwrap();
+        let method_sym = result
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Fn && s.name == "distance")
+            .unwrap();
         assert_eq!(method_sym.name, "distance");
     }
 
@@ -113,7 +118,11 @@ import 'package:flutter/material.dart';
 "#;
         let mut parser = create_dart_parser().unwrap();
         let result = parser.parse_file(Path::new("test.dart"), code);
-        let imports: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Import).collect();
+        let imports: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .collect();
         assert_eq!(imports.len(), 2);
     }
 
@@ -128,7 +137,11 @@ enum Color {
 "#;
         let mut parser = create_dart_parser().unwrap();
         let result = parser.parse_file(Path::new("test.dart"), code);
-        let enums: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Enum).collect();
+        let enums: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Enum)
+            .collect();
         assert_eq!(enums.len(), 1);
         assert_eq!(enums[0].name, "Color");
     }
@@ -144,7 +157,11 @@ mixin Logger {
 "#;
         let mut parser = create_dart_parser().unwrap();
         let result = parser.parse_file(Path::new("test.dart"), code);
-        let mixins: Vec<_> = result.symbols.iter().filter(|s| s.kind == SymbolKind::Mixin).collect();
+        let mixins: Vec<_> = result
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Mixin)
+            .collect();
         assert_eq!(mixins.len(), 1);
     }
 }
