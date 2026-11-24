@@ -315,3 +315,146 @@ fn test_affected_directory_prefix_matches_impls_under_it() {
         report.commands
     );
 }
+
+#[test]
+fn test_affected_cycle_safety() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Cycle: impl-a satisfies req-a, req-a verifies test-a, test-a verifies req-a.
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:req-a:MUST\n@rel:satisfies:impl-a->req-a\n@rel:verifies:req-a->test-a\n@rel:verifies:test-a->req-a\n",
+    );
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:test-a\nfn verifies_a() {}\n",
+    );
+
+    // Must return Ok and terminate despite the cycle.
+    let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
+
+    assert!(report.impls.iter().any(|n| n.id == "impl-a"));
+    assert!(report.requirements.iter().any(|n| n.id == "req-a"));
+    assert!(report.tests.iter().any(|n| n.id == "test-a"));
+}
+
+#[test]
+fn test_affected_unmapped_change() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
+    write_tag_file(root, "src/missing.rs", "// no tags here\n");
+
+    let report = affected(root, &[PathBuf::from("src/missing.rs")]).unwrap();
+
+    assert!(
+        report
+            .unmapped
+            .iter()
+            .any(|p| p == &PathBuf::from("src/missing.rs")),
+        "unmapped: {:?}",
+        report.unmapped
+    );
+}
+
+#[test]
+fn test_affected_adr_sink_no_false_propagation() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Both req-a and req-b inform adr-x; only req-a's file changes.
+    write_tag_file(
+        root,
+        "docs/req-a.md",
+        "@req:req-a:MUST\n@rel:informs:req-a->adr-x\n",
+    );
+    write_tag_file(
+        root,
+        "docs/req-b.md",
+        "@req:req-b:MUST\n@rel:informs:req-b->adr-x\n",
+    );
+    write_tag_file(root, "docs/adr-x.md", "@adr:adr-x\n");
+
+    let report = affected(root, &[PathBuf::from("docs/req-a.md")]).unwrap();
+
+    assert!(report.adrs.iter().any(|n| n.id == "adr-x"));
+    assert!(
+        !report.requirements.iter().any(|n| n.id == "req-b"),
+        "req-b must not propagate through shared adr: {:?}",
+        report.requirements
+    );
+}
+
+#[test]
+fn test_affected_same_id_impl_and_req() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Same id "X" as Impl in one file and Req in another.
+    write_tag_file(root, "src/impl_x.rs", "// @impl:X\n");
+    write_tag_file(root, "docs/req_x.md", "@req:X:MUST\n");
+
+    let report = affected(root, &[PathBuf::from("src/impl_x.rs")]).unwrap();
+
+    assert!(report.impls.iter().any(|n| n.id == "X"));
+    assert!(report.requirements.iter().any(|n| n.id == "X"));
+    assert!(report.provenance.contains_key("Impl:X"));
+    assert!(report.provenance.contains_key("Req:X"));
+}
+
+#[test]
+fn test_affected_provenance_chain_start_hop() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-x\n");
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:req-x:MUST\n@rel:satisfies:impl-x->req-x\n",
+    );
+    write_tag_file(
+        root,
+        "tests/x_test.rs",
+        "// @test:test-x\nfn verifies_x() {}\n@rel:verifies:test-x->req-x\n",
+    );
+
+    let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
+
+    let chain = report
+        .provenance
+        .get("Impl:impl-x")
+        .expect("provenance must contain Impl:impl-x");
+    assert!(!chain.is_empty());
+    assert_eq!(chain[0].node, "Impl:impl-x");
+    assert_eq!(chain[0].edge, None);
+}
+
+#[test]
+fn test_affected_deterministic() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:req-a:MUST\n@rel:satisfies:impl-a->req-a\n",
+    );
+    write_tag_file(
+        root,
+        "tests/a_test.rs",
+        "// @test:test-a\nfn verifies_a() {}\n@rel:verifies:test-a->req-a\n",
+    );
+
+    let changed = vec![PathBuf::from("src/lib.rs")];
+    let first = affected(root, &changed).unwrap();
+    let second = affected(root, &changed).unwrap();
+
+    assert_eq!(first, second);
+}

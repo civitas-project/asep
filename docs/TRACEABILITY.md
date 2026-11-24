@@ -204,6 +204,24 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:satisfies:IN-01-INTENT->IN-01-INTENT
 @rel:verifies:IN-01-INTENT->IN-01-INTENT "observability tests assert write-ahead intent precedes change, bypasses sampling and report states coverage"
 
+# Traceability relations (@rel:satisfies) — P3.1 Transitive Impact Analysis
+@rel:satisfies:FR-IMPACT-01->FR-IMPACT-01
+@rel:satisfies:FR-IMPACT-02->FR-IMPACT-02
+@rel:satisfies:FR-IMPACT-03->FR-IMPACT-03
+@rel:satisfies:FR-IMPACT-04->FR-IMPACT-04
+@rel:satisfies:FR-IMPACT-05->FR-IMPACT-05
+@rel:satisfies:FR-IMPACT-06->FR-IMPACT-06
+@rel:satisfies:FR-IMPACT-07->FR-IMPACT-07
+
+# Traceability relations (@rel:verifies) — P3.1 Transitive Impact Analysis
+@rel:verifies:FR-IMPACT-01->FR-IMPACT-01 "affected tests assert transitive cycle-safe traversal"
+@rel:verifies:FR-IMPACT-02->FR-IMPACT-02 "affected tests assert ADR and categorized impact reporting"
+@rel:verifies:FR-IMPACT-03->FR-IMPACT-03 "affected tests assert provenance chains"
+@rel:verifies:FR-IMPACT-04->FR-IMPACT-04 "affected tests assert unmapped changes reported"
+@rel:verifies:FR-IMPACT-05->FR-IMPACT-05 "affected cli tests assert backward compatible output"
+@rel:verifies:FR-IMPACT-06->FR-IMPACT-06 "affected tests assert legacy same-id fallback"
+@rel:verifies:FR-IMPACT-07->FR-IMPACT-07 "affected tests assert deterministic cycle-safe traversal"
+
 # Traceability relations (@rel:satisfies) — Layer 5 Agent Runtime
 @rel:satisfies:FR-AUDIT-01->FR-AUDIT-01
 @rel:satisfies:FR-LEVEL-01->FR-LEVEL-01

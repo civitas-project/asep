@@ -337,6 +337,52 @@ Measured on this machine with a debug build, 10,000 synthetic events, three bala
 - `asep affected` cannot map a new file until its `@impl`/`@test` tags land, so O1–O3 rely on the targeted `cargo test` commands; if `asep affected` returns empty, record that explicitly and use the listed targets.
 - Full suite remains reserved for merges to `main`.
 
+## P3.1 — Transitive Impact Analysis (RFC v0.2)
+
+Constraint: reuse `build_relation_graph` without new engine/database/dependency. Additive to CLI/JSON. Preserve legacy same-ID fallback and coverage rules.
+
+<!-- @design:FR-IMPACT-01 -->
+### FR-IMPACT-01 Cycle-safe transitive traversal
+`spec-engine/src/affected/mod.rs`: refactor `affected()` to perform BFS over the relation graph, following typed edges in both directions (outgoing via `edge.from == current`, incoming via `edge.to.contains(current)`), with a `HashSet<String>` visited set keyed by node ID. **Transition rules (direction-aware, typed):** `Impl`, `Req`, `Test` are traversable; `Adr` and `Design` are terminal (sinks) — no traversal originates from them, preventing false impact expansion through shared ADRs. Edge kind and direction are recorded per hop.
+
+### FR-IMPACT-03 Impact provenance
+`AffectedReport` gains `provenance: BTreeMap<String, Vec<ProvenanceHop>>` keyed by typed node ID (`"Kind:id"`). Each hop records `node: String` (typed ID) and `edge: Option<String>` (edge kind + direction, `None` for start). First path wins on multi-path reach; deterministic ordering via sorted queue. No enumeration of all paths.
+
+<!-- @design:FR-IMPACT-02 -->
+### FR-IMPACT-02 Affected ADRs
+`AffectedReport` gains `adrs: Vec<AffectedNode>` for `NodeKind::Adr` nodes reached during traversal, categorized separately from impls/requirements/tests.
+
+<!-- @design:FR-IMPACT-03 -->
+### FR-IMPACT-03 Impact provenance
+`AffectedReport` gains `provenance: BTreeMap<String, Vec<String>>` mapping each affected node ID to the ordered list of node IDs forming the traversal path from a changed node. First path wins on multi-path reach.
+
+<!-- @design:FR-IMPACT-04 -->
+### FR-IMPACT-04 Unmapped changes
+`AffectedReport` gains `unmapped: Vec<PathBuf>` listing changed paths that map to no graph node. Computed from the normalized changed paths.
+
+<!-- @design:FR-IMPACT-05 -->
+### FR-IMPACT-05 Backward compatibility
+Existing fields `impls`, `requirements`, `tests`, `commands` remain with same semantics and ordering. New fields are additive with `#[serde(default)]` where applicable. CLI text output keeps existing sections; new info (ADRs, unmapped) added as additional sections.
+
+<!-- @design:FR-IMPACT-06 -->
+### FR-IMPACT-06 Legacy same-ID fallback
+Preserve the existing fallback: when an impl has no `Satisfies` edge but its ID exists as a Req, treat it as satisfying that req; when a req has no `Verifies` edge but its ID exists as a Test, treat it as verified by that test.
+
+<!-- @design:FR-IMPACT-07 -->
+### FR-IMPACT-07 Determinism
+Visited set + sorted output (by file, line, id) and dedup. Cycle-safe by construction.
+
+### Ordered implementation plan (P3.1)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| I1 | `spec-engine/src/affected/mod.rs`, `AffectedReport` | Add `adrs`, `unmapped`, `provenance` fields; existing fields unchanged. | `cargo test -p asep --lib affected` then `asep affected` |
+| I2 | `spec-engine/src/affected/mod.rs`, `affected()` | Cycle-safe BFS traversal both directions; collects impl/req/test/adr; provenance recorded. | `cargo test -p asep --test affected_test` |
+| I3 | `spec-engine/src/affected/mod.rs`, `affected()` | Unmapped changed paths reported. | `cargo test -p asep --test affected_test` |
+| I4 | `spec-engine/src/affected/mod.rs`, legacy fallback | Same-ID fallback preserved. | `cargo test -p asep --test affected_test` |
+| I5 | `spec-engine/src/runner.rs`, `Commands::Affected` | CLI text output shows ADRs and unmapped (additive); JSON includes new fields. | `cargo test -p asep --test affected_cli_test` |
+| I6 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Seven P3.1 requirements closed with relations. | `asep check . --rigor T2` after scoped acceptance |
+
 ## Layer 5 — Agent Runtime (RFC v0.2)
 
 Constraint: new audited source must obey the strict policy — sequential guard clauses, no `else`, no nested `if`, no inline opt-out. Requirements are observable; no new engine is introduced because adapters already suffice. Reuse existing `Role`, `CapabilityProfile`, `Envelope`, `TraceEvent`, `TraceCollector`.
