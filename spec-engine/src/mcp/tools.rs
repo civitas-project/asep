@@ -4,6 +4,7 @@
 
 use crate::acceptance_scoped::run_scoped_acceptance;
 use crate::adr::create_new_adr;
+use crate::affected::affected;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
 use crate::config::settings::load_config;
@@ -378,6 +379,26 @@ pub fn get_tools_list() -> serde_json::Value {
                         }
                     },
                     "required": ["run_dir", "agent", "id", "status"]
+                }
+            },
+            // @impl:FR-MCP-IMPACT-01
+            {
+                "name": "asep_affected",
+                "description": "Lists impls, requirements, tests affected by changed files",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Changed file paths to impact-analyze"
+                        },
+                        "root": {
+                            "type": "string",
+                            "description": "Repository root (defaults to current directory)"
+                        }
+                    },
+                    "required": ["paths"]
                 }
             }
         ]
@@ -972,6 +993,39 @@ pub fn execute_tool(
                     "isError": true
                 })),
             }
+        }
+
+        // @impl:FR-MCP-IMPACT-02
+        "asep_affected" => {
+            let paths: Vec<String> = arguments
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| "Missing required parameter 'paths'".to_string())?
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| "invalid 'paths': expected array of strings".to_string())
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+
+            if paths.is_empty() {
+                return Err("'paths' must not be empty".to_string());
+            }
+
+            let root = arguments
+                .get("root")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_dir.to_path_buf());
+
+            let changed: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+            let report = affected(&root, &changed)
+                .map_err(|e| format!("Failed to compute affected: {e}"))?;
+
+            let value = serde_json::to_value(&report)
+                .map_err(|e| format!("Failed to serialize affected report: {e}"))?;
+            mcp_text(value)
         }
 
         other => Err(format!("Unknown tool: {other}")),

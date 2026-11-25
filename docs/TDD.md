@@ -337,6 +337,26 @@ Measured on this machine with a debug build, 10,000 synthetic events, three bala
 - `asep affected` cannot map a new file until its `@impl`/`@test` tags land, so O1–O3 rely on the targeted `cargo test` commands; if `asep affected` returns empty, record that explicitly and use the listed targets.
 - Full suite remains reserved for merges to `main`.
 
+## MCP.2 — Impact Integration (RFC/proposal)
+
+Constraint: reuse `affected()` + `AffectedReport`; no new impact engine, no new dependency; MCP.3/MCP.4/P3.3 deferred.
+
+<!-- @design:FR-MCP-IMPACT-01 -->
+### FR-MCP-IMPACT-01 `asep_affected` tool
+`spec-engine/src/mcp/tools.rs`: add tool entry with JSON Schema `{paths: array<string>, root?: string}` and dispatch arm calling `crate::affected::affected(root, paths)`, serializing `AffectedReport` into MCP text content. Invalid/empty paths return `isError: true`.
+
+<!-- @design:FR-MCP-IMPACT-02 -->
+### FR-MCP-IMPACT-02 Semantics and compatibility
+No changes to `affected()` or `AffectedReport`. Tool count 12 → 13; keep `test_tool_descriptions_are_compact` (description <= 60 chars). Existing tools unchanged.
+
+### Ordered implementation plan (MCP.2, pending approval)
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| M1 | `spec-engine/src/mcp/tools.rs`, `get_tools_list` + `execute_tool` | Tool listed with typed schema; returns structured report; invalid paths error. | `cargo test -p asep --test mcp_test` |
+| M2 | `spec-engine/tests/mcp_test.rs` | Test asserts tool presence, call success with a temp project, and error path. | `cargo test -p asep --test mcp_test` |
+| M3 | `docs/TRACEABILITY.md` | Two requirements closed with relations; tool count updated where asserted. | `asep check --rigor T2` after scoped acceptance |
+
 ## P3.1 — Transitive Impact Analysis (RFC v0.2)
 
 Constraint: reuse `build_relation_graph` without new engine/database/dependency. Additive to CLI/JSON. Preserve legacy same-ID fallback and coverage rules.

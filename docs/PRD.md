@@ -87,6 +87,13 @@ Sumber: `ASEP_Architecture_Expansion_Proposal_Catalog.pdf` hal. 15. Review verdi
 <!-- @req:IN-01-FILE-EVIDENCE:MUST The collector shall compute a SHA-256 content hash for each in-scope file at span start and span end, and shall emit an NDJSON file-change event only for files whose hash changed, carrying the path, before/after hashes, task ID and span label. -->
 <!-- @req:IN-01-INTENT:MUST A write-ahead intent event carrying the target path and its pre-write hash shall be recorded before a controlled tool modifies a file; file-change and intent events shall always be recorded even when ordinary event recording is off, shall be marked as complete evidence, and reports shall state whether ordinary event coverage is on or off. -->
 
+## MCP.2 — Impact Integration (client pilot prerequisite)
+
+Sumber: proposal `MCP Impact Integration & Client Pilot` §3, audit `docs/MCP_AUDIT.md`. Reuse `affected()` and `AffectedReport`; no impact engine, no new dependency.
+
+<!-- @req:FR-MCP-IMPACT-01:MUST The MCP server shall expose an `asep_affected` tool with a validated schema (changed paths, optional root) that reuses `affected()` and returns the structured `AffectedReport`. -->
+<!-- @req:FR-MCP-IMPACT-02:MUST The tool shall preserve transitive traversal, requirement/implementation/test/ADR reporting, impact provenance, unmapped changes, deterministic output, and existing CLI/MCP compatibility (additive tool count 12 to 13). -->
+
 ## P3 — Knowledge Graph & Impact Analysis (RFC v0.2)
 
 Sumber: `ASEP_Adaptive_Architecture_v0.2.md` §5, §6, §8 (P3). Urutan: P3.1 transitive impact (sekarang), P3.2 ADR annotation coverage (terpisah), P3.3 graph export (conditional, tunggu konsumen).
