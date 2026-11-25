@@ -77,6 +77,21 @@ Pilot samples (Tasks 01–04) used different tasks and sequential order; they ar
 
 Controlled task: add one line to the `Controlled Round` section of `docs/BASELINE_RESULTS.md` describing the run. Acceptance: `asep check --rigor T1` PASS.
 
-## 9. Next step
+## 9. SPSC real-task comparison (AD-D05 closure)
 
-Run the first balanced sequence (ABCD) on the controlled task, record raw metrics, then repeat with DCBA.
+The SPSC harness (`harness/e2e/RUNBOOK.md`) provides a real task with measurable outcomes. Existing `dry-run-1` is C/D-equivalent (executor + judge per phase). To close AD-D05, run the **same task** under Config A/B:
+
+1. `asep harness new-run ab-spsc-<seed>` — fresh run dir outside the repo.
+2. Phases P1–P7 executed by a **single agent** (no executor/judge split) for Config A; for Config B, add explicit retrieval of repository artifacts (PRD, TDD, TRACEABILITY, ADR) before each phase.
+3. Keep all artifacts identical in structure to the runbook (`01-prd.md` … `07-judge.json`, verify.json).
+4. Record: pass/fail per phase, defects found (tooling vs ring buffer), rework rounds, wall time, and any available token/tool counts.
+5. Compare with `dry-run-1` (C/D-equivalent) on: acceptance pass, defect detection, rework, coordination steps.
+
+### Caveats to preserve
+- `dry-run-1` artifacts P1–P5 were partially reconstructed; use only outcome-level data for comparison.
+- Judge in that run had no shell; verifier was authoritative. For A/B runs, record who re-ran tests.
+- No claim of superiority until at least one A/B run and one C/D run on the same task show measurable differences.
+
+## 10. Next step
+
+Run `asep harness new-run` for Config A on the SPSC task, then repeat for Config B. Compare with `dry-run-1`.
