@@ -194,6 +194,14 @@ Source: `harness/e2e/RESULTS.md`, `harness/e2e/RUNBOOK.md`. Run dir `/tmp/openco
 - Judge had no shell; verifier output is authoritative (judge verdicts are claims).
 - Useful as **real-task** evidence of orchestration cost and defect detection, not as a controlled comparison.
 
+## SPSC A/B runs (AD-D05 closure) — progress
+
+| Run | Config | Phase | Tool calls | Pass | Notes |
+|---|---|---|---|---|---|
+| AB-A-P1 | A | P1 Requirements (PRD) | ~3 | yes | 5 `@req:*:MUST`, no judge (single agent) |
+
+Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a`, seed `3961813694`. P2–P7 pending.
+
 ## Summary
 
 | Config | Controlled samples | Pass rate | Real-task evidence | Median latency | Cost per accepted |
