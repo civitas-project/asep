@@ -173,13 +173,34 @@ Same task, reverse order. Acceptance: `asep check --rigor T1` PASS.
 - All configurations passed on this trivial documentation task; no quality or defect differentiation observed.
 - No claim that one topology is better. AD-D05 remains evidence-driven; a real task with measurable quality differences is needed.
 
+## Real-task evidence — SPSC harness (dry-run-1)
+
+Source: `harness/e2e/RESULTS.md`, `harness/e2e/RUNBOOK.md`. Run dir `/tmp/opencode/asep-e2e/dry-run-1/`, ASEP commit `f9ab4d6`.
+
+| Field | Value |
+|---|---|
+| Task | Build `spsc_ring` lock-free SPSC ring buffer from empty crate to green gates (P0–P7) |
+| Level / Rigor | L2 / High Assurance (loom, stress, T4) |
+| Configuration | C/D-equivalent: executor + judge per phase, harness re-run verification |
+| Acceptance pass | Yes — `asep check T4` exit 0, `asep ci` exit 0, tests debug+release pass, loom 1 test pass |
+| Defects | 4 found in ASEP tooling/harness (not in ring buffer); 0 ring-buffer defects |
+| Rework | Multiple scoped repair rounds under recorded controller rulings |
+| Token / cost | unavailable |
+| Wall-clock | not recorded in RESULTS.md |
+
+### Caveats
+- This is C/D-equivalent only; no A/B run on the same task, so no cross-config comparison.
+- Run artifacts P1–P5 were partially reconstructed after a server restart — not byte-identical originals.
+- Judge had no shell; verifier output is authoritative (judge verdicts are claims).
+- Useful as **real-task** evidence of orchestration cost and defect detection, not as a controlled comparison.
+
 ## Summary
 
-| Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
+| Config | Controlled samples | Pass rate | Real-task evidence | Median latency | Cost per accepted |
 |---|---|---|---|---|---|
-| A | 1 | 1/1 | ~5 | not measured | undefined |
-| B | 1 | 1/1 | ~3 | not measured | undefined |
-| C | 1 | 1/1 | ~4 leader + 1 exec + 1 judge | not measured | undefined |
-| D | 1 | 1/1 | ~6 leader + 1 exec + 1 judge + T2 | not measured | undefined |
+| A | 4 | 4/4 | none | not measured | undefined |
+| B | 4 | 4/4 | none | not measured | undefined |
+| C | 4 | 4/4 | SPSC harness (C/D-equivalent) | not measured | undefined |
+| D | 4 | 4/4 | SPSC harness (C/D-equivalent) | not measured | undefined |
 
-No conclusion drawn from a single sample.
+No conclusion drawn: units of coordination differ between A/B and C/D; token/cost unavailable; controlled task was trivial; real-task SPSC evidence has no A/B counterpart. AD-D05 remains evidence-driven.
