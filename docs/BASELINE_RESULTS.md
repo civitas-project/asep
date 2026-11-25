@@ -221,6 +221,10 @@ Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a2`, seed `927466` (original `ab-spsc-a
 - Judge verdicts in C/D are recorded artifacts, not live independent subagent reviews for this comparison.
 - Outcome-level data only; no token/cost/wall-clock. No claim of topology superiority.
 
+## Conclusion (for AD-D05)
+
+Measurements are not comparable: A/B count leader tool calls while C/D count delegated steps (different units); token, cost, and wall-clock were never captured; the controlled doc task was trivial; SPSC run A was reconstructed after temp-dir loss and B/C/D were generated from the same reconstructed baseline; C/D judge verdicts are recorded artifacts, not live independent reviews. Therefore **no conclusion** about topology superiority OR equivalence can be drawn. Single agent remains the default per RFC §1 / AD-D02 as a design default, not as an empirically proven optimum. AD-D05 stays **DEFERRED**; reopen only with a real quality-distinguishing workload and captured token/cost/latency.
+
 ## Summary
 
 | Config | Controlled samples | Pass rate | Real-task evidence | Median latency | Cost per accepted |
