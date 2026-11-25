@@ -11,7 +11,7 @@
 | AD-D02 | Role overlap | Tentukan kapan satu agent cukup dan kapan independensi Judge memberikan manfaat. | DECIDED — Adaptive Role Separation; rules in `docs/LEVEL_CALIBRATION.md` §4. |
 | AD-D03 | Level calibration | Rumuskan task scope dan capability evidence tanpa mengandalkan nama/ukuran model. | DECIDED — rules in `docs/LEVEL_CALIBRATION.md` §1; Leader assigns, Judge verifies. |
 | AD-D04 | Rigor misclassification | Tentukan indikator risiko, uncertainty, dan escalation; uji kasus task kecil berisiko tinggi. | DECIDED — triggers in `docs/LEVEL_CALIBRATION.md` §2. |
-| AD-D05 | Orchestration overhead | Ukur biaya koordinasi dan kualitas terhadap single-agent baseline. | DEFERRED — measurement started (Config A sample 1 recorded in `docs/BASELINE_RESULTS.md`); no conclusion yet. |
+| AD-D05 | Orchestration overhead | Ukur biaya koordinasi dan kualitas terhadap single-agent baseline. | DEFERRED — collected runs are not comparable; no conclusion drawn; reopen only with a quality-distinguishing workload and captured token/cost/latency. |
 | AD-D06 | Memory and context overlap | Tetapkan ownership state, retrieval, source of truth, dan mekanisme invalidasi. | DECIDED (policy) — native-first ownership; implementation deferred. |
 | AD-D07 | Lifecycle hook limitations | Audit dukungan compaction/session hooks; rancang fallback yang tidak menjanjikan checkpoint saat crash. | DEFERRED — prefer native hooks; retain periodic fallback. |
 | AD-D08 | Graph duplication | Evaluasi apakah traceability dan source index yang sudah ada dapat menjadi fondasi graph bersama. | DECIDED — reuse `build_relation_graph` and `@rel`; no new graph engine. |
