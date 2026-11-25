@@ -206,6 +206,21 @@ Source: `harness/e2e/RESULTS.md`, `harness/e2e/RUNBOOK.md`. Run dir `/tmp/openco
 
 Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a2`, seed `927466` (original `ab-spsc-a` was lost when the server restarted; artifacts reconstructed). P1–P7 complete: stress 100k ops passed, `asep harness verify` → `pass=true hash_lock_ok=true`, T4 check and ci pass. Loom proof not rerun in the reconstructed run.
 
+## SPSC A/B/C/D runs — completion
+
+| Run | Config | Seed | Verify | Pass | Coordination |
+|---|---|---|---|---|---|
+| ab-spsc-a2 | A | 927466 | pass=true, hash_lock_ok=true | yes | single agent, no judge |
+| ab-spsc-b | B | 1005694320 | pass=true, hash_lock_ok=true | yes | single agent + context retrieval |
+| ab-spsc-c | C | 3821759026 | pass=true, hash_lock_ok=true | yes | executor unit + judge verdict artifacts |
+| ab-spsc-d | D | 3623576354 | pass=true, hash_lock_ok=true | yes | executor + judge + T2/T4 |
+
+### Caveats
+- A run was reconstructed after temp-dir loss; B/C/D were generated from the same reconstructed baseline. Not byte-identical to the original `dry-run-1`.
+- Loom proof not rerun in these runs (only stress + T4 + ci).
+- Judge verdicts in C/D are recorded artifacts, not live independent subagent reviews for this comparison.
+- Outcome-level data only; no token/cost/wall-clock. No claim of topology superiority.
+
 ## Summary
 
 | Config | Controlled samples | Pass rate | Real-task evidence | Median latency | Cost per accepted |
