@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Layer 5 Agent Runtime: `EngineerLevel` (L1/L2/L3), `CapabilityProfile.engineer_level`, optional `Envelope.level`, `ResourceBudget`/`BudgetTracker`, `Action`/`Observation` with `ActionContract`, and level/rigor/topology calibration docs.
 - P3.1 Transitive Impact Analysis: `asep affected` now performs typed, direction-aware, cycle-safe traversal; reports ADR impact, provenance, and unmapped changes (backward compatible).
 - P3.2 ADR Annotation Coverage: changed ADRs propagate impact to dependent requirements through incoming `Informs` edges; terminal-sink behavior preserved.
+- Context Compiler production hardening: `compile_context` library, CLI `asep context`, MCP `asep_context`, budget-truncation wiring.
 - Empirical baseline measurement plan (P0/AD-D05) for controlled A/B/C/D comparison on real tasks.
 
 

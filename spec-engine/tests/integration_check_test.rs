@@ -553,3 +553,55 @@ fn test_ambient_skills_valid_input_passes() {
     cmd.arg("check").arg("--rigor").arg("T1").arg(root);
     cmd.assert().success().code(0);
 }
+
+// @test:FR-CTX-03
+#[test]
+fn test_context_command_emits_json_bundle() {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+
+    write_ctx_fixture(root);
+
+    let mut cmd = Command::cargo_bin("asep").expect("binary exists");
+    cmd.arg("context")
+        .arg("src/lib.rs")
+        .arg("--root")
+        .arg(root)
+        .arg("--json");
+    cmd.assert()
+        .success()
+        .code(0)
+        .stdout(predicate::str::contains("objective"))
+        .stdout(predicate::str::contains("impacted"))
+        .stdout(predicate::str::contains("excerpts"))
+        .stdout(predicate::str::contains("truncation"))
+        .stdout(predicate::str::contains("commands"));
+}
+
+/// Writes a minimal project with a requirement, impl, test, and tag relations.
+fn write_ctx_fixture(root: &std::path::Path) {
+    fs::create_dir_all(root.join("src")).expect("create src");
+    fs::create_dir_all(root.join("tests")).expect("create tests");
+
+    fs::write(
+        root.join("spec.md"),
+        "<!-- @req:FR-CTX-03:MUST Context requirement -->\n",
+    )
+    .expect("write spec");
+
+    fs::write(
+        root.join("src").join("lib.rs"),
+        "// @impl:FR-CTX-03\n// @rel:satisfies:FR-CTX-03->FR-CTX-03 \"implementation satisfies requirement\"\npub fn run() {}\n",
+    )
+    .expect("write lib");
+
+    fs::write(
+        root.join("tests").join("lib_test.rs"),
+        format!(
+            "// {}FR-CTX-03\n// relation verifying the requirement\n#[test]\nfn t() {{}}\n",
+            "@test:"
+        )
+        .as_str(),
+    )
+    .expect("write test");
+}

@@ -87,6 +87,14 @@ Sumber: `ASEP_Architecture_Expansion_Proposal_Catalog.pdf` hal. 15. Review verdi
 <!-- @req:IN-01-FILE-EVIDENCE:MUST The collector shall compute a SHA-256 content hash for each in-scope file at span start and span end, and shall emit an NDJSON file-change event only for files whose hash changed, carrying the path, before/after hashes, task ID and span label. -->
 <!-- @req:IN-01-INTENT:MUST A write-ahead intent event carrying the target path and its pre-write hash shall be recorded before a controlled tool modifies a file; file-change and intent events shall always be recorded even when ordinary event recording is off, shall be marked as complete evidence, and reports shall state whether ordinary event coverage is on or off. -->
 
+## Context Compiler — production hardening
+
+Sumber: `docs/CONTEXT_COMPILER.md` S3, `docs/CONTEXT_COMPILER_RESULTS.md` (4.4 simulated, 4.5 transport-only). Architecture decision: one library function + one CLI subcommand + one MCP tool; reuse `affected()`, `srcdump` library, `BudgetTracker`; no new dependency/engine/store.
+
+<!-- @req:FR-CTX-01:MUST A `compile_context(root, paths, budget)` library function shall compose a deterministic context bundle from `affected()`, the relation graph, and `srcdump`, returning explicit source and truncation status. -->
+<!-- @req:FR-CTX-02:MUST `BudgetTracker` shall be wired into context assembly: when a configured token/tool-call budget is exceeded, the bundle shall carry an explicit truncation status and shall not silently omit impacted node IDs. -->
+<!-- @req:FR-CTX-03:MUST The CLI shall expose `asep context <paths> [--root] [--max-tokens]` and the MCP server shall expose `asep_context`, both returning the same bundle with additive CLI/MCP compatibility. -->
+
 ## MCP.2 — Impact Integration (client pilot prerequisite)
 
 Sumber: proposal `MCP Impact Integration & Client Pilot` §3, audit `docs/MCP_AUDIT.md`. Reuse `affected()` and `AffectedReport`; no impact engine, no new dependency.

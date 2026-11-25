@@ -735,6 +735,66 @@ pub fn run() -> ExitCode {
             ExitCode::SUCCESS
         }
 
+        Some(Commands::Context {
+            paths,
+            root,
+            max_tokens,
+        }) => {
+            let root_path = root.unwrap_or_else(|| PathBuf::from("."));
+
+            let budget = crate::runtime::budget::ResourceBudget {
+                max_tokens,
+                ..Default::default()
+            };
+
+            let bundle = match crate::context::compile_context(&root_path, &paths, budget) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("{} {}", "✖".red(), e);
+                    return ExitCode::from(1);
+                }
+            };
+
+            if args.json {
+                match serde_json::to_string_pretty(&bundle) {
+                    Ok(json) => println!("{json}"),
+                    Err(e) => {
+                        eprintln!("{} Failed to serialize context bundle: {e}", "✖".red());
+                        return ExitCode::from(2);
+                    }
+                }
+                return ExitCode::SUCCESS;
+            }
+
+            println!("{}", "ASEP Context Bundle".bold().cyan());
+            println!("Objective: {}", bundle.objective);
+            println!("Changed paths: {}", bundle.changed_paths.len());
+            println!(
+                "Impacted: {} requirements, {} tests, {} impls, {} adrs",
+                bundle.impacted.requirements.len(),
+                bundle.impacted.tests.len(),
+                bundle.impacted.impls.len(),
+                bundle.impacted.adrs.len(),
+            );
+            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+            match bundle.truncation.is_empty() {
+                true => println!("Truncation: none"),
+                false => println!("Truncation: {}", bundle.truncation),
+            }
+            println!("Commands:");
+            #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
+            match bundle.commands.is_empty() {
+                true => println!("  (none)"),
+                false => {
+                    for command in &bundle.commands {
+                        println!("  {command}");
+                    }
+                }
+            }
+
+            ExitCode::SUCCESS
+        }
+
         Some(Commands::Adr { sub }) => match sub {
             AdrCommands::New { title, dir, path } => {
                 let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));

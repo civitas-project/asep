@@ -265,3 +265,15 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 
 @rel:verifies:FR-MCP-IMPACT-01->FR-MCP-IMPACT-01 "mcp_test asserts asep_affected returns structured AffectedReport with impls, requirements, tests, adrs, unmapped, provenance, commands"
 @rel:verifies:FR-MCP-IMPACT-02->FR-MCP-IMPACT-02 "mcp_test asserts asep_affected errors on empty or missing paths"
+
+# Traceability relations (@rel:satisfies) — Context Compiler
+
+@rel:satisfies:FR-CTX-01->FR-CTX-01
+@rel:satisfies:FR-CTX-02->FR-CTX-02
+@rel:satisfies:FR-CTX-03->FR-CTX-03
+
+# Traceability relations (@rel:verifies) — Context Compiler
+
+@rel:verifies:FR-CTX-01->FR-CTX-01 "compile_context tests assert deterministic bundle with all impacted IDs"
+@rel:verifies:FR-CTX-02->FR-CTX-02 "budget truncation test asserts explicit truncation status and complete impacted IDs"
+@rel:verifies:FR-CTX-03->FR-CTX-03 "CLI asep context and MCP asep_context exposure tests return the same bundle"

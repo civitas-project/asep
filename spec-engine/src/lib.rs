@@ -7,6 +7,7 @@ pub mod ci;
 pub mod clean;
 pub mod cli;
 pub mod config;
+pub mod context;
 pub mod coverage;
 pub mod diagram;
 pub mod error;

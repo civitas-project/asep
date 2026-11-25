@@ -337,6 +337,32 @@ Measured on this machine with a debug build, 10,000 synthetic events, three bala
 - `asep affected` cannot map a new file until its `@impl`/`@test` tags land, so O1–O3 rely on the targeted `cargo test` commands; if `asep affected` returns empty, record that explicitly and use the listed targets.
 - Full suite remains reserved for merges to `main`.
 
+## Context Compiler — production hardening
+
+Constraint: no new dependency; reuse `crate::affected::affected`, `srcdump::{Config, Formatter, walk_files}`, `srcidx` parser registry, `crate::runtime::budget::{ResourceBudget, BudgetTracker}`. Deterministic output.
+
+<!-- @design:FR-CTX-01 -->
+### FR-CTX-01 `compile_context`
+New module `spec-engine/src/context/mod.rs` with `ContextBundle { objective, changed_paths, impacted: AffectedReport, excerpts: Vec<ContextExcerpt>, truncation: String, commands: Vec<String> }` and `compile_context(root: &Path, paths: &[PathBuf], budget: ResourceBudget) -> Result<ContextBundle, String>`. Steps: `affected()` → collect impacted file paths → `srcdump` signatures/summary via existing library → assemble bundle. Deterministic ordering (sort by path/line/id).
+
+<!-- @design:FR-CTX-02 -->
+### FR-CTX-02 Budget wiring
+Before adding each excerpt, call `BudgetTracker::record_tokens(estimate)`; if `exceeded()` is Some, stop adding excerpts, set `truncation` to `blocked_message()`, and keep all impacted node IDs in `impacted`. No silent omission.
+
+<!-- @design:FR-CTX-03 -->
+### FR-CTX-03 CLI and MCP exposure
+`spec-engine/src/cli.rs`: `Commands::Context { paths, root, max_tokens }`; `spec-engine/src/runner.rs`: dispatch to `compile_context`, print JSON with `--json` (global flag already exists) or text summary. `spec-engine/src/mcp/tools.rs`: `asep_context` tool with schema `{paths: array<string>, root?: string, max_tokens?: integer}` using same function. Additive: tool count 13 → 14, other commands/tools unchanged.
+
+### Ordered implementation plan
+
+| Order | File and symbol | Acceptance criteria | Verification |
+|---|---|---|---|
+| C1 | `spec-engine/src/context/mod.rs`, `compile_context` | Bundle deterministic; impacted IDs complete; truncation explicit. | `cargo test -p asep --lib context` |
+| C2 | `spec-engine/tests/context_test.rs` | Tests for budget exhaustion, determinism, no silent drop. | `cargo test -p asep --test context_test` |
+| C3 | `spec-engine/src/cli.rs`, `runner.rs`, `Commands::Context` | CLI parses and prints bundle; `--max-tokens` wired. | `cargo test -p asep --test integration_check_test` |
+| C4 | `spec-engine/src/mcp/tools.rs`, `asep_context` | Tool listed with schema; returns bundle; errors on empty paths. | `cargo test -p asep --test mcp_test` |
+| C5 | `docs/TRACEABILITY.md`, `CHANGELOG.md` | Three requirements closed; changelog notes. | `asep check . --rigor T2` after scoped acceptance |
+
 ## MCP.2 — Impact Integration (RFC/proposal)
 
 Constraint: reuse `affected()` + `AffectedReport`; no new impact engine, no new dependency; MCP.3/MCP.4/P3.3 deferred.
