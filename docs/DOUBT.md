@@ -13,12 +13,12 @@
 | AD-D04 | Rigor misclassification | Tentukan indikator risiko, uncertainty, dan escalation; uji kasus task kecil berisiko tinggi. | DECIDED — triggers in `docs/LEVEL_CALIBRATION.md` §2. |
 | AD-D05 | Orchestration overhead | Ukur biaya koordinasi dan kualitas terhadap single-agent baseline. | DEFERRED — collected runs are not comparable; no conclusion drawn; reopen only with a quality-distinguishing workload and captured token/cost/latency. |
 | AD-D06 | Memory and context overlap | Tetapkan ownership state, retrieval, source of truth, dan mekanisme invalidasi. | DECIDED (policy) — native-first ownership; implementation deferred. |
-| AD-D07 | Lifecycle hook limitations | Audit dukungan compaction/session hooks; rancang fallback yang tidak menjanjikan checkpoint saat crash. | DEFERRED — prefer native hooks; retain periodic fallback. |
+| AD-D07 | Lifecycle hook limitations | Audit dukungan compaction/session hooks; rancang fallback yang tidak menjanjikan checkpoint saat crash. | DEFERRED — user decision: defer until a concrete UI project; native hooks preferred, periodic fallback retained. |
 | AD-D08 | Graph duplication | Evaluasi apakah traceability dan source index yang sudah ada dapat menjadi fondasi graph bersama. | DECIDED — reuse `build_relation_graph` and `@rel`; no new graph engine. |
 | AD-D09 | Verification independence | Bedakan objective checks, judgement subjektif, dan acceptance manusia; hindari self-certification. | RESOLVED — trusted local runner grants ACCEPTED; agent never grants it (FR-ACC-02..05, FR-INT-01). |
 | AD-D10 | Formal methods applicability | Identifikasi properti yang benar-benar membutuhkan model checking, bukan sekadar test biasa. | DECIDED (policy) — property-driven; implementation conditional. |
-| AD-D11 | Visual backend cost | Ukur akurasi, toleransi, portability, dan overhead CV terhadap DOM/native screenshot tools. | DEFERRED — domain-driven; wait for UI pilot. |
-| AD-D12 | Migration compatibility | Audit dampak penyederhanaan terhadap skill, CLI, MCP, schema, dan existing quality gates. | DEFERRED — evidence-driven; wait for migration target. |
+| AD-D11 | Visual backend cost | Ukur akurasi, toleransi, portability, dan overhead CV terhadap DOM/native screenshot tools. | DEFERRED — user decision: defer until a concrete UI project exists. |
+| AD-D12 | Migration compatibility | Audit dampak penyederhanaan terhadap skill, CLI, MCP, schema, dan existing quality gates. | DEFERRED — user decision: defer until a concrete UI project; reopen with migration target when known. |
 
 ## Operational doubts raised during IN-01 (resolved)
 
