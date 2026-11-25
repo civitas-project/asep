@@ -1,0 +1,73 @@
+[
+  {
+    "task": 1,
+    "path": "spec-engine/src/mcp/tools.rs",
+    "dir": "spec-engine/src/mcp",
+    "bundle": "/tmp/opencode/asep-context-spike/bundle_spec_engine_src_mcp_tools_rs.md",
+    "bundle_bytes": 3271,
+    "bundle_lines": 81,
+    "candidate_source_tokens": 10041,
+    "excerpt_files": [
+      "protocol.rs",
+      "server.rs",
+      "tools.rs"
+    ],
+    "baseline_full_bytes": 53204,
+    "baseline_full_lines": 4,
+    "baseline_full_tokens": 10067,
+    "baseline_full_files": 4,
+    "impacted": {
+      "impls": 14,
+      "requirements": 6,
+      "tests": 6,
+      "adrs": 0,
+      "unmapped": 0
+    }
+  },
+  {
+    "task": 2,
+    "path": "spec-engine/src/affected/mod.rs",
+    "dir": "spec-engine/src/affected",
+    "bundle": "/tmp/opencode/asep-context-spike/bundle_spec_engine_src_affected_mod_rs.md",
+    "bundle_bytes": 3133,
+    "bundle_lines": 74,
+    "candidate_source_tokens": 5163,
+    "excerpt_files": [
+      "mod.rs"
+    ],
+    "baseline_full_bytes": 19016,
+    "baseline_full_lines": 1,
+    "baseline_full_tokens": 5163,
+    "baseline_full_files": 1,
+    "impacted": {
+      "impls": 10,
+      "requirements": 10,
+      "tests": 10,
+      "adrs": 0,
+      "unmapped": 0
+    }
+  },
+  {
+    "task": 3,
+    "path": "spec-engine/src/runtime/level.rs",
+    "dir": "spec-engine/src/runtime",
+    "bundle": "/tmp/opencode/asep-context-spike/bundle_spec_engine_src_runtime_level_rs.md",
+    "bundle_bytes": 1390,
+    "bundle_lines": 47,
+    "candidate_source_tokens": 532,
+    "excerpt_files": [
+      "level.rs"
+    ],
+    "baseline_full_bytes": 10907,
+    "baseline_full_lines": 4,
+    "baseline_full_tokens": 2530,
+    "baseline_full_files": 4,
+    "impacted": {
+      "impls": 1,
+      "requirements": 1,
+      "tests": 1,
+      "adrs": 0,
+      "unmapped": 0
+    }
+  }
+]

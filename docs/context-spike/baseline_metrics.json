@@ -1,0 +1,56 @@
+{
+  "spec-engine/src/mcp/tools.rs::full": {
+    "dir": "spec-engine/src/mcp",
+    "mode": "full",
+    "bytes": 53204,
+    "lines": 4,
+    "files": 4,
+    "tokens_reported_sum": 10067,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  },
+  "spec-engine/src/mcp/tools.rs::signatures": {
+    "dir": "spec-engine/src/mcp",
+    "mode": "signatures",
+    "bytes": 561,
+    "lines": 4,
+    "files": 4,
+    "tokens_reported_sum": 10067,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  },
+  "spec-engine/src/affected/mod.rs::full": {
+    "dir": "spec-engine/src/affected",
+    "mode": "full",
+    "bytes": 19016,
+    "lines": 1,
+    "files": 1,
+    "tokens_reported_sum": 5163,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  },
+  "spec-engine/src/affected/mod.rs::signatures": {
+    "dir": "spec-engine/src/affected",
+    "mode": "signatures",
+    "bytes": 299,
+    "lines": 1,
+    "files": 1,
+    "tokens_reported_sum": 5163,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  },
+  "spec-engine/src/runtime/level.rs::full": {
+    "dir": "spec-engine/src/runtime",
+    "mode": "full",
+    "bytes": 10907,
+    "lines": 4,
+    "files": 4,
+    "tokens_reported_sum": 2530,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  },
+  "spec-engine/src/runtime/level.rs::signatures": {
+    "dir": "spec-engine/src/runtime",
+    "mode": "signatures",
+    "bytes": 562,
+    "lines": 4,
+    "files": 4,
+    "tokens_reported_sum": 2530,
+    "tokenizer": "cl100k_base (tool-reported per-file tokens_est, summed)"
+  }
+}
