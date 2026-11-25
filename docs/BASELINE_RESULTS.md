@@ -202,8 +202,9 @@ Source: `harness/e2e/RESULTS.md`, `harness/e2e/RUNBOOK.md`. Run dir `/tmp/openco
 | AB-A-P2 | A | P2 Design (TDD) | ~2 | yes | 5 `@design:` entries, API specified |
 | AB-A-P3 | A | P3 TDD RED | ~5 | yes | stub failed 1 test; hash locked |
 | AB-A-P4 | A | P4 Implement | ~4 | yes | safe atomic ring; test passes |
+| AB-A-FINAL | A | P5–P7 | ~8 | yes | stress PASS, verify PASS, no judge (single agent) |
 
-Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a`, seed `3961813694`. P5–P7 pending (stress/loom, optimize, final verification).
+Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a2`, seed `927466` (original `ab-spsc-a` was lost when the server restarted; artifacts reconstructed). P1–P7 complete: stress 100k ops passed, `asep harness verify` → `pass=true hash_lock_ok=true`, T4 check and ci pass. Loom proof not rerun in the reconstructed run.
 
 ## Summary
 
