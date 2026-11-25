@@ -228,6 +228,20 @@ pub enum Commands {
         root: Option<PathBuf>,
     },
 
+    /// Compile deterministic context bundle for changed paths
+    Context {
+        /// Changed file or directory paths
+        paths: Vec<PathBuf>,
+
+        /// Project root (default: current directory)
+        #[arg(short, long)]
+        root: Option<PathBuf>,
+
+        /// Maximum token budget for the context bundle
+        #[arg(long)]
+        max_tokens: Option<u64>,
+    },
+
     /// Measure or clean Rust target artifacts by size threshold
     Clean {
         /// Project root (default: current directory)

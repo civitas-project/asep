@@ -8,9 +8,11 @@ use crate::affected::affected;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
 use crate::config::settings::load_config;
+use crate::context::compile_context;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
 use crate::observability::TraceCollector;
+use crate::runtime::budget::ResourceBudget;
 use crate::scanner::scan_project_tags;
 use serde_json::json;
 use srcdump::config::{Config as DumpConfig, OutputFormat, OutputMode};
@@ -396,6 +398,29 @@ pub fn get_tools_list() -> serde_json::Value {
                         "root": {
                             "type": "string",
                             "description": "Repository root (defaults to current directory)"
+                        }
+                    },
+                    "required": ["paths"]
+                }
+            },
+            {
+                "name": "asep_context",
+                "description": "Assembles context bundle from changed file paths",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Changed file paths to build context for"
+                        },
+                        "root": {
+                            "type": "string",
+                            "description": "Repository root (defaults to current directory)"
+                        },
+                        "max_tokens": {
+                            "type": "integer",
+                            "description": "Maximum estimated tokens for excerpts"
                         }
                     },
                     "required": ["paths"]
@@ -1025,6 +1050,44 @@ pub fn execute_tool(
 
             let value = serde_json::to_value(&report)
                 .map_err(|e| format!("Failed to serialize affected report: {e}"))?;
+            mcp_text(value)
+        }
+
+        // @impl:FR-CTX-03
+        "asep_context" => {
+            let paths: Vec<String> = arguments
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| "Missing required parameter 'paths'".to_string())?
+                .iter()
+                .map(|item| {
+                    item.as_str()
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| "invalid 'paths': expected array of strings".to_string())
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+
+            if paths.is_empty() {
+                return Err("'paths' must not be empty".to_string());
+            }
+
+            let root = arguments
+                .get("root")
+                .and_then(|v| v.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| default_dir.to_path_buf());
+
+            let max_tokens = arguments.get("max_tokens").and_then(|v| v.as_u64());
+            let budget = ResourceBudget {
+                max_tokens,
+                ..Default::default()
+            };
+
+            let path_bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+            let bundle = compile_context(&root, &path_bufs, budget)
+                .map_err(|e| format!("Failed to compile context: {e}"))?;
+            let value = serde_json::to_value(&bundle)
+                .map_err(|e| format!("Failed to serialize context bundle: {e}"))?;
             mcp_text(value)
         }
 

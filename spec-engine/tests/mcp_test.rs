@@ -45,7 +45,7 @@ fn test_mcp_tools_list() {
 fn test_tool_descriptions_are_compact() {
     let tools = get_tools_list();
     let tool_list = tools["tools"].as_array().expect("tools array");
-    assert_eq!(tool_list.len(), 13, "expected exactly 13 tools");
+    assert_eq!(tool_list.len(), 14, "expected exactly 14 tools");
     let names: Vec<&str> = tool_list
         .iter()
         .map(|t| t["name"].as_str().unwrap())
@@ -53,6 +53,10 @@ fn test_tool_descriptions_are_compact() {
     assert!(
         names.contains(&"asep_affected"),
         "catalogue must include asep_affected"
+    );
+    assert!(
+        names.contains(&"asep_context"),
+        "catalogue must include asep_context"
     );
     for tool in tool_list {
         let name = tool["name"].as_str().unwrap_or("<unnamed>");
@@ -797,6 +801,80 @@ fn test_asep_affected_rejects_empty_and_missing_paths() {
         assert!(
             res.is_err(),
             "asep_affected must error on empty/missing paths: {res:?}"
+        );
+    }
+}
+
+// @test:FR-CTX-03
+#[test]
+fn test_asep_context_returns_bundle() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path();
+    let root_s = root.to_str().unwrap().to_string();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("src/engine.rs"),
+        "// @impl:IMP-ALPHA\nfn process() {}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("reqs")).unwrap();
+    fs::write(
+        root.join("reqs/REQ-ALPHA.md"),
+        "# Requirement\n@req:REQ-ALPHA:MUST\n",
+    )
+    .unwrap();
+
+    let res = execute_tool(
+        "asep_context",
+        &json!({
+            "paths": ["src/engine.rs"],
+            "root": root_s,
+        }),
+        Path::new(""),
+    )
+    .expect("asep_context must return");
+
+    assert_eq!(
+        res["isError"].as_bool(),
+        Some(false),
+        "unexpected error: {res:?}"
+    );
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let bundle: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+
+    assert!(
+        bundle["objective"].is_string(),
+        "objective must be string: {text}"
+    );
+    assert!(
+        bundle["impacted"].is_object(),
+        "impacted must be object: {text}"
+    );
+    assert!(
+        bundle["excerpts"].is_array(),
+        "excerpts must be array: {text}"
+    );
+    assert!(
+        bundle["truncation"].is_string(),
+        "truncation must be string: {text}"
+    );
+    assert!(
+        bundle["commands"].is_array(),
+        "commands must be array: {text}"
+    );
+}
+
+#[test]
+fn test_asep_context_rejects_empty_and_missing_paths() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root_s = dir.path().to_str().unwrap().to_string();
+
+    for args in [json!({}), json!({"paths": [], "root": root_s})] {
+        let res = execute_tool("asep_context", &args, Path::new(""));
+        assert!(
+            res.is_err(),
+            "asep_context must error on empty/missing paths: {res:?}"
         );
     }
 }

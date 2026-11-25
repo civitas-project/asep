@@ -6,6 +6,7 @@
 // @test:FR-CAP-09
 // @test:FR-IMPACT-01 // @test:FR-IMPACT-02 // @test:FR-IMPACT-03 // @test:FR-IMPACT-04 // @test:FR-IMPACT-05 // @test:FR-IMPACT-06 // @test:FR-IMPACT-07
 // @test:FR-MCP-IMPACT-01 // @test:FR-MCP-IMPACT-02
+// @test:FR-CTX-01 // @test:FR-CTX-02 // @test:FR-CTX-03
 // @test:FR-ADRCOV-01 // @test:FR-ADRCOV-02 // @test:FR-ADRCOV-03
 // @test:FR-CAP-01 // @test:FR-CAP-02 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-05 // @test:FR-CAP-06 // @test:FR-CAP-07 // @test:FR-CAP-08 // @test:FR-AMB-01 // @test:FR-AMB-02 // @test:FR-AMB-03 // @test:FR-AMB-04 // @test:FR-AMB-05 // @test:FR-AMB-06
 //! Unit tests for the 13 MUST requirements in docs/PRD.md.
@@ -156,7 +157,7 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
     let arr = tools["tools"]
         .as_array()
         .expect("tools list must be an array");
-    assert_eq!(arr.len(), 13);
+    assert_eq!(arr.len(), 14);
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "asep_check",
@@ -170,6 +171,7 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
         "asep_agent_read",
         "asep_agent_ack",
         "asep_affected",
+        "asep_context",
     ] {
         assert!(names.contains(&expected), "missing MCP tool {expected}");
     }
