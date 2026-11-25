@@ -119,6 +119,23 @@ Task: add one line to this section describing the run. Acceptance: `asep check -
 - No conclusion drawn.
 - R4 executed via executor + judge + T1/T2 scoped acceptance; verdict PASS; no rework.
 
+## Controlled Round — DCBA sequence
+
+Same task, reverse order. Acceptance: `asep check --rigor T1` PASS.
+
+| Run | Config | Order | Tool calls | Pass | Rework | Defects |
+|---|---|---|---|---|---|---|
+| R5 | D | 1 | exec 1 + judge 1 + T2 | yes | 0 | 0 |
+| R6 | C | 2 | exec 1 + judge 1 | yes | 0 | 0 |
+| R7 | B | 3 | 3 | yes | 0 | 0 |
+| R8 | A | 4 | 2 | yes | 0 | 0 |
+
+### Notes
+- R5 executed via executor + judge + T1/T2; verdict PASS; no rework.
+- R6 executed via executor + judge; verdict PASS; no rework.
+- R7 executed directly with context retrieval; verdict PASS; no rework.
+- R8 executed directly; verdict PASS; no rework.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
