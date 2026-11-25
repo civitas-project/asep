@@ -45,7 +45,15 @@ fn test_mcp_tools_list() {
 fn test_tool_descriptions_are_compact() {
     let tools = get_tools_list();
     let tool_list = tools["tools"].as_array().expect("tools array");
-    assert_eq!(tool_list.len(), 12, "expected exactly 12 tools");
+    assert_eq!(tool_list.len(), 13, "expected exactly 13 tools");
+    let names: Vec<&str> = tool_list
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"asep_affected"),
+        "catalogue must include asep_affected"
+    );
     for tool in tool_list {
         let name = tool["name"].as_str().unwrap_or("<unnamed>");
         let desc = tool["description"].as_str().expect("description string");
@@ -668,6 +676,129 @@ fn test_trace_report_missing_trace_is_not_error() {
     let summary: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
     assert_eq!(summary["trace_found"].as_bool(), Some(false));
     assert!(summary["events"].as_array().unwrap().is_empty());
+}
+
+// @test:FR-MCP-IMPACT-01
+#[test]
+fn test_asep_affected_returns_structured_report() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root = dir.path();
+    let root_s = root.to_str().unwrap().to_string();
+
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("src/engine.rs"),
+        "// @impl:IMP-ALPHA\nfn process() {}\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("reqs")).unwrap();
+    fs::write(
+        root.join("reqs/REQ-ALPHA.md"),
+        "# Requirement\n@req:REQ-ALPHA:MUST\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("tests")).unwrap();
+    fs::write(
+        root.join("tests/engine_test.rs"),
+        "#[test]\nfn check_process() {}\n// @test:TEST-BETA\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("docs")).unwrap();
+    fs::write(root.join("docs/ADR-1.md"), "# ADR-1\n@adr:ADR-1\n").unwrap();
+    fs::write(
+        root.join("spec.rel"),
+        "@rel:satisfies:IMP-ALPHA->REQ-ALPHA \"impl satisfies req\"\n\
+         @rel:verifies:TEST-BETA->IMP-ALPHA \"test verifies impl\"\n\
+         @rel:informs:REQ-ALPHA->ADR-1 \"req informs adr\"\n",
+    )
+    .unwrap();
+    fs::write(root.join("notes.txt"), "plain notes, no tags\n").unwrap();
+
+    let res = execute_tool(
+        "asep_affected",
+        &json!({
+            "paths": ["src/engine.rs", "notes.txt"],
+            "root": root_s,
+        }),
+        Path::new(""),
+    )
+    .expect("asep_affected must return");
+
+    assert_eq!(
+        res["isError"].as_bool(),
+        Some(false),
+        "unexpected error: {res:?}"
+    );
+    let text = res["content"][0]["text"].as_str().expect("text content");
+    let report: serde_json::Value = serde_json::from_str(text).expect("response text is JSON");
+
+    let ids = |field: &str| -> Vec<String> {
+        report[field]
+            .as_array()
+            .unwrap_or_else(|| panic!("missing array field '{field}': {text}"))
+            .iter()
+            .filter_map(|v| v["id"].as_str().map(String::from))
+            .collect()
+    };
+    let impl_ids = ids("impls");
+    let req_ids = ids("requirements");
+    let test_ids = ids("tests");
+    let adr_ids = ids("adrs");
+
+    assert!(
+        impl_ids.contains(&"IMP-ALPHA".to_string()),
+        "impls must include IMP-ALPHA: {impl_ids:?}"
+    );
+    assert!(
+        req_ids.contains(&"REQ-ALPHA".to_string()),
+        "requirements must include REQ-ALPHA: {req_ids:?}"
+    );
+    assert!(
+        test_ids.contains(&"TEST-BETA".to_string()),
+        "tests must include TEST-BETA: {test_ids:?}"
+    );
+    assert!(
+        adr_ids.contains(&"ADR-1".to_string()),
+        "adrs must include ADR-1: {adr_ids:?}"
+    );
+
+    let unmapped: Vec<String> = report["unmapped"]
+        .as_array()
+        .unwrap_or_else(|| panic!("missing array field 'unmapped': {text}"))
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    assert!(
+        unmapped.contains(&"notes.txt".to_string()),
+        "unmapped must list notes.txt: {unmapped:?}"
+    );
+
+    let provenance = report["provenance"]
+        .as_object()
+        .unwrap_or_else(|| panic!("missing object field 'provenance': {text}"));
+    assert!(!provenance.is_empty(), "provenance must be non-empty");
+
+    assert!(
+        report["commands"]
+            .as_array()
+            .is_some_and(|cmds| !cmds.is_empty()),
+        "commands must be non-empty: {text}"
+    );
+}
+
+// @test:FR-MCP-IMPACT-02
+#[test]
+fn test_asep_affected_rejects_empty_and_missing_paths() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let root_s = dir.path().to_str().unwrap().to_string();
+
+    for args in [json!({}), json!({"paths": [], "root": root_s})] {
+        let res = execute_tool("asep_affected", &args, Path::new(""));
+        assert!(
+            res.is_err(),
+            "asep_affected must error on empty/missing paths: {res:?}"
+        );
+    }
 }
 
 fn git(root: &Path, args: &[&str]) {

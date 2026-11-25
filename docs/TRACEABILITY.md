@@ -255,3 +255,13 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-REACT-01->FR-REACT-01 "runtime tests assert Action/Observation round-trip"
 @rel:verifies:FR-REACT-02->FR-REACT-02 "runtime tests assert ActionContract rejects missing and capability mismatch"
 @rel:verifies:FR-REACT-03->FR-REACT-03 "runtime tests assert Observation converts to TraceEvent"
+
+# Traceability relations (@rel:satisfies) — MCP impact analysis
+
+@rel:satisfies:FR-MCP-IMPACT-01->FR-MCP-IMPACT-01
+@rel:satisfies:FR-MCP-IMPACT-02->FR-MCP-IMPACT-02
+
+# Traceability relations (@rel:verifies) — MCP impact analysis
+
+@rel:verifies:FR-MCP-IMPACT-01->FR-MCP-IMPACT-01 "mcp_test asserts asep_affected returns structured AffectedReport with impls, requirements, tests, adrs, unmapped, provenance, commands"
+@rel:verifies:FR-MCP-IMPACT-02->FR-MCP-IMPACT-02 "mcp_test asserts asep_affected errors on empty or missing paths"
