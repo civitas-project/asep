@@ -76,8 +76,53 @@ Result: PASS — output is deterministic for identical inputs (byte-identical bu
 | 4.1 Bundle contains all impacted impls/reqs/tests/ADRs; no unmapped path dropped silently | PASS | Coverage check above: 0 missing IDs across 3 tasks; `unmapped: []` for all tasks |
 | 4.2 Token estimate lower than full `srcdump` of same scope, ratio recorded | PASS (partial) | Candidate bundle bytes are ~6–13% of baseline full-mode bytes. Token reduction holds only where impacted files are a subset of directory files (task 3: 532 vs 2530 tokens). Ratios recorded per task in metrics table. |
 | 4.3 Output deterministic for identical inputs (byte-identical) | PASS | Determinism check above |
-| 4.4 Budget exhaustion produces explicit truncation status, not silent omission | NOT VALIDATED | No token budget was enforced in the spike bundles; no truncation path was exercised. A production Context Compiler would wire `ResourceBudget` with explicit truncation status (never silent omission), per docs/CONTEXT_COMPILER.md §2, but this was not tested in S1/S2. |
-| 4.5 Native MCP client can consume the bundle without a custom client | NOT VALIDATED | Bundles were composed client-side from `asep affected` + `srcdump` outputs. No native MCP client consumption pilot was run in S1/S2. |
+| 4.4 Budget exhaustion produces explicit truncation status, not silent omission | SIMULATED (not production-validated) | Python spike `spike_budget_truncation.py` simulated `ResourceBudget { max_tokens: 100 }` semantics (mirrors `spec-engine/src/runtime/budget.rs` `BudgetTracker`) over the `spec-engine/src/runtime/level.rs` bundle; `exceeded()` returned `tokens` and the spike artifact carries the explicit line `budget exceeded (tokens): excerpt omitted`. All impacted node IDs retained; nothing silently dropped in the spike. `BudgetTracker` exists in Rust but is NOT wired into context assembly; truncation was demonstrated in a spike artifact, not in the implemented pipeline. Artifact: `docs/context-spike/budget_truncated_bundle.md`. |
+| 4.5 Native MCP client can consume the bundle without a custom client | TRANSPORT VALIDATED ONLY | Live `asep mcp` JSON-RPC stdio session passed the compiled bundle through `asep_agent_send` body → `asep_agent_read` round-trip (same process, read body equals sent body, MATCH=True). External native OpenCode client in-runtime consumption was NOT tested (client unavailable in this session). Validates MCP transport/consumption via existing tools only, not production context injection. Artifact: `docs/context-spike/mcp_client_validation.md`. |
+
+## Validation of 4.4 and 4.5
+
+### 4.4 — budget exhaustion explicit truncation (simulated, not production-validated)
+
+Command:
+```
+python3 /tmp/opencode/asep-context-spike/spike_budget_truncation.py
+```
+The script simulates `ResourceBudget { max_tokens: 100 }` / `BudgetTracker` semantics
+from `spec-engine/src/runtime/budget.rs` over the `spec-engine/src/runtime/level.rs`
+bundle (source `tokens_est=532`). This is a spike-only simulation; `BudgetTracker`
+exists in Rust but is NOT wired into the context assembly pipeline.
+
+Output (key lines, spike artifact only):
+- `budget exceeded (tokens): excerpt omitted` — explicit truncation-status line present in the spike artifact.
+- `recorded tokens: 532`, `max_tokens: 100`, `exceeded: True (tokens)`.
+- `all impacted IDs retained: True` (impl FR-LEVEL-01, req FR-LEVEL-01, test FR-LEVEL-01); no content silently dropped in the spike.
+
+Limitation: truncation was demonstrated in a spike artifact, not in the implemented pipeline.
+
+Artifact: `docs/context-spike/budget_truncated_bundle.md`.
+
+### 4.5 — native MCP client consumption of the bundle (transport validated only)
+
+Command (drive `asep mcp` JSON-RPC stdio session):
+```
+ASEP_RUN_DIR=/tmp/opencode/asep-context-spike/mcp_run asep mcp /home/da578/Documents/Projects/Rust/asep
+```
+with requests (line-delimited JSON-RPC):
+1. `initialize`
+2. `tools/list` (13 tools, incl. `asep_affected`, `srcdump`, `asep_agent_send`, `asep_agent_read`)
+3. `tools/call asep_affected` → `{"paths": ["spec-engine/src/runtime/level.rs"], "root": "<repo>"}`
+4. `tools/call srcdump` → `{"dir": "<repo>/spec-engine/src/runtime", "mode": "signatures", "format": "ndjson", "tokenizer": "cl100k_base", "strip_comments": true, "strip_blank_lines": true}`
+5. `tools/call asep_agent_send` → `{"agent": "executor", "to": "judge", "kind": "TASK_REPORT", "body": {<bundle object>}}` returns message id
+6. `tools/call asep_agent_read` → `{"id": <message id>}` returns the identical body
+
+Output: read body equals sent body (MATCH=True).
+
+Limitation: this validates MCP transport/consumption of the compiled bundle text through
+the existing `asep mcp` JSON-RPC stdio tools only (same process). External native
+OpenCode client in-runtime consumption was NOT tested (client unavailable in this
+session; see docs/MCP_PILOT.md caveats).
+
+Artifact: `docs/context-spike/mcp_client_validation.md`.
 
 ## Budget status
 
@@ -92,7 +137,7 @@ Evidence:
 - Determinism: byte-identical output on repeated composition (criterion 4.3 PASS).
 - Baseline vs candidate: candidate bundle is a small fraction of baseline full-mode bytes (median 3133 vs 19016 bytes); token estimates are available from the existing `srcdump` tokenizer (`cl100k_base` per-file `tokens_est`).
 - No new engine, storage, abstraction, or dependency required.
-- Criteria 4.4 and 4.5 are NOT VALIDATED in S1/S2; they do not block the S3 decision but would need validation before production hardening.
+- Criteria 4.4 and 4.5 were validated in S3 as simulated/transport-only (see "Validation of 4.4 and 4.5" section); they do not block the S3 decision but would need production hardening before relying on them.
 
 Condition to revisit: if a concrete consumer (e.g., the Orbit UI pilot) requires a native MCP tool that returns the bundle as a structured call rather than composing client-side, add a thin MCP tool then. No speculative abstraction before that consumer exists. This matches the spike's "evidence-backed, no speculative abstraction" principle (docs/CONTEXT_COMPILER.md §6).
 
