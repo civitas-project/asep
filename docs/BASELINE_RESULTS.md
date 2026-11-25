@@ -199,8 +199,11 @@ Source: `harness/e2e/RESULTS.md`, `harness/e2e/RUNBOOK.md`. Run dir `/tmp/openco
 | Run | Config | Phase | Tool calls | Pass | Notes |
 |---|---|---|---|---|---|
 | AB-A-P1 | A | P1 Requirements (PRD) | ~3 | yes | 5 `@req:*:MUST`, no judge (single agent) |
+| AB-A-P2 | A | P2 Design (TDD) | ~2 | yes | 5 `@design:` entries, API specified |
+| AB-A-P3 | A | P3 TDD RED | ~5 | yes | stub failed 1 test; hash locked |
+| AB-A-P4 | A | P4 Implement | ~4 | yes | safe atomic ring; test passes |
 
-Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a`, seed `3961813694`. P2–P7 pending.
+Run dir: `/tmp/opencode/asep-e2e/ab-spsc-a`, seed `3961813694`. P5–P7 pending (stress/loom, optimize, final verification).
 
 ## Summary
 
