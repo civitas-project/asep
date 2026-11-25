@@ -136,6 +136,43 @@ Same task, reverse order. Acceptance: `asep check --rigor T1` PASS.
 - R7 executed directly with context retrieval; verdict PASS; no rework.
 - R8 executed directly; verdict PASS; no rework.
 
+## Controlled Round — repetition 2 (ABCD)
+
+| Run | Config | Order | Tool calls | Pass | Rework | Defects |
+|---|---|---|---|---|---|---|
+| R9 | A | 1 | 2 | yes | 0 | 0 |
+| R10 | B | 2 | 3 | yes | 0 | 0 |
+| R11 | C | 3 | exec 1 + judge 1 | yes | 0 | 0 |
+| R12 | D | 4 | exec 1 + judge 1 + T2 | yes | 0 | 0 |
+
+## Controlled Round — repetition 3 (DCBA)
+
+| Run | Config | Order | Tool calls | Pass | Rework | Defects |
+|---|---|---|---|---|---|---|
+| R13 | D | 1 | exec 1 + judge 1 + T2 | yes | 0 | 0 |
+| R14 | C | 2 | exec 1 + judge 1 | yes | 0 | 0 |
+| R15 | B | 3 | 3 | yes | 0 | 0 |
+| R16 | A | 4 | 2 | yes | 0 | 0 |
+
+### Notes
+- R9-R16: repetitions 2 (ABCD) and 3 (DCBA) complete; C/D runs delegated with judge PASS; A/B runs direct; all pass, no rework.
+
+## Median summary (4 balanced sequences: ABCD, DCBA, ABCD, DCBA)
+
+| Config | Runs | Pass | Coordination per run (median) | Defects | Rework |
+|---|---|---|---|---|---|
+| A | 3 (R1,R8,R9,R16 → 4 samples) | 4/4 | 2 leader tool calls | 0 | 0 |
+| B | 4 (R2,R7,R10,R15) | 4/4 | 3 leader tool calls | 0 | 0 |
+| C | 4 (R3,R6,R11,R14) | 4/4 | 1 executor + 1 judge | 0 | 0 |
+| D | 4 (R4,R5,R12,R13) | 4/4 | 1 executor + 1 judge + T2 | 0 | 0 |
+
+### Caveats
+- Counts are not directly comparable: A/B count leader tool calls; C/D count delegated steps. Different units.
+- Token consumption and cost remain `unavailable` (no provider data); no cost-per-accepted-task figure.
+- Wall-clock time not precisely measured.
+- All configurations passed on this trivial documentation task; no quality or defect differentiation observed.
+- No claim that one topology is better. AD-D05 remains evidence-driven; a real task with measurable quality differences is needed.
+
 ## Summary
 
 | Config | Tasks run | Pass rate | Median tool calls | Median latency | Cost per accepted |
