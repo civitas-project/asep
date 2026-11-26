@@ -46,6 +46,23 @@ pub fn formal_state(result: &FormalCheckResult, required: bool) -> FormalState {
     FormalState::Fail
 }
 
+/// A check is optional when it targets an illustrative skeleton or
+/// template: an absent solver there yields `Skipped`, not `Unproven`.
+pub fn is_required_formal_check(check: &FormalCheckResult, required_tools: &[&str]) -> bool {
+    let name = Path::new(&check.file)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if name.contains("SKELETON") {
+        return false;
+    }
+    let path = check.file.as_str();
+    if path.contains("/skeletons/") || path.contains("/templates/") {
+        return false;
+    }
+    required_tools.iter().any(|t| *t == check.tool)
+}
+
 pub fn aggregate_formal_state(
     results: &[FormalCheckResult],
     required_tools: &[&str],
@@ -55,7 +72,7 @@ pub fn aggregate_formal_state(
     }
     let mut best = FormalState::Skipped;
     for check in results {
-        let required = required_tools.iter().any(|t| *t == check.tool);
+        let required = is_required_formal_check(check, required_tools);
         let s = formal_state(check, required);
         if state_rank(s) > state_rank(best) {
             best = s;

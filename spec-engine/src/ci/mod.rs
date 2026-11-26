@@ -1,7 +1,10 @@
 //! Unified 5-Gate Local CI Pipeline Runner.
 
 use crate::auditor::audit_project_anti_slop;
-use crate::formal::{aggregate_formal_state, formal_state, validate_formal_specs, FormalState};
+use crate::formal::{
+    aggregate_formal_state, formal_state, is_required_formal_check, validate_formal_specs,
+    FormalState,
+};
 use crate::graph::builder::build_relation_graph;
 use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::scan_project_tags;
@@ -139,7 +142,7 @@ fn run_gate_0(dir: &Path) -> GateResult {
     let mut details = Vec::new();
 
     for check in &formal_checks {
-        let required = REQUIRED_FORMAL_TOOLS.iter().any(|t| *t == check.tool);
+        let required = is_required_formal_check(check, &REQUIRED_FORMAL_TOOLS);
         let check_state = formal_state(check, required);
         details.push(match check_state {
             FormalState::Fail => {
@@ -439,6 +442,35 @@ mod tests {
                 .iter()
                 .any(|d| d.contains("UNPROVEN") || d.contains("tlc")),
             "expected UNPROVEN/tlc detail, got {:?}",
+            res.details
+        );
+    }
+
+    #[test]
+    fn gate_0_skeleton_absent_solver_is_skipped_and_passed() {
+        let tmp = std::env::temp_dir().join(format!("asep-gate0-skel-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("skeletons")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin")).unwrap();
+        std::fs::write(
+            tmp.join("skeletons").join("INVARIANT_SKELETON.als"),
+            "module skeleton {}\n",
+        )
+        .unwrap();
+        let saved_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", tmp.join("bin"));
+        let res = run_gate_0(&tmp);
+        match saved_path {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(res.passed, "skeleton gate 0 must pass: {:?}", res.details);
+        assert!(res.skipped, "skeleton gate 0 must be skipped");
+        assert!(
+            res.details
+                .iter()
+                .any(|d| d.contains("[SKIP]") && d.contains("SKELETON")),
+            "expected SKIP detail for skeleton, got {:?}",
             res.details
         );
     }
