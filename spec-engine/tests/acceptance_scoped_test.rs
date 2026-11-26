@@ -8,69 +8,11 @@ use asep::acceptance_scoped::{affected_test_commands, bwrap_args, run_scoped_acc
 
 #[test]
 fn scoped_acceptance_writes_accepted_evidence() {
-    let root = tempfile::tempdir().expect("temp dir");
-    let root_path = root.path();
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    let commit = head_of(root_path);
 
-    // Minimal temp git repo.
-    run(
-        root_path,
-        &["git", "init", "-q", root_path.to_str().unwrap()],
-    );
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("config")
-        .arg("user.email")
-        .arg("test@example.com")
-        .status()
-        .expect("git config email");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("config")
-        .arg("user.name")
-        .arg("test")
-        .status()
-        .expect("git config name");
-    fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("add")
-        .arg("README.md")
-        .status()
-        .expect("git add");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("commit")
-        .arg("-q")
-        .arg("-m")
-        .arg("init")
-        .status()
-        .expect("git commit");
-
-    // Policy + PRD with one SHOULD (excluded) and two MUST requirements.
-    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
-    fs::write(
-        root_path.join("docs/PRD.md"),
-        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
-    )
-    .expect("write PRD");
-    fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
-    let policy = r#"{
-        "approved_commit": "abc123",
-        "changed_paths": ["docs/PRD.md"],
-        "evidence_dir": "evidence"
-    }"#;
-    fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
-
-    // Fake bwrap shim: every gate exits 0 without running anything.
-    let shim_path = bwrap_shim();
-    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
-
-    let commit = "abc123";
-    let evidence_dir = run_scoped_acceptance(root_path, commit)
+    let evidence_dir = run_scoped_acceptance(root_path, &commit)
         .unwrap_or_else(|e| panic!("run_scoped_acceptance failed: {e}"));
     assert_eq!(evidence_dir, root_path.join("evidence"));
 
@@ -91,6 +33,15 @@ fn scoped_acceptance_writes_accepted_evidence() {
             )),
             "{id} rationale"
         );
+        assert!(content.contains("schema_version: 1"), "{id} schema_version");
+        assert!(content.contains("revision:"), "{id} revision");
+        assert!(content.contains("tree_digest:"), "{id} tree_digest");
+        assert!(
+            content.contains("changed_paths_digest:"),
+            "{id} changed_paths_digest"
+        );
+        assert!(content.contains("policy_digest:"), "{id} policy_digest");
+        assert!(content.contains("toolchain:"), "{id} toolchain");
     }
     assert!(
         !semantic.join("REQ-GAMMA.md").exists(),
@@ -207,7 +158,7 @@ fn scoped_gate_commands_use_sandbox_exe() {
     let shim_path = bwrap_shim();
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
-    run_scoped_acceptance(root_path, "abc123")
+    run_scoped_acceptance(root_path, &head_of(root_path))
         .unwrap_or_else(|e| panic!("run_scoped_acceptance failed: {e}"));
 
     let log = fs::read_to_string(&record).expect("read gate command log");
@@ -264,9 +215,26 @@ fn bwrap_log() -> PathBuf {
     std::env::temp_dir().join("asep-acceptance-test-bwrap.log")
 }
 
+/// `git -C <root> rev-parse HEAD`; panics on failure. Trimmed stdout.
+fn head_of(root: &Path) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse HEAD");
+    assert!(output.status.success(), "git rev-parse HEAD failed");
+    String::from_utf8(output.stdout)
+        .expect("git rev-parse HEAD output not utf8")
+        .trim()
+        .to_string()
+}
+
 /// Minimal temp git repo with an acceptance policy, a PRD with two MUST
 /// requirements and one SHOULD, and an ASEP_BWRAP shim that makes every gate
-/// exit 0 without running anything.
+/// exit 0 without running anything. The policy approves the actual HEAD
+/// commit so the snapshot-identity check passes.
 fn scoped_acceptance_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temp dir");
     let root_path = root.path();
@@ -291,12 +259,25 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .arg("test")
         .status()
         .expect("git config name");
+    fs::write(
+        root_path.join(".gitignore"),
+        "acceptance.json\nevidence/\n",
+    )
+    .expect("write .gitignore");
     fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
+    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
+    fs::write(
+        root_path.join("docs/PRD.md"),
+        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
+    )
+    .expect("write PRD");
     Command::new("git")
         .arg("-C")
         .arg(root_path)
         .arg("add")
         .arg("README.md")
+        .arg("docs/PRD.md")
+        .arg(".gitignore")
         .status()
         .expect("git add");
     Command::new("git")
@@ -309,18 +290,16 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .status()
         .expect("git commit");
 
-    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
-    fs::write(
-        root_path.join("docs/PRD.md"),
-        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
-    )
-    .expect("write PRD");
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
-    let policy = r#"{
-        "approved_commit": "abc123",
+    let commit = head_of(root_path);
+    let policy = format!(
+        r#"{{
+        "approved_commit": "{}",
         "changed_paths": ["docs/PRD.md"],
         "evidence_dir": "evidence"
-    }"#;
+    }}"#,
+        commit
+    );
     fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
 
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
@@ -348,7 +327,7 @@ fn asep_bin() -> PathBuf {
 fn accept_scoped_cli_writes_evidence() {
     let _root = scoped_acceptance_root();
     let root_path = _root.path();
-    let commit = "abc123";
+    let commit = head_of(root_path);
 
     let output = Command::new(asep_bin())
         .arg("accept-scoped")
@@ -449,4 +428,45 @@ fn fake_affected_bwrap_shim(lines: &[&str]) -> PathBuf {
     perms.set_mode(0o755);
     fs::set_permissions(&shim_path, perms).expect("shim perms");
     shim_path
+}
+
+// @test:FR-AUD-02
+#[test]
+fn dirty_tree_evidence_is_rejected() {
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    fs::write(root_path.join("dirty.txt"), "dirty\n").expect("write dirty.txt");
+    let result = run_scoped_acceptance(root_path, &head_of(root_path));
+    assert!(result.is_err(), "expected dirty tree error: {result:?}");
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("dirty") || error.contains("untracked"),
+        "error must mention dirty/untracked: {error}"
+    );
+    assert!(
+        !root_path.join("evidence/semantic/REQ-ALPHA.md").is_file(),
+        "no evidence written for REQ-ALPHA"
+    );
+}
+
+#[test]
+fn head_mismatch_is_rejected() {
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    let policy_path = root_path.join(".spec-engine/acceptance.json");
+    let policy = format!(
+        r#"{{
+        "approved_commit": "deadbeef",
+        "changed_paths": ["docs/PRD.md"],
+        "evidence_dir": "evidence"
+    }}"#
+    );
+    fs::write(&policy_path, policy).expect("rewrite policy");
+    let result = run_scoped_acceptance(root_path, "deadbeef");
+    assert!(result.is_err(), "expected HEAD mismatch error: {result:?}");
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("HEAD") || error.contains("commit"),
+        "error must mention HEAD or commit: {error}"
+    );
 }
