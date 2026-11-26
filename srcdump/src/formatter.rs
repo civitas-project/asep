@@ -451,10 +451,15 @@ impl Formatter {
         result
     }
 
+    // @impl:FR-AUD-26
     /// Advance past a block comment (`/* ... */`), handling nested comments.
-    /// Caller must confirm `bytes[i..]` starts with `/*`.
-    /// Returns the index just after the closing `*/`, or None if unterminated.
+    /// Returns `None` if `bytes[i..]` does not start with `/*` (without advancing `i`),
+    /// or if the comment is unterminated.
+    /// Returns the index just after the closing `*/` when terminated.
     fn skip_block_comment(bytes: &[u8], mut i: usize, len: usize) -> Option<usize> {
+        if !(i + 1 < len && bytes[i] == b'/' && bytes[i + 1] == b'*') {
+            return None;
+        }
         i += 2;
         let mut depth = 1;
         while i < len && depth > 0 {
@@ -511,29 +516,29 @@ impl Formatter {
         result
     }
 
-    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
-    /// Truncate lines longer than max_len, handling UTF-8 correctly.
+    // @impl:FR-AUD-33
+    /// Truncate lines longer than `max_len`, handling UTF-8 correctly.
+    /// The emitted line is at most `max_len` chars including the ellipsis.
+    /// For `max_len < 4`, a long line becomes the ellipsis truncated to `max_len`.
     fn truncate_lines(&self, content: &str, max_len: usize) -> String {
-        if max_len < 4 {
-            return content.to_string(); // Too small to truncate meaningfully
-        }
+        let ellipsis = "...";
+        let keep = max_len.saturating_sub(ellipsis.chars().count());
 
         content
             .lines()
             .map(|line| {
-                let too_long = line.chars().count() > max_len;
-                match too_long {
-                    false => line.to_string(),
-                    true => {
-                        let half = max_len / 2;
-                        let chars: Vec<char> = line.chars().collect();
-                        format!(
-                            "{}...{}",
-                            chars[..half].iter().collect::<String>(),
-                            chars[chars.len() - half..].iter().collect::<String>()
-                        )
-                    }
+                let chars: Vec<char> = line.chars().collect();
+                if chars.len() <= max_len {
+                    return line.to_string();
                 }
+                if keep == 0 {
+                    return ellipsis.chars().take(max_len).collect();
+                }
+                let head = keep / 2;
+                let tail = keep - head;
+                let head_str: String = chars[..head].iter().collect();
+                let tail_str: String = chars[chars.len() - tail..].iter().collect();
+                format!("{head_str}{ellipsis}{tail_str}")
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -758,10 +763,12 @@ def foo():
         let formatter = test_formatter();
         let long_line = "a".repeat(100);
         let truncated = formatter.truncate_lines(&long_line, 10);
-        assert_eq!(truncated, "aaaaa...aaaaa");
+        assert_eq!(truncated, "aaa...aaaa");
+        assert_eq!(truncated.chars().count(), 10);
 
         let small = formatter.truncate_lines("test", 2);
-        assert_eq!(small, "test");
+        assert_eq!(small.chars().count(), 2);
+        assert_ne!(small, "test");
     }
 
     #[test]
@@ -872,6 +879,54 @@ def foo():
             Err(err) => assert!(err
                 .to_string()
                 .contains("Failed to load invalid_tokenizer encoding")),
+        }
+    }
+
+    // @test:FR-AUD-26
+    #[test]
+    fn comment_stripper_preserves_surrounding_code() {
+        let formatter = test_formatter();
+        let code = "let a = 1; /* comment */ let b = 2;";
+        let stripped = formatter.strip_comments(code, "rust");
+        assert!(stripped.contains("let a = 1;"));
+        assert!(stripped.contains("let b = 2;"));
+        assert!(!stripped.contains("comment"));
+    }
+
+    #[test]
+    fn comment_stripper_handles_nested_string_unterminated() {
+        let formatter = test_formatter();
+
+        let nested = "/* outer /* inner */ end */ code";
+        let stripped = formatter.strip_comments(nested, "rust");
+        assert_eq!(stripped, " code");
+
+        let with_string = r#"let s = "/* not a comment */"; let x = 1;"#;
+        let stripped = formatter.strip_comments(with_string, "rust");
+        assert_eq!(stripped, with_string);
+
+        let unterminated = "let a = 1; /* unterminated";
+        let stripped = formatter.strip_comments(unterminated, "rust");
+        assert_eq!(stripped, unterminated);
+    }
+
+    // @test:FR-AUD-33
+    #[test]
+    fn truncate_respects_max_len_with_ellipsis() {
+        let formatter = test_formatter();
+        let ascii = "a".repeat(100);
+        let unicode = "ｈｅｌｌｏｗｏｒｌｄ".repeat(10);
+        let cases = [&ascii, &unicode];
+        for max_len in 0..12 {
+            for line in cases {
+                let result = formatter.truncate_lines(line, max_len);
+                assert!(
+                    result.chars().count() <= max_len,
+                    "max_len {max_len}: {:?} is {} chars",
+                    result,
+                    result.chars().count()
+                );
+            }
         }
     }
 }
