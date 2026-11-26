@@ -421,7 +421,11 @@ pub struct TestPlan {
 /// `cargo test -p asep --lib` fallback; identical fallbacks are deduplicated.
 /// Target discovery is dynamic: the tests directory is consulted, no target
 /// list is hardcoded.
-pub fn build_test_plan(base: &[String], changed_paths: &[String], root: &Path) -> Result<TestPlan, String> {
+pub fn build_test_plan(
+    base: &[String],
+    changed_paths: &[String],
+    root: &Path,
+) -> Result<TestPlan, String> {
     let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
     cmd.extend(changed_paths.iter().map(|s| s.as_str()));
     cmd.push("--json");

@@ -438,8 +438,7 @@ fn build_test_plan_uses_json_commands_and_adds_package() {
     assert_eq!(plan.selected, 2, "plan must select both commands");
     assert_eq!(plan.commands.len(), 2);
     assert_eq!(
-        plan.commands[0],
-        "cargo test -p asep --test alpha",
+        plan.commands[0], "cargo test -p asep --test alpha",
         "existing target kept with -p asep: {}",
         plan.commands[0]
     );
