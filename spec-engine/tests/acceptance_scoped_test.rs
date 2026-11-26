@@ -414,8 +414,17 @@ fn accept_scoped_cli_rejects_unapproved_commit() {
 // @test:FR-AUD-05
 #[test]
 fn build_test_plan_uses_json_commands_and_adds_package() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let root_path = root.path();
+    fs::create_dir_all(root_path.join("spec-engine").join("tests")).expect("tests dir");
+    fs::write(
+        root_path.join("spec-engine/tests/alpha.rs"),
+        "#[test]\nfn alpha() {}\n",
+    )
+    .expect("write alpha.rs");
+
     let shim_path =
-        affected_json_bwrap_shim(&["cargo test --test alpha", "cargo test -p other --test beta"]);
+        affected_json_bwrap_shim(&["cargo test --test alpha", "cargo test --test ghost"]);
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
     let base = bwrap_args(
@@ -423,19 +432,21 @@ fn build_test_plan_uses_json_commands_and_adds_package() {
         Path::new("/toolchain"),
         Path::new("/workspace/target"),
     );
-    let plan = build_test_plan(&base, &["docs/PRD.md".to_string()])
+    let plan = build_test_plan(&base, &["docs/PRD.md".to_string()], root_path)
         .unwrap_or_else(|e| panic!("build_test_plan failed: {e}"));
 
     assert_eq!(plan.selected, 2, "plan must select both commands");
     assert_eq!(plan.commands.len(), 2);
-    assert!(
-        plan.commands[0].contains("-p asep"),
-        "command without -p must get -p asep: {}",
+    assert_eq!(
+        plan.commands[0],
+        "cargo test -p asep --test alpha",
+        "existing target kept with -p asep: {}",
         plan.commands[0]
     );
     assert_eq!(
-        plan.commands[1], "cargo test -p other --test beta",
-        "command that already has -p must be unchanged"
+        plan.commands[1], "cargo test -p asep --lib",
+        "nonexistent target converted to --lib fallback: {}",
+        plan.commands[1]
     );
 
     // Restore the shared shim so other tests see the default bwrap behavior.

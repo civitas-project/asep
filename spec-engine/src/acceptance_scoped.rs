@@ -153,7 +153,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         "structural (check --rigor T1)",
     )?;
     // Gate (c): ScopedTests from `asep affected <changed_paths> --json`.
-    let plan = build_test_plan(&base, &policy.changed_paths)?;
+    let plan = build_test_plan(&base, &policy.changed_paths, root)?;
     let mut total_executed: usize = 0;
     for cmd in &plan.commands {
         let stdout = run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
@@ -416,9 +416,12 @@ pub struct TestPlan {
 /// from the `commands` array of the first JSON value. Fail closed on spawn,
 /// JSON parse, or missing/invalid `commands`. Commands beginning with
 /// `cargo test` get `-p asep` inserted after `cargo test` unless they already
-/// carry a `-p` token. No target is silently dropped: a nonexistent target
-/// fails explicitly when its command runs.
-pub fn build_test_plan(base: &[String], changed_paths: &[String]) -> Result<TestPlan, String> {
+/// carry a `-p` token. A command naming a `--test <target>` whose
+/// `root/spec-engine/tests/<target>.rs` does not exist is replaced with the
+/// `cargo test -p asep --lib` fallback; identical fallbacks are deduplicated.
+/// Target discovery is dynamic: the tests directory is consulted, no target
+/// list is hardcoded.
+pub fn build_test_plan(base: &[String], changed_paths: &[String], root: &Path) -> Result<TestPlan, String> {
     let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
     cmd.extend(changed_paths.iter().map(|s| s.as_str()));
     cmd.push("--json");
@@ -433,7 +436,10 @@ pub fn build_test_plan(base: &[String], changed_paths: &[String]) -> Result<Test
         Some(array) => array,
         None => return Err("asep affected output missing commands array".to_string()),
     };
+    const FALLBACK: &str = "cargo test -p asep --lib";
+    let tests_dir = root.join("spec-engine").join("tests");
     let mut planned: Vec<String> = Vec::new();
+    let mut fallbacks: HashSet<String> = HashSet::new();
     for item in commands {
         let command = match item.as_str() {
             Some(s) => s.to_string(),
@@ -446,13 +452,32 @@ pub fn build_test_plan(base: &[String], changed_paths: &[String]) -> Result<Test
             let rest = final_cmd.strip_prefix("cargo test").unwrap_or("");
             final_cmd = format!("cargo test -p asep{rest}");
         }
+        let missing_target = test_target(&final_cmd)
+            .map(|target| !tests_dir.join(format!("{target}.rs")).is_file())
+            .unwrap_or(false);
+        if missing_target {
+            fallbacks.insert(FALLBACK.to_string());
+            continue;
+        }
         planned.push(final_cmd);
     }
+    planned.extend(fallbacks.into_iter());
     let selected = planned.len();
     Ok(TestPlan {
         commands: planned,
         selected,
     })
+}
+
+/// Target of a `--test <target>` token in `command`, or None when absent.
+fn test_target(command: &str) -> Option<&str> {
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    for (i, token) in tokens.iter().enumerate() {
+        if *token == "--test" {
+            return tokens.get(i + 1).copied();
+        }
+    }
+    None
 }
 
 fn resolve_evidence_dir(root: &Path, evidence_dir: &str) -> Result<PathBuf, String> {
