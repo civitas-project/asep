@@ -7,7 +7,7 @@ use std::sync::Mutex;
 
 static BWRAP_ENV_LOCK: Mutex<()> = Mutex::new(());
 
-use asep::acceptance_scoped::{affected_test_commands, bwrap_args, run_scoped_acceptance};
+use asep::acceptance_scoped::{build_test_plan, bwrap_args, run_scoped_acceptance};
 
 #[test]
 fn scoped_acceptance_writes_accepted_evidence() {
@@ -210,7 +210,7 @@ fn run(root: &Path, args: &[&str]) {
 /// the same path that outlives any single test's temp dirs.
 /// `asep affected --json` shim output: only REQ-ALPHA is in scope.
 const AFFECTED_JSON: &str =
-    "{\"requirements\":[{\"id\":\"REQ-ALPHA\"}],\"impls\":[],\"tests\":[],\"adrs\":[],\"unmapped\":[],\"commands\":[],\"provenance\":{}}";
+    "{\"requirements\":[{\"id\":\"REQ-ALPHA\"}],\"impls\":[],\"tests\":[],\"adrs\":[],\"unmapped\":[],\"commands\":[\"cargo test --test scoped_traceability\"],\"provenance\":{}}";
 
 fn bwrap_shim() -> PathBuf {
     let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap");
@@ -414,14 +414,12 @@ fn accept_scoped_cli_rejects_unapproved_commit() {
     );
 }
 
+// @test:FR-AUD-05
 #[test]
-fn affected_test_commands_filters_nonexistent_test_targets() {
-    // Fake `asep affected` output: two commands naming nonexistent test
-    // targets plus one valid command. Only the valid command must be returned.
-    let shim_path = fake_affected_bwrap_shim(&[
-        "cargo test --test TRACEABILITY",
-        "cargo test --test traceability_tests",
-        "cargo test --test scoped_traceability",
+fn build_test_plan_uses_json_commands_and_adds_package() {
+    let shim_path = affected_json_bwrap_shim(&[
+        "cargo test --test alpha",
+        "cargo test -p other --test beta",
     ]);
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
@@ -430,28 +428,38 @@ fn affected_test_commands_filters_nonexistent_test_targets() {
         Path::new("/toolchain"),
         Path::new("/workspace/target"),
     );
-    let commands = affected_test_commands(&base, &["docs/PRD.md".to_string()])
-        .unwrap_or_else(|e| panic!("affected_test_commands failed: {e}"));
+    let plan = build_test_plan(&base, &["docs/PRD.md".to_string()])
+        .unwrap_or_else(|e| panic!("build_test_plan failed: {e}"));
 
+    assert_eq!(plan.selected, 2, "plan must select both commands");
+    assert_eq!(plan.commands.len(), 2);
+    assert!(
+        plan.commands[0].contains("-p asep"),
+        "command without -p must get -p asep: {}",
+        plan.commands[0]
+    );
     assert_eq!(
-        commands,
-        vec!["cargo test --test scoped_traceability".to_string()],
-        "only the valid test command must survive the filter"
+        plan.commands[1],
+        "cargo test -p other --test beta",
+        "command that already has -p must be unchanged"
     );
 
     // Restore the shared shim so other tests see the default bwrap behavior.
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
 }
 
-/// bwrap shim that prints `lines` to stdout and exits 0, faking `asep
-/// affected` output without a real sandbox.
-fn fake_affected_bwrap_shim(lines: &[&str]) -> PathBuf {
-    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-fake-affected");
+/// bwrap shim that prints one JSON object whose `commands` array holds `cmds`
+/// and exits 0, faking `asep affected` output without a real sandbox.
+fn affected_json_bwrap_shim(cmds: &[&str]) -> PathBuf {
+    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-affected-json");
     let mut shim = fs::File::create(&shim_path).expect("create shim");
     writeln!(shim, "#!/bin/sh").expect("write shebang");
-    for line in lines {
-        writeln!(shim, "echo {}", line).expect("write echo");
-    }
+    let joined = cmds.join("\", \"");
+    writeln!(
+        shim,
+        "printf '%s\\n' '{{\"requirements\":[],\"impls\":[],\"tests\":[],\"adrs\":[],\"commands\":[\"{joined}\"],\"provenance\":{{}}}}'",
+    )
+    .expect("write affected json");
     writeln!(shim, "exit 0").expect("write exit");
     drop(shim);
     let mut perms = fs::metadata(&shim_path)

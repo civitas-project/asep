@@ -152,12 +152,12 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         &[SANDBOX_EXE, "check", "--rigor", "T1"],
         "structural (check --rigor T1)",
     )?;
-    // Gate (c): ScopedTests from `asep affected <changed_paths>`.
-    let test_cmds = affected_test_commands(&base, &policy.changed_paths)?;
+    // Gate (c): ScopedTests from `asep affected <changed_paths> --json`.
+    let plan = build_test_plan(&base, &policy.changed_paths)?;
     let mut total_executed: usize = 0;
-    for cmd in test_cmds {
+    for cmd in &plan.commands {
         let stdout =
-            run_bwrap_capture(&base, &["sh", "-c", &cmd], &format!("scoped test: {cmd}"))?;
+            run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
         total_executed += executed_test_count(&stdout);
     }
     if total_executed == 0 {
@@ -193,7 +193,8 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
             false => "out_of_scope",
         };
         let content = format!(
-            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_executed: {total_executed}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_selected: {}\ntests_executed: {total_executed}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            plan.selected,
             identity.revision,
             identity.tree_digest,
             identity.changed_paths_digest,
@@ -406,58 +407,58 @@ fn executed_test_count(output: &str) -> usize {
     total
 }
 
-/// Run `asep affected <changed_paths>` inside the sandbox and return the lines
-/// beginning with `cargo test` to execute as scoped tests.
-pub fn affected_test_commands(
-    base: &[String],
-    changed_paths: &[String],
-) -> Result<Vec<String>, String> {
-    let mut cmd = vec![SANDBOX_EXE.to_string(), "affected".to_string()];
-    cmd.extend(changed_paths.iter().cloned());
-    let mut args: Vec<String> = base.to_vec();
-    args.push("--".to_string());
-    args.extend(cmd);
-    let output = Command::new(bwrap_bin())
-        .args(&args)
-        .output()
-        .map_err(|e| format!("failed to run bwrap for affected: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("asep affected failed: {stderr}"));
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| line.starts_with("cargo test"))
-        .filter(|line| !names_nonexistent_test_target(line))
-        .map(|line| line.to_string())
-        .collect())
+// @impl:FR-AUD-05
+#[derive(Debug)]
+pub struct TestPlan {
+    pub commands: Vec<String>,
+    pub selected: usize,
 }
 
-/// Test targets that `asep affected` may emit but which do not exist in this
-/// repo; commands naming them are dropped so scoped tests never fail on a
-/// missing test target.
-const NONEXISTENT_TEST_TARGETS: &[&str] = &["TRACEABILITY", "traceability_tests"];
-
-/// True when `line` is a `cargo test --test <target>` command whose target is
-/// nonexistent.
-fn names_nonexistent_test_target(line: &str) -> bool {
-    let mut tokens = line.split_whitespace();
-    let mut found = false;
-    for token in tokens.by_ref() {
-        match token {
-            "--test" => match tokens.next() {
-                Some(target) => {
-                    found = NONEXISTENT_TEST_TARGETS.contains(&target);
-                    break;
-                }
-                None => break,
-            },
-            _ => {}
+/// Run `asep affected <paths> --json` inside the sandbox and build a test plan
+/// from the `commands` array of the first JSON value. Fail closed on spawn,
+/// JSON parse, or missing/invalid `commands`. Commands beginning with
+/// `cargo test` get `-p asep` inserted after `cargo test` unless they already
+/// carry a `-p` token. No target is silently dropped: a nonexistent target
+/// fails explicitly when its command runs.
+pub fn build_test_plan(
+    base: &[String],
+    changed_paths: &[String],
+) -> Result<TestPlan, String> {
+    let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
+    cmd.extend(changed_paths.iter().map(|s| s.as_str()));
+    cmd.push("--json");
+    let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
+    let mut values = serde_json::Deserializer::from_str(&stdout)
+        .into_iter::<serde_json::Value>();
+    let value = match values.next() {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
+        None => return Err("asep affected output is empty".to_string()),
+    };
+    let commands = match value.get("commands").and_then(|v| v.as_array()) {
+        Some(array) => array,
+        None => return Err("asep affected output missing commands array".to_string()),
+    };
+    let mut planned: Vec<String> = Vec::new();
+    for item in commands {
+        let command = match item.as_str() {
+            Some(s) => s.to_string(),
+            None => return Err("asep affected command is not a string".to_string()),
+        };
+        let mut final_cmd = command;
+        let is_cargo_test = final_cmd.starts_with("cargo test");
+        let has_p = final_cmd.split_whitespace().any(|token| token == "-p");
+        if is_cargo_test && !has_p {
+            let rest = final_cmd.strip_prefix("cargo test").unwrap_or("");
+            final_cmd = format!("cargo test -p asep{rest}");
         }
+        planned.push(final_cmd);
     }
-    found
+    let selected = planned.len();
+    Ok(TestPlan {
+        commands: planned,
+        selected,
+    })
 }
 
 fn resolve_evidence_dir(root: &Path, evidence_dir: &str) -> Result<PathBuf, String> {
