@@ -15,6 +15,52 @@ pub struct FormalCheckResult {
     pub message: String,
 }
 
+// @impl:FR-AUD-09
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormalState {
+    Pass,
+    Fail,
+    Skipped,
+    Unproven,
+}
+
+fn state_rank(state: FormalState) -> u8 {
+    match state {
+        FormalState::Skipped => 0,
+        FormalState::Pass => 1,
+        FormalState::Unproven => 2,
+        FormalState::Fail => 3,
+    }
+}
+
+pub fn formal_state(result: &FormalCheckResult, required: bool) -> FormalState {
+    if result.skipped && required {
+        return FormalState::Unproven;
+    }
+    if result.skipped {
+        return FormalState::Skipped;
+    }
+    if result.passed {
+        return FormalState::Pass;
+    }
+    FormalState::Fail
+}
+
+pub fn aggregate_formal_state(results: &[FormalCheckResult], required_tools: &[&str]) -> FormalState {
+    if results.is_empty() {
+        return FormalState::Skipped;
+    }
+    let mut best = FormalState::Skipped;
+    for check in results {
+        let required = required_tools.iter().any(|t| *t == check.tool);
+        let s = formal_state(check, required);
+        if state_rank(s) > state_rank(best) {
+            best = s;
+        }
+    }
+    best
+}
+
 /// Scans directory for formal specifications and runs validators if available.
 pub fn validate_formal_specs(dir: &Path) -> Vec<FormalCheckResult> {
     let mut results = Vec::new();
@@ -207,5 +253,76 @@ fn validate_dbml(path: &Path, file_str: &str) -> FormalCheckResult {
             skipped: false,
             message: e.to_string(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // @test:FR-AUD-09
+    #[test]
+    fn fr_aud_09_required_solver_absent_is_unproven() {
+        let result = FormalCheckResult {
+            tool: "alloy".to_string(),
+            file: "model.als".to_string(),
+            passed: true,
+            skipped: true,
+            message: "alloy CLI not found".to_string(),
+        };
+        assert_eq!(formal_state(&result, true), FormalState::Unproven);
+    }
+
+    #[test]
+    fn fr_aud_09_optional_skipped_is_skipped() {
+        let result = FormalCheckResult {
+            tool: "alloy".to_string(),
+            file: "model.als".to_string(),
+            passed: true,
+            skipped: true,
+            message: "skipped".to_string(),
+        };
+        assert_eq!(formal_state(&result, false), FormalState::Skipped);
+    }
+
+    #[test]
+    fn fr_aud_09_failing_check_is_fail() {
+        let result = FormalCheckResult {
+            tool: "alloy".to_string(),
+            file: "model.als".to_string(),
+            passed: false,
+            skipped: false,
+            message: "solver reported failure".to_string(),
+        };
+        assert_eq!(formal_state(&result, true), FormalState::Fail);
+    }
+
+    #[test]
+    fn fr_aud_09_empty_results_aggregate_is_skipped() {
+        assert_eq!(aggregate_formal_state(&[], &["alloy"]), FormalState::Skipped);
+    }
+
+    #[test]
+    fn fr_aud_09_aggregate_fail_wins() {
+        let results = vec![
+            FormalCheckResult {
+                tool: "tlc".to_string(),
+                file: "spec.tla".to_string(),
+                passed: true,
+                skipped: true,
+                message: "skipped".to_string(),
+            },
+            FormalCheckResult {
+                tool: "alloy".to_string(),
+                file: "model.als".to_string(),
+                passed: false,
+                skipped: false,
+                message: "fail".to_string(),
+            },
+        ];
+        assert_eq!(
+            aggregate_formal_state(&results, &["alloy", "tlc"]),
+            FormalState::Fail
+        );
     }
 }
