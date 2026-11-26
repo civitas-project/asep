@@ -70,6 +70,28 @@ fn spawn_shell(cmd: &str) -> Result<Child, String> {
         .map_err(|e| format!("failed to spawn command '{cmd}': {e}"))
 }
 
+/// @impl:FR-AUD-11
+/// Spawn `cmd` through the platform shell with stdout/stderr discarded, so
+/// a child writing heavily to stdout cannot block on pipe capacity.
+fn spawn_shell_quiet(cmd: &str) -> Result<Child, String> {
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("cmd");
+    #[cfg(not(target_os = "windows"))]
+    let mut command = Command::new("sh");
+
+    #[cfg(target_os = "windows")]
+    command.arg("/c");
+    #[cfg(not(target_os = "windows"))]
+    command.arg("-c");
+
+    command
+        .arg(cmd)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to spawn command '{cmd}': {e}"))
+}
+
 /// Wait for `child` to exit, enforcing `timeout` by polling. On timeout the
 /// child is killed and reaped.
 fn wait_with_timeout(
@@ -205,6 +227,7 @@ fn sample_rss_bytes(pid: u32) -> usize {
     }
 }
 
+/// @impl:FR-AUD-10
 /// Run `cmd` through the platform shell while sampling peak RSS, enforcing
 /// `timeout` and `peak_budget_bytes`. Returns the observed peak RSS in bytes.
 pub fn run_cmd_memory(
@@ -212,14 +235,19 @@ pub fn run_cmd_memory(
     peak_budget_bytes: usize,
     timeout: Duration,
 ) -> Result<usize, String> {
-    let mut child = spawn_shell(cmd)?;
+    let mut child = spawn_shell_quiet(cmd)?;
     let pid = child.id();
     let start = Instant::now();
     let mut peak: usize = sample_rss_bytes(pid);
 
     loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Err(format!("command exited with {status}"));
+                }
+                break;
+            }
             Ok(None) => {
                 peak = peak.max(sample_rss_bytes(pid));
                 if start.elapsed() >= timeout {
@@ -298,5 +326,35 @@ mod tests {
             over.is_err(),
             "expected fail with zero budget, got {over:?}"
         );
+    }
+
+    // @test:FR-AUD-10
+    #[test]
+    fn run_cmd_memory_nonzero_exit_is_error() {
+        let err = run_cmd_memory(
+            "sh -c 'exit 7'",
+            10 * 1_024 * 1_024 * 1_024,
+            Duration::from_secs(30),
+        )
+        .unwrap_err();
+        assert!(err.contains("exited with"), "unexpected error: {err}");
+
+        let ok = run_cmd_memory(
+            "sh -c 'true'",
+            10 * 1_024 * 1_024 * 1_024,
+            Duration::from_secs(30),
+        );
+        assert!(ok.is_ok(), "expected ok, got {ok:?}");
+    }
+
+    // @test:FR-AUD-11
+    #[test]
+    fn run_cmd_memory_large_stdout_completes() {
+        let ok = run_cmd_memory(
+            "head -c 1048576 /dev/zero",
+            10 * 1_024 * 1_024 * 1_024,
+            Duration::from_secs(30),
+        );
+        assert!(ok.is_ok(), "expected ok, got {ok:?}");
     }
 }
