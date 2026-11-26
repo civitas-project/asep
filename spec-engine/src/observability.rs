@@ -297,6 +297,14 @@ impl Drop for SpanGuard {
     }
 }
 
+// @impl:FR-AUD-16
+pub fn trace_key(trace_id: &str) -> String {
+    trace_id
+        .bytes()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 // @impl:IN-01-COLLECT
 pub struct TraceCollector {
     target_dir: PathBuf,
@@ -365,7 +373,8 @@ impl TraceCollector {
             _ => return Ok(()),
         };
         fs::create_dir_all(&self.target_dir).map_err(|e| e.to_string())?;
-        let active = self.target_dir.join(format!("{trace_id}.ndjson"));
+        let key = trace_key(trace_id);
+        let active = self.target_dir.join(format!("{key}.ndjson"));
         let mut rotate = false;
         if active.exists() {
             rotate = fs::metadata(&active).map_err(|e| e.to_string())?.len() >= self.max_bytes;
@@ -375,7 +384,7 @@ impl TraceCollector {
                 .duration_since(UNIX_EPOCH)
                 .map_err(|e| e.to_string())?
                 .as_secs();
-            let rotated = self.target_dir.join(format!("{trace_id}.{secs}.ndjson"));
+            let rotated = self.target_dir.join(format!("{key}.{secs}.ndjson"));
             fs::rename(&active, &rotated).map_err(|e| e.to_string())?;
         }
         self.expire_rotated_segments(trace_id)?;
@@ -396,7 +405,8 @@ impl TraceCollector {
     }
 
     pub fn purge(&self, trace_id: &str) -> Result<(), String> {
-        let active = self.target_dir.join(format!("{trace_id}.ndjson"));
+        let key = trace_key(trace_id);
+        let active = self.target_dir.join(format!("{key}.ndjson"));
         if active.exists() {
             fs::remove_file(&active).map_err(|e| e.to_string())?;
         }
@@ -436,8 +446,9 @@ impl TraceCollector {
             return Ok(Vec::new());
         }
         let mut out = Vec::new();
-        let prefix = format!("{trace_id}.");
-        let active = format!("{trace_id}.ndjson");
+        let key = trace_key(trace_id);
+        let prefix = format!("{key}.");
+        let active = format!("{key}.ndjson");
         let read_dir = fs::read_dir(&self.target_dir).map_err(|e| e.to_string())?;
         for entry in read_dir {
             let entry = entry.map_err(|e| e.to_string())?;
@@ -768,8 +779,9 @@ mod tests {
     }
 
     fn rotated_segment_count(root: &Path, trace_id: &str) -> usize {
-        let active = format!("{trace_id}.ndjson");
-        let prefix = format!("{trace_id}.");
+        let key = trace_key(trace_id);
+        let active = format!("{key}.ndjson");
+        let prefix = format!("{key}.");
         fs::read_dir(root)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -825,7 +837,7 @@ mod tests {
             .record(test_event("trace-full", 1, "next"))
             .unwrap();
         collector.flush("trace-full").unwrap();
-        let path = collector.target_dir.join("trace-full.ndjson");
+        let path = collector.target_dir.join(format!("{}.ndjson", trace_key("trace-full")));
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
@@ -869,7 +881,7 @@ mod tests {
         });
         collector.record(event).unwrap();
         collector.flush("trace-redact").unwrap();
-        let path = collector.target_dir.join("trace-redact.ndjson");
+        let path = collector.target_dir.join(format!("{}.ndjson", trace_key("trace-redact")));
         let content = fs::read_to_string(&path).unwrap();
         let value: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
         assert_eq!(
@@ -899,17 +911,18 @@ mod tests {
         let mut collector = TraceCollector::new(root.path(), &config);
         collector.record(test_event("trace-a", 0, "start")).unwrap();
         collector.flush("trace-a").unwrap();
+        let key_a = trace_key("trace-a");
         fs::write(
-            collector.target_dir.join("trace-a.1000000000.ndjson"),
+            collector.target_dir.join(format!("{key_a}.1000000000.ndjson")),
             "rotated\n",
         )
         .unwrap();
         collector.record(test_event("trace-b", 0, "begin")).unwrap();
         collector.flush("trace-b").unwrap();
         collector.purge("trace-a").unwrap();
-        assert!(!collector.target_dir.join("trace-a.ndjson").exists());
-        assert!(!root.path().join("trace-a.1000000000.ndjson").exists());
-        assert!(collector.target_dir.join("trace-b.ndjson").exists());
+        assert!(!collector.target_dir.join(format!("{key_a}.ndjson")).exists());
+        assert!(!root.path().join(format!("{key_a}.1000000000.ndjson")).exists());
+        assert!(collector.target_dir.join(format!("{}.ndjson", trace_key("trace-b"))).exists());
         collector.purge("trace-missing").unwrap();
     }
 
@@ -930,12 +943,18 @@ mod tests {
             .unwrap();
         collector.flush("trace-r").unwrap();
         assert_eq!(rotated_segment_count(&collector.target_dir, "trace-r"), 1);
-        assert!(collector.target_dir.join("trace-r.ndjson").exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-r")))
+            .exists());
         collector.ttl_secs = 0;
         collector.record(test_event("trace-r", 2, "third")).unwrap();
         collector.flush("trace-r").unwrap();
         assert_eq!(rotated_segment_count(&collector.target_dir, "trace-r"), 0);
-        assert!(collector.target_dir.join("trace-r.ndjson").exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-r")))
+            .exists());
     }
 
     // @test:IN-01-METRIC
@@ -1312,5 +1331,26 @@ mod tests {
         let json = r#"{"schema_version":1,"trace_id":"t","parent_id":null,"task_id":"task","seq":0,"ts_wall":"2026-01-01T00:00:00Z","event":"run","duration_ms":null,"cost":null,"missing":[]}"#;
         let event: TraceEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.detail, None);
+    }
+
+    // @test:FR-AUD-16
+    #[test]
+    fn trace_key_does_not_match_prefix() {
+        assert_ne!(trace_key("run1"), trace_key("run10"));
+        assert!(!trace_key("run10").starts_with(&format!("{}.", trace_key("run1"))));
+
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        collector.record(test_event("run10", 0, "start")).unwrap();
+        collector.flush("run10").unwrap();
+        let run10 = collector.target_dir.join(format!("{}.ndjson", trace_key("run10")));
+        assert!(run10.exists());
+        assert!(collector.rotated_segment_paths("run1").unwrap().is_empty());
+        collector.purge("run1").unwrap();
+        assert!(run10.exists());
     }
 }
