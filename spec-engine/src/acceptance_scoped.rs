@@ -7,6 +7,7 @@
 
 use regex::Regex;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,6 +33,79 @@ struct AcceptancePolicy {
     evidence_dir: String,
 }
 
+/// Immutable snapshot identity: commit must equal HEAD and tree must be clean.
+#[derive(Debug)]
+pub struct SnapshotIdentity {
+    pub revision: String,
+    pub tree_digest: String,
+    pub changed_paths_digest: String,
+    pub policy_digest: String,
+    pub toolchain: String,
+}
+
+/// Hex-encoded sha256 of `data`.
+fn hex(bytes: impl AsRef<[u8]>) -> String {
+    let digest = Sha256::digest(bytes.as_ref());
+    format!("{digest:x}")
+}
+
+/// Run `git -C <root>` with `args`; failure to spawn, non-exit-success, or
+/// non-utf8 output is an error. Stdout is trimmed.
+fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git spawn failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git failed (exit {}): {stderr}", output.status));
+    }
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("git output not utf8: {e}"))
+}
+
+// @impl:FR-AUD-02
+fn snapshot_identity(
+    root: &Path,
+    commit: &str,
+    policy_text: &str,
+    changed_paths: &[String],
+) -> Result<SnapshotIdentity, String> {
+    let head = git_output(root, &["rev-parse", "HEAD"])?;
+    if head != commit {
+        return Err(format!("HEAD {head} is not the approved commit {commit}"));
+    }
+    let tree_digest = git_output(root, &["rev-parse", &format!("{commit}^{{tree}}")])?;
+    let dirty = git_output(root, &["status", "--porcelain"])?;
+    if !dirty.is_empty() {
+        return Err(format!("working tree is dirty: {dirty}"));
+    }
+    let policy_digest = hex(policy_text);
+    let mut sorted = changed_paths.to_vec();
+    sorted.sort();
+    let changed_paths_digest = hex(sorted.join("\n"));
+    let rustc = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("rustc spawn failed: {e}"))?;
+    if !rustc.status.success() {
+        return Err("rustc --version failed".to_string());
+    }
+    let toolchain = String::from_utf8(rustc.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("rustc --version output not utf8: {e}"))?;
+    Ok(SnapshotIdentity {
+        revision: head,
+        tree_digest,
+        changed_paths_digest,
+        policy_digest,
+        toolchain,
+    })
+}
+
 /// Run scoped acceptance for `commit` against `root`.
 ///
 /// Every gate command runs inside an unprivileged `bwrap` sandbox. If `bwrap`
@@ -52,6 +126,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
             policy.approved_commit
         ));
     }
+    let identity = snapshot_identity(root, commit, &policy_text, &policy.changed_paths)?;
 
     let sysroot = sysroot()?;
     let scratch = scratch_dir()?;
@@ -101,7 +176,12 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     let changed_list = policy.changed_paths.join(", ");
     for req_id in &req_ids {
         let content = format!(
-            "reviewer: scoped-trusted-runner\nverdict: ACCEPTED\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n"
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nverdict: ACCEPTED\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            identity.revision,
+            identity.tree_digest,
+            identity.changed_paths_digest,
+            identity.policy_digest,
+            identity.toolchain,
         );
         fs::write(semantic_dir.join(format!("{req_id}.md")), content)
             .map_err(|e| format!("failed to write evidence for {req_id}: {e}"))?;
