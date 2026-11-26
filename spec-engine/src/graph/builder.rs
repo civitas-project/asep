@@ -121,6 +121,36 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
     }
 }
 
+// @impl:FR-AUD-06
+/// Admissible `(source, edge, target)` kind triples for the typed relation
+/// graph. Endpoint kinds are validated per edge kind, not by ID only.
+///
+/// - Satisfies: Impl -> Req
+/// - Verifies: Test -> Req
+/// - Informs: ADR on exactly one side, the other side is Req/Impl/Test
+/// - Constrains: Adr -> Req/Impl, or Req -> Impl
+fn admissible_edge(source: NodeKind, edge: EdgeKind, target: NodeKind) -> bool {
+    match edge {
+        EdgeKind::Satisfies => {
+            return matches!(source, NodeKind::Impl) && matches!(target, NodeKind::Req);
+        }
+        EdgeKind::Verifies => {
+            return matches!(source, NodeKind::Test) && matches!(target, NodeKind::Req);
+        }
+        EdgeKind::Informs => {
+            return (matches!(source, NodeKind::Adr)
+                && matches!(target, NodeKind::Req | NodeKind::Impl | NodeKind::Test))
+                || (matches!(target, NodeKind::Adr)
+                    && matches!(source, NodeKind::Req | NodeKind::Impl | NodeKind::Test));
+        }
+        EdgeKind::Constrains => {
+            return (matches!(source, NodeKind::Adr)
+                && matches!(target, NodeKind::Req | NodeKind::Impl))
+                || (matches!(source, NodeKind::Req) && matches!(target, NodeKind::Impl));
+        }
+    }
+}
+
 // @impl:FR-CLI-GRAPH-02-F
 /// Builds the typed relation graph from scanned tags and evaluates the
 /// canonical coverage rules COV-01..COV-06 from `policy`.
@@ -231,6 +261,29 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
     let mut verifies_with_note: HashMap<String, usize> = HashMap::new();
 
     for edge in &edges {
+        let mut admissible = false;
+        if let Some(source_kinds) = id_kinds.get(&edge.from) {
+            for target in &edge.to {
+                if let Some(target_kinds) = id_kinds.get(target) {
+                    for source_kind in source_kinds {
+                        for target_kind in target_kinds {
+                            if admissible_edge(*source_kind, edge.kind, *target_kind) {
+                                admissible = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !admissible {
+            violations.push(CoverageViolation {
+                rule_id: "COV-TYPE".to_string(),
+                subject: edge.from.clone(),
+                found: 0,
+                required: 1,
+            });
+            continue;
+        }
         for target in &edge.to {
             match edge.kind {
                 EdgeKind::Satisfies => {
@@ -262,7 +315,7 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
                 }
             }
             EdgeKind::Verifies => {
-                if edge.note.is_some() {
+                if edge.note.as_ref().is_some_and(|n| !n.trim().is_empty()) {
                     *verifies_with_note.entry(edge.from.clone()).or_default() += 1;
                 }
             }
