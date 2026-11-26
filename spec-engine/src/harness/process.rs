@@ -127,19 +127,20 @@ fn capture_output(child: &mut Child, start: Instant) -> Result<(String, u64), St
     Ok((output, start.elapsed().as_micros() as u64))
 }
 
-/// Parse `{"steps": N}` from stdout; fall back to elapsed microseconds.
-fn steps_from_output(output: &str, fallback: u64) -> u64 {
+/// @impl:FR-AUD-14
+/// Parse `{"steps": N}` from stdout; any missing/invalid shape is an error.
+fn steps_from_output(output: &str) -> Result<u64, String> {
     let trimmed = output.trim();
-    match serde_json::from_str::<Value>(trimmed) {
-        Ok(value) => match value.as_object() {
-            Some(object) => match object.get("steps").and_then(Value::as_u64) {
-                Some(steps) => steps,
-                None => fallback,
-            },
-            None => fallback,
-        },
-        Err(_) => fallback,
-    }
+    let value: Value = serde_json::from_str(trimmed)
+        .map_err(|_| "complexity workload did not report a valid steps count".to_string())?;
+    let object = value
+        .as_object()
+        .ok_or("complexity workload did not report a valid steps count")?;
+    let steps = object
+        .get("steps")
+        .and_then(Value::as_u64)
+        .ok_or("complexity workload did not report a valid steps count")?;
+    Ok(steps)
 }
 
 /// Run one shell command and return its step count.
@@ -147,13 +148,13 @@ fn run_once(cmd: &str, timeout: Duration) -> Result<u64, String> {
     let start = Instant::now();
     let mut child = spawn_shell(cmd)?;
     let status = wait_with_timeout(&mut child, timeout)?;
-    let (output, elapsed_micros) = capture_output(&mut child, start)?;
+    let (output, _elapsed_micros) = capture_output(&mut child, start)?;
     if !status.success() {
         return Err(format!(
             "command '{cmd}' exited with status {status}; output: {output}"
         ));
     }
-    Ok(steps_from_output(&output, elapsed_micros))
+    steps_from_output(&output)
 }
 
 /// Measure empirical log-log complexity slope of an external command and
@@ -162,13 +163,16 @@ fn run_once(cmd: &str, timeout: Duration) -> Result<u64, String> {
 /// For each `N` in `sizes`, `{n}` in `cmd_template` is replaced with `N`
 /// (or `N` is appended when no placeholder exists). Each command is run
 /// through the platform shell with `timeout` enforced. Steps come from a
-/// `{"steps": N}` JSON payload on stdout, otherwise elapsed microseconds.
+/// `{"steps": N}` JSON payload on stdout.
 pub fn run_cmd_complexity(
     cmd_template: &str,
     sizes: &[usize],
     max_slope: f64,
     timeout: Duration,
 ) -> Result<f64, String> {
+    if !max_slope.is_finite() || max_slope < 0.0 {
+        return Err("max_slope must be finite and nonnegative".to_string());
+    }
     if sizes.is_empty() {
         return Err("sizes must not be empty".to_string());
     }
@@ -308,6 +312,35 @@ mod tests {
         let cmd = "awk 'BEGIN { n = {n}; printf \"{\\\"steps\\\": %d}\\n\", n * n }'";
         let result = run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(30));
         assert!(result.is_err(), "expected failure, got {result:?}");
+    }
+
+    // @test:FR-AUD-14
+    #[test]
+    fn complexity_rejects_nan_max_slope() {
+        let err = run_cmd_complexity("sh -c 'true'", &[1, 2], f64::NAN, Duration::from_secs(30))
+            .unwrap_err();
+        assert!(err.contains("finite"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn complexity_rejects_invalid_steps() {
+        let err = run_cmd_complexity(
+            "sh -c 'echo not-json'",
+            &[1, 2],
+            1.2,
+            Duration::from_secs(30),
+        )
+        .unwrap_err();
+        assert!(err.contains("steps"), "unexpected error: {err}");
+
+        let err = run_cmd_complexity(
+            "sh -c 'echo {\"steps\": -1}'",
+            &[1, 2],
+            1.2,
+            Duration::from_secs(30),
+        )
+        .unwrap_err();
+        assert!(err.contains("steps"), "unexpected error: {err}");
     }
 
     #[test]
