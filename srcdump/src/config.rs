@@ -171,6 +171,58 @@ impl Config {
     }
 }
 
+/// CLI-settable options. `None` means "unset"; only `Some` overrides the
+/// TOML value (or the built-in default when no TOML file is loaded).
+#[derive(Debug, Clone, Default)]
+pub struct CliOverrides {
+    pub mode: Option<OutputMode>,
+    pub format: Option<OutputFormat>,
+    pub jobs: Option<usize>,
+    pub max_lines: Option<usize>,
+    pub summary_threshold: Option<usize>,
+    pub estimate_tokens: Option<bool>,
+    pub use_default_includes: Option<bool>,
+    pub include: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub root: Option<PathBuf>,
+}
+
+// @impl:FR-AUD-29
+pub fn resolve_options(toml: Option<&Config>, cli: &CliOverrides) -> Config {
+    let mut config = toml.cloned().unwrap_or_default();
+    if let Some(mode) = cli.mode {
+        config.mode = mode;
+    }
+    if let Some(format) = cli.format {
+        config.format = format;
+    }
+    if let Some(jobs) = cli.jobs {
+        config.jobs = jobs;
+    }
+    if let Some(max_lines) = cli.max_lines {
+        config.max_lines = Some(max_lines);
+    }
+    if let Some(summary_threshold) = cli.summary_threshold {
+        config.summary_threshold = summary_threshold;
+    }
+    if let Some(estimate_tokens) = cli.estimate_tokens {
+        config.estimate_tokens = estimate_tokens;
+    }
+    if let Some(use_default_includes) = cli.use_default_includes {
+        config.use_default_includes = use_default_includes;
+    }
+    if let Some(ref include) = cli.include {
+        config.include_patterns = include.clone();
+    }
+    if let Some(ref exclude) = cli.exclude {
+        config.exclude_patterns = exclude.clone();
+    }
+    if let Some(ref root) = cli.root {
+        config.root = root.clone();
+    }
+    config
+}
+
 fn default_format() -> OutputFormat {
     OutputFormat::Ndjson
 }
@@ -448,9 +500,68 @@ fn default_tokenizer() -> String {
 mod tests {
     use super::*;
 
+    // @test:FR-AUD-29
+
     #[test]
     fn test_default_tokenizer() {
         let config = Config::default();
         assert_eq!(config.tokenizer, "cl100k_base");
+    }
+
+    #[test]
+    fn test_toml_mode_survives_when_cli_unset() {
+        let toml = Config {
+            mode: OutputMode::Summary,
+            ..Config::default()
+        };
+        let cli = CliOverrides::default();
+        let config = resolve_options(Some(&toml), &cli);
+        assert_eq!(config.mode, OutputMode::Summary);
+    }
+
+    #[test]
+    fn test_cli_mode_overrides_toml() {
+        let toml = Config {
+            mode: OutputMode::Summary,
+            ..Config::default()
+        };
+        let cli = CliOverrides {
+            mode: Some(OutputMode::Full),
+            ..CliOverrides::default()
+        };
+        let config = resolve_options(Some(&toml), &cli);
+        assert_eq!(config.mode, OutputMode::Full);
+    }
+
+    #[test]
+    fn test_jobs_one_preserved() {
+        let cli = CliOverrides {
+            jobs: Some(1),
+            ..CliOverrides::default()
+        };
+        let config = resolve_options(None, &cli);
+        assert_eq!(config.jobs, 1);
+    }
+
+    #[test]
+    fn test_use_default_includes_false_clears_defaults() {
+        let cli = CliOverrides {
+            use_default_includes: Some(false),
+            include: Some(Vec::new()),
+            ..CliOverrides::default()
+        };
+        let config = resolve_options(None, &cli);
+        assert!(!config.use_default_includes);
+        assert!(config.include_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_summary_threshold_honored() {
+        let cli = CliOverrides {
+            summary_threshold: Some(250),
+            ..CliOverrides::default()
+        };
+        let config = resolve_options(None, &cli);
+        assert_eq!(config.summary_threshold, 250);
     }
 }
