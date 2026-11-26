@@ -616,3 +616,11 @@ Sumber: `ASEP_dev_audit_4355dbc.md`. Keputusan arsitektur dibuat di sini, bukan 
 ### Verification scope per wave
 
 Untuk setiap wave, jalankan `asep affected <changed-paths>` dan pakai keluaran sebagai verification command; gate `asep check . --rigor T1` dan `T2` dijalankan setelah traceability final. Clean-archive build diwajibkan sebelum `accept-scoped`. Setiap executor dilarang menjalankan `git checkout` tanpa pathspec karena dapat mengembalikan spec artifacts yang belum ter-commit.
+
+### Known consequences — audit remediation (risiko yang belum tertutup)
+
+1. **O01–O10 tidak diadopsi.** Status `documented, not adopted` di `docs/OPTIMIZATION_BENCHMARKS.md`. FR-OPT-00 melarang adopsi tanpa laporan benchmark before/after pada commit dan fixture yang sama (median/p95, alokasi, RSS, output_correctness identik). Ini keputusan disiplin, bukan kegagalan gate. Untuk menutup: jalankan benchmark matrix di bagian 4 audit, lalu ubah baris O menjadi `adopted` dengan tautan bukti, dan ulangi gate.
+2. **Windows belum dikompilasi di environment ini.** `observability.rs` dan `harness/process.rs` sudah memakai `cfg(unix)`/`cfg(windows)`, tetapi hanya Linux yang dijalankan. Cabang Windows memakai `create_new(true)` dengan catatan batasan ACL; padanan penuh mode 0600 belum terverifikasi. Untuk menutup: tambahkan target Windows ke matrix CI dan jalankan `cargo check --workspace --all-targets --locked` pada runner Windows.
+3. **FR-AUD-16 — tidak ada pembaca segmen di `observability.rs`.** Validasi `trace_id` pada event yang dibaca dari rotated segment tidak memiliki titik aplikasi di modul ini; exact-key lookup sudah diterapkan pada jalur penulisan, flush, purge, dan retention. Untuk menutup: bila pembaca segmen ditambahkan kelak, validasi `event.trace_id == trace` wajib disertakan.
+4. **Item di luar cakupan audit masih deferred** sesuai keputusan sebelumnya: AD-D05 (workload quality-distinguishing), AD-D06 (failure reproducibility), AD-D07 (lifecycle hook), AD-D11 (backend visual), AD-D12 (migrasi), dan P3.3 (graph export). Ini tidak termasuk 35 temuan `ASEP_dev_audit_4355dbc.md` dan tidak dibuka oleh perbaikan ini.
+
