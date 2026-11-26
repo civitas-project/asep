@@ -8,6 +8,7 @@
 use regex::Regex;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -153,8 +154,14 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     )?;
     // Gate (c): ScopedTests from `asep affected <changed_paths>`.
     let test_cmds = affected_test_commands(&base, &policy.changed_paths)?;
+    let mut total_executed: usize = 0;
     for cmd in test_cmds {
-        run_bwrap(&base, &["sh", "-c", &cmd], &format!("scoped test: {cmd}"))?;
+        let stdout =
+            run_bwrap_capture(&base, &["sh", "-c", &cmd], &format!("scoped test: {cmd}"))?;
+        total_executed += executed_test_count(&stdout);
+    }
+    if total_executed == 0 {
+        return Err("scoped acceptance executed zero tests".to_string());
     }
     // Gate (d): Format.
     run_bwrap(
@@ -166,6 +173,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     // Evidence: one semantic file per `@req:*:MUST` in docs/PRD.md.
     let evidence_dir = resolve_evidence_dir(root, &policy.evidence_dir)?;
     let req_ids = must_req_ids(root)?;
+    let in_scope = in_scope_requirement_ids(&base, &policy.changed_paths)?;
     let semantic_dir = evidence_dir.join("semantic");
     fs::create_dir_all(&semantic_dir).map_err(|e| {
         format!(
@@ -175,8 +183,17 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     })?;
     let changed_list = policy.changed_paths.join(", ");
     for req_id in &req_ids {
+        let proven = in_scope.contains(req_id) && total_executed > 0;
+        let verdict = match proven {
+            true => "ACCEPTED",
+            false => "UNPROVEN",
+        };
+        let scope = match proven {
+            true => "in_scope",
+            false => "out_of_scope",
+        };
         let content = format!(
-            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nverdict: ACCEPTED\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_executed: {total_executed}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
             identity.revision,
             identity.tree_digest,
             identity.changed_paths_digest,
@@ -313,6 +330,80 @@ fn run_bwrap(base: &[String], cmd: &[&str], label: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Run bwrap like `run_bwrap` but return trimmed stdout on success and Err
+/// (with stderr) on failure.
+fn run_bwrap_capture(base: &[String], cmd: &[&str], label: &str) -> Result<String, String> {
+    require_bwrap()?;
+    let mut command_args: Vec<String> = base.iter().cloned().collect();
+    command_args.push("--".to_string());
+    command_args.extend(cmd.iter().map(|s| s.to_string()));
+    let output = Command::new(bwrap_bin())
+        .args(&command_args)
+        .output()
+        .map_err(|e| format!("failed to run bwrap for {label}: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{label} failed (exit {}): {stderr}", output.status));
+    }
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("bwrap output not utf8 for {label}: {e}"))
+}
+
+// @impl:FR-AUD-03
+// Run `asep affected <paths> --json` inside the sandbox and collect the
+/// requirement ids. Fail closed on spawn or JSON parse failure.
+fn in_scope_requirement_ids(
+    base: &[String],
+    changed_paths: &[String],
+) -> Result<HashSet<String>, String> {
+    let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
+    cmd.extend(changed_paths.iter().map(|s| s.as_str()));
+    cmd.push("--json");
+    let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
+    let mut values = serde_json::Deserializer::from_str(&stdout)
+        .into_iter::<serde_json::Value>();
+    let value = match values.next() {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
+        None => return Err("asep affected output is empty".to_string()),
+    };
+    let requirements = match value.get("requirements").and_then(|v| v.as_array()) {
+        Some(array) => array,
+        None => return Err("asep affected output missing requirements array".to_string()),
+    };
+    let mut ids: HashSet<String> = HashSet::new();
+    for req in requirements {
+        let id = match req.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => return Err("requirement entry missing id string".to_string()),
+        };
+        ids.insert(id);
+    }
+    Ok(ids)
+}
+
+/// Sum the `N` in lines matching `test result: ok. N passed`; ignore lines
+/// with 0.
+fn executed_test_count(output: &str) -> usize {
+    let mut total: usize = 0;
+    for line in output.lines() {
+        let line = line.trim();
+        if !line.starts_with("test result: ok.") {
+            continue;
+        }
+        let after_ok = &line["test result: ok.".len()..];
+        let count: usize = match after_ok.split_whitespace().next().unwrap_or("").parse() {
+            Ok(n) => n,
+            Err(_) => 0,
+        };
+        if count > 0 {
+            total += count;
+        }
+    }
+    total
 }
 
 /// Run `asep affected <changed_paths>` inside the sandbox and return the lines
