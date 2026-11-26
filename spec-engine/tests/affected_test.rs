@@ -468,6 +468,79 @@ fn test_affected_provenance_chain_start_hop() {
     assert_eq!(chain[0].edge, None);
 }
 
+// @test:FR-AUD-07
+#[test]
+fn dangling_reference_is_reported_not_synthesized() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:FR-A:MUST\n@rel:satisfies:impl-a->dangling-id\n",
+    );
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n");
+
+    let report = affected(root, &[PathBuf::from("src/lib.rs")]).unwrap();
+
+    assert!(
+        report
+            .invalid_references
+            .iter()
+            .any(|s| s == "Satisfies:impl-a->dangling-id"),
+        "unexpected invalid_references: {:?}",
+        report.invalid_references
+    );
+    assert!(
+        !report.impls.iter().any(|n| n.id == "dangling-id"),
+        "dangling id must not be synthesized as Impl: {:?}",
+        report.impls
+    );
+    assert!(report.impls.iter().any(|n| n.id == "impl-a"));
+}
+
+#[test]
+fn same_id_kinds_traverse_only_admissible_edges() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Req "X" and Impl "X" share an ID. Satisfies X->X is admissible only for
+    // (Impl, Req); Verifies X->X is inadmissible for every kind pair.
+    write_tag_file(root, "src/impl_x.rs", "// @impl:X\n");
+    write_tag_file(root, "docs/req_x.md", "@req:X:MUST\n");
+    write_tag_file(
+        root,
+        "docs/rel.md",
+        "@rel:satisfies:X->X\n@rel:verifies:X->X \"note\"\n",
+    );
+
+    let report = affected(root, &[PathBuf::from("src/impl_x.rs")]).unwrap();
+
+    assert!(report.impls.iter().any(|n| n.id == "X"));
+    assert!(report.requirements.iter().any(|n| n.id == "X"));
+    let req_chain = report
+        .provenance
+        .get("Req:X")
+        .expect("Req:X must be reached via an admissible edge");
+    assert!(
+        req_chain
+            .iter()
+            .any(|h| h.edge.as_deref() == Some("Satisfies:forward")),
+        "chain: {:?}",
+        req_chain
+    );
+    assert!(
+        report
+            .provenance
+            .values()
+            .flatten()
+            .all(|h| h.edge.as_deref() != Some("Verifies:forward")
+                && h.edge.as_deref() != Some("Verifies:reverse")),
+        "inadmissible verifies edge must not appear in provenance: {:?}",
+        report.provenance
+    );
+}
+
 #[test]
 fn test_affected_deterministic() {
     let temp = TempDir::new().unwrap();

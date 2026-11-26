@@ -8,10 +8,12 @@
 
 use crate::runtime::EngineerLevel;
 use std::collections::HashSet;
-use std::fs;
-use std::io::Read;
+use std::fs::{self, OpenOptions};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::process;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -63,6 +65,9 @@ pub struct NestedField {
 }
 
 static PROTOCOL_SCHEMA: OnceLock<ProtocolSchema> = OnceLock::new();
+
+/// Monotonic counter for unique temp-file names across concurrent writers.
+static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Loads the canonical protocol schema once from `policy/agent-protocol.toml`.
 pub fn protocol_schema() -> &'static ProtocolSchema {
@@ -134,9 +139,12 @@ pub struct Envelope {
     pub level: Option<EngineerLevel>,
 }
 
+// @impl:FR-AUD-24
 pub struct MessageStore {
     run_dir: PathBuf,
     messages_dir: PathBuf,
+    /// Serializes publish (send) and ack read-modify-write cycles per store.
+    publish_lock: Mutex<()>,
 }
 
 pub fn validate_dir(dir: &Path) -> Result<(), Vec<String>> {
@@ -149,6 +157,7 @@ impl MessageStore {
         Self {
             run_dir: run_dir.to_path_buf(),
             messages_dir,
+            publish_lock: Mutex::new(()),
         }
     }
 
@@ -181,8 +190,20 @@ impl MessageStore {
             }
             match read_envelope_file(&path) {
                 Ok(envelope) => {
-                    ids.insert(envelope.id.clone());
-                    envelopes.push(envelope);
+                    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    if stem != envelope.id {
+                        errors.push(format!(
+                            "{name}: envelope id {} does not match filename stem {stem}",
+                            envelope.id
+                        ));
+                    }
+                    let is_new_id = ids.insert(envelope.id.clone());
+                    if !is_new_id {
+                        errors.push(format!("{name}: duplicate envelope id {}", envelope.id));
+                    }
+                    if stem == envelope.id && is_new_id {
+                        envelopes.push(envelope);
+                    }
                 }
                 Err(e) => errors.push(format!("{name}: {e}")),
             }
@@ -205,6 +226,7 @@ impl MessageStore {
         ref_path: Option<&Path>,
         reply_to: Option<&str>,
     ) -> Result<Envelope, String> {
+        let _lock = self.publish_lock.lock().map_err(|e| e.to_string())?;
         if !Self::kind_allowed(&from, &kind) {
             return Err(format!(
                 "role {} is not allowed to send kind {}",
@@ -286,6 +308,7 @@ impl MessageStore {
     }
 
     pub fn ack(&self, agent: Role, id: &str, status: &str) -> Result<(), String> {
+        let _lock = self.publish_lock.lock().map_err(|e| e.to_string())?;
         if !protocol_schema().statuses.iter().any(|s| s == status) || status == STATUS_SENT {
             return Err(format!("invalid ack status: {status}"));
         }
@@ -550,16 +573,28 @@ fn read_envelope_file(path: &Path) -> Result<Envelope, String> {
     Ok(envelope)
 }
 
+// @impl:FR-AUD-23
 fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), String> {
     let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
     let dir = path
         .parent()
         .ok_or_else(|| format!("no parent dir for {:?}", path))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| format!("no file name for {:?}", path))?
+        .to_string_lossy();
     let tmp = dir.join(format!(
-        ".{}.tmp",
-        path.file_name().unwrap().to_string_lossy()
+        ".{name}.{}.{}.tmp",
+        process::id(),
+        TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
-    fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|e| format!("cannot create temp file {tmp:?}: {e}"))?;
+    file.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+    drop(file);
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -593,6 +628,8 @@ mod tests {
     // @test:FR-LEVEL-03
     use super::*;
     use crate::runtime::EngineerLevel;
+    use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn envelope_level_round_trips() {
@@ -623,6 +660,233 @@ mod tests {
         let json = r#"{"v":2,"id":"x","from":"leader","to":"executor","kind":"TASK_DISPATCH","reply_to":null,"ref":null,"status":"sent","ts":"2026-01-01T00:00:00Z"}"#;
         let env: Envelope = serde_json::from_str(json).unwrap();
         assert!(env.level.is_none());
+    }
+
+    // @test:FR-AUD-23
+    #[test]
+    fn parallel_publishes_produce_complete_envelopes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MessageStore::new(dir.path()));
+        let body = json!({
+            "task": "parallel publish",
+            "files": [],
+            "acceptance": "ok",
+            "verification_command": "true"
+        });
+        let n = 100usize;
+        let mut handles = Vec::with_capacity(n);
+        for _ in 0..n {
+            let store = Arc::clone(&store);
+            let body = body.clone();
+            handles.push(std::thread::spawn(move || {
+                store.send(
+                    Role::Leader,
+                    Role::Executor,
+                    Kind::TaskDispatch,
+                    body,
+                    None,
+                    None,
+                )
+            }));
+        }
+        let mut ids: Vec<String> = Vec::with_capacity(n);
+        for handle in handles {
+            let envelope = handle
+                .join()
+                .expect("publish thread panicked")
+                .expect("send failed");
+            ids.push(envelope.id);
+        }
+        assert_eq!(ids.len(), n);
+        assert_eq!(
+            ids.iter().collect::<HashSet<_>>().len(),
+            n,
+            "duplicate ids from concurrent publishes"
+        );
+        let messages_dir = dir.path().join("messages");
+        let envelope_files: Vec<_> = fs::read_dir(&messages_dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map(|name| name.ends_with(".json") && !name.ends_with(".body.json"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(envelope_files.len(), n, "expected one envelope per publish");
+        for entry in envelope_files.iter() {
+            let envelope: Envelope = read_envelope_file(&entry.path()).unwrap();
+            assert_eq!(envelope.v, ENVELOPE_VERSION);
+            assert!(ids.iter().any(|id| id == &envelope.id));
+            let body_path = messages_dir.join(format!("{}.body.json", envelope.id));
+            assert!(body_path.exists(), "missing body for {}", envelope.id);
+        }
+        validate_dir(dir.path()).unwrap();
+    }
+
+    // @test:FR-AUD-24
+    #[test]
+    fn parallel_acks_leave_single_terminal_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(MessageStore::new(dir.path()));
+        let envelope = store
+            .send(
+                Role::Leader,
+                Role::Executor,
+                Kind::TaskDispatch,
+                json!({
+                    "task": "parallel ack",
+                    "files": [],
+                    "acceptance": "ok",
+                    "verification_command": "true"
+                }),
+                None,
+                None,
+            )
+            .unwrap();
+        let statuses = ["accepted", "rejected"];
+        let n = 50usize;
+        let mut handles = Vec::with_capacity(n);
+        for i in 0..n {
+            let store = Arc::clone(&store);
+            let id = envelope.id.clone();
+            let status = statuses[i % statuses.len()].to_string();
+            handles.push(std::thread::spawn(move || {
+                store.ack(Role::Executor, &id, &status)
+            }));
+        }
+        for handle in handles {
+            handle
+                .join()
+                .expect("ack thread panicked")
+                .expect("ack failed");
+        }
+        let env_path = dir
+            .path()
+            .join("messages")
+            .join(format!("{}.json", envelope.id));
+        let envelope: Envelope = read_envelope_file(&env_path).unwrap();
+        assert!(
+            statuses.iter().any(|status| status == &envelope.status),
+            "unexpected terminal status: {}",
+            envelope.status
+        );
+        let env_files: Vec<_> = fs::read_dir(dir.path().join("messages"))
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map(|name| name == format!("{}.json", envelope.id))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(env_files.len(), 1, "expected a single envelope file");
+        validate_dir(dir.path()).unwrap();
+    }
+
+    #[test]
+    fn validate_dir_rejects_duplicate_ids_and_filename_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let messages_dir = dir.path().join("messages");
+        fs::create_dir_all(&messages_dir).unwrap();
+        let body = json!({
+            "task": "fixture",
+            "files": [],
+            "acceptance": "ok",
+            "verification_command": "true"
+        });
+        let shared_id = "msg-shared-id";
+        let envelope = |id: &str| {
+            json!({
+                "v": ENVELOPE_VERSION,
+                "id": id,
+                "from": "leader",
+                "to": "executor",
+                "kind": "TASK_DISPATCH",
+                "reply_to": null,
+                "ref": null,
+                "status": "sent",
+                "ts": "2026-01-01T00:00:00Z"
+            })
+        };
+        fs::write(
+            messages_dir.join(format!("{shared_id}.json")),
+            serde_json::to_string(&envelope(shared_id)).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            messages_dir.join("msg-other.json"),
+            serde_json::to_string(&envelope(shared_id)).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            messages_dir.join(format!("{shared_id}.body.json")),
+            serde_json::to_string(&body).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            messages_dir.join("msg-other.body.json"),
+            serde_json::to_string(&body).unwrap(),
+        )
+        .unwrap();
+        let errors = validate_dir(dir.path()).unwrap_err();
+        assert!(!errors.is_empty());
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("duplicate envelope id")),
+            "expected duplicate id error: {errors:?}"
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("does not match filename stem")),
+            "expected filename stem mismatch error: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_dir_rejects_orphan_reply_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let messages_dir = dir.path().join("messages");
+        fs::create_dir_all(&messages_dir).unwrap();
+        let body = json!({
+            "task": "orphan",
+            "files": [],
+            "acceptance": "ok",
+            "verification_command": "true"
+        });
+        let orphan = json!({
+            "v": ENVELOPE_VERSION,
+            "id": "msg-orphan",
+            "from": "leader",
+            "to": "executor",
+            "kind": "TASK_DISPATCH",
+            "reply_to": "msg-missing",
+            "ref": null,
+            "status": "sent",
+            "ts": "2026-01-01T00:00:00Z"
+        });
+        fs::write(
+            messages_dir.join("msg-orphan.json"),
+            serde_json::to_string(&orphan).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            messages_dir.join("msg-orphan.body.json"),
+            serde_json::to_string(&body).unwrap(),
+        )
+        .unwrap();
+        let errors = validate_dir(dir.path()).unwrap_err();
+        assert!(!errors.is_empty());
+        assert!(
+            errors.iter().any(|error| error.contains("orphan reply_to")),
+            "expected orphan reply_to error: {errors:?}"
+        );
     }
 }
 

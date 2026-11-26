@@ -362,3 +362,119 @@ fn test_relation_graph_allows_same_id_across_node_kinds() {
     );
     assert!(report.is_closed);
 }
+
+// @test:FR-AUD-06
+#[test]
+fn inadmissible_edge_does_not_close_graph() {
+    let policy = policy();
+    let tags = vec![
+        scanned_tag(
+            TagKind::Req {
+                id: "FR-X".to_string(),
+                priority: Priority::Must,
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "FR-X-Impl".to_string(),
+            },
+            10,
+        ),
+        scanned_tag(
+            TagKind::Test {
+                id: "FR-X-Test".to_string(),
+            },
+            20,
+        ),
+        scanned_tag(
+            TagKind::Rel {
+                kind: EdgeKind::Satisfies,
+                from: "FR-X".to_string(),
+                to: vec!["FR-X".to_string()],
+                note: None,
+            },
+            30,
+        ),
+    ];
+
+    let report = build_relation_graph(&tags, &policy);
+    assert!(
+        report
+            .violations
+            .iter()
+            .any(|v| v.rule_id == "COV-TYPE" && v.subject == "FR-X"),
+        "expected COV-TYPE violation for inadmissible Req->Req Satisfies edge: {report:?}"
+    );
+    assert!(!report.is_closed);
+}
+
+#[test]
+fn whitespace_verifies_note_is_not_counted() {
+    let policy = policy();
+    let tags = vec![
+        scanned_tag(
+            TagKind::Test {
+                id: "T-1".to_string(),
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Req {
+                id: "R-1".to_string(),
+                priority: Priority::Must,
+            },
+            2,
+        ),
+        scanned_tag(
+            TagKind::Rel {
+                kind: EdgeKind::Verifies,
+                from: "T-1".to_string(),
+                to: vec!["R-1".to_string()],
+                note: Some("   ".to_string()),
+            },
+            10,
+        ),
+    ];
+
+    let report = build_relation_graph(&tags, &policy);
+    let cov05: Vec<&CoverageViolation> = report
+        .violations
+        .iter()
+        .filter(|v| v.rule_id == "COV-05")
+        .collect();
+    assert_eq!(cov05.len(), 1, "expected one COV-05 violation: {report:?}");
+    assert_eq!(cov05[0].subject, "T-1");
+    assert_eq!(cov05[0].found, 0);
+    assert_eq!(cov05[0].required, 1);
+}
+
+#[test]
+fn same_id_across_kinds_stays_distinct() {
+    let policy = policy();
+    let tags = vec![
+        scanned_tag(
+            TagKind::Req {
+                id: "X".to_string(),
+                priority: Priority::Must,
+            },
+            1,
+        ),
+        scanned_tag(
+            TagKind::Impl {
+                id: "X".to_string(),
+            },
+            10,
+        ),
+    ];
+
+    let report = build_relation_graph(&tags, &policy);
+    let x_nodes: Vec<_> = report.nodes.iter().filter(|n| n.id == "X").collect();
+    assert_eq!(
+        x_nodes.len(),
+        2,
+        "expected Req X and Impl X as distinct nodes: {report:?}"
+    );
+    assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Req)));
+    assert!(x_nodes.iter().any(|n| matches!(n.kind, NodeKind::Impl)));
+}

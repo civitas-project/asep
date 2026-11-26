@@ -1,7 +1,10 @@
 //! Unified 5-Gate Local CI Pipeline Runner.
 
 use crate::auditor::audit_project_anti_slop;
-use crate::formal::validate_formal_specs;
+use crate::formal::{
+    aggregate_formal_state, formal_state, is_required_formal_check, validate_formal_specs,
+    FormalState,
+};
 use crate::graph::builder::build_relation_graph;
 use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::scan_project_tags;
@@ -131,28 +134,29 @@ fn gate_name(gate: u8) -> &'static str {
     }
 }
 
+const REQUIRED_FORMAL_TOOLS: [&str; 4] = ["alloy", "tlc", "spectral", "dbml"];
+
 fn run_gate_0(dir: &Path) -> GateResult {
     let formal_checks = validate_formal_specs(dir);
-    let mut passed = true;
+    let state = aggregate_formal_state(&formal_checks, &REQUIRED_FORMAL_TOOLS);
     let mut details = Vec::new();
 
-    for check in formal_checks {
-        if !check.passed && !check.skipped {
-            passed = false;
-            details.push(format!(
-                "[FAIL] {}: {} ({})",
+    for check in &formal_checks {
+        let required = is_required_formal_check(check, &REQUIRED_FORMAL_TOOLS);
+        let check_state = formal_state(check, required);
+        details.push(match check_state {
+            FormalState::Fail => {
+                format!("[FAIL] {}: {} ({})", check.tool, check.file, check.message)
+            }
+            FormalState::Unproven => format!(
+                "[UNPROVEN] {}: {} ({})",
                 check.tool, check.file, check.message
-            ));
-            continue;
-        }
-        if check.skipped {
-            details.push(format!(
-                "[SKIP] {}: {} ({})",
-                check.tool, check.file, check.message
-            ));
-            continue;
-        }
-        details.push(format!("[PASS] {}: {}", check.tool, check.file));
+            ),
+            FormalState::Skipped => {
+                format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message)
+            }
+            FormalState::Pass => format!("[PASS] {}: {}", check.tool, check.file),
+        });
     }
 
     if details.is_empty() {
@@ -163,8 +167,8 @@ fn run_gate_0(dir: &Path) -> GateResult {
     GateResult {
         gate_number: 0,
         name: gate_name(0).to_string(),
-        passed,
-        skipped: false,
+        passed: matches!(state, FormalState::Pass | FormalState::Skipped),
+        skipped: state == FormalState::Skipped,
         duration_ms: 0,
         details,
     }
@@ -409,5 +413,75 @@ fn run_gate_4(dir: &Path) -> GateResult {
             duration_ms: 0,
             details: vec![e.to_string()],
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gate_0_absent_required_solver_fails_gate() {
+        let tmp = std::env::temp_dir().join(format!("asep-gate0-test-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("spec.tla"),
+            "---- MODULE Spec ----\nVARIABLES x\nInit == x = 0\nNext == x' = x + 1\nSpec == Init /\\ [][Next]_x\n====\n",
+        )
+        .unwrap();
+        let res = run_gate_0(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(
+            !res.passed,
+            "absent required solver must not pass gate 0: {:?}",
+            res.details
+        );
+        assert!(!res.skipped, "unproven check must not mark gate 0 skipped");
+        assert!(
+            res.details
+                .iter()
+                .any(|d| d.contains("UNPROVEN") || d.contains("tlc")),
+            "expected UNPROVEN/tlc detail, got {:?}",
+            res.details
+        );
+    }
+
+    #[test]
+    fn gate_0_skeleton_absent_solver_is_skipped_and_passed() {
+        let tmp = std::env::temp_dir().join(format!("asep-gate0-skel-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("skeletons")).unwrap();
+        std::fs::create_dir_all(tmp.join("bin")).unwrap();
+        std::fs::write(
+            tmp.join("skeletons").join("INVARIANT_SKELETON.als"),
+            "module skeleton {}\n",
+        )
+        .unwrap();
+        let saved_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", tmp.join("bin"));
+        let res = run_gate_0(&tmp);
+        match saved_path {
+            Some(p) => std::env::set_var("PATH", p),
+            None => std::env::remove_var("PATH"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(res.passed, "skeleton gate 0 must pass: {:?}", res.details);
+        assert!(res.skipped, "skeleton gate 0 must be skipped");
+        assert!(
+            res.details
+                .iter()
+                .any(|d| d.contains("[SKIP]") && d.contains("SKELETON")),
+            "expected SKIP detail for skeleton, got {:?}",
+            res.details
+        );
+    }
+
+    #[test]
+    fn gate_0_empty_dir_is_skipped_and_passed() {
+        let tmp = std::env::temp_dir().join(format!("asep-gate0-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let res = run_gate_0(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(res.passed, "empty gate 0 must pass: {:?}", res.details);
+        assert!(res.skipped, "empty gate 0 must be skipped");
     }
 }

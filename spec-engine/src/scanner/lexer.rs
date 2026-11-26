@@ -87,9 +87,12 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
         let part2 = caps.get(3).map(|m| m.as_str());
 
         let kind = match tag_type {
-            "req" => TagKind::Req {
-                id: part1.to_string(),
-                priority: req_priority(part2),
+            "req" => match req_priority(part2) {
+                Some(priority) => TagKind::Req {
+                    id: part1.to_string(),
+                    priority,
+                },
+                None => continue,
             },
             "design" => TagKind::Design {
                 id: part1.to_string(),
@@ -128,6 +131,12 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
     for caps in REL_REGEX.captures_iter(line) {
         let whole_match = caps.get(0).expect("regex group 0 always participates");
         if whole_match.start() > 0 && line.as_bytes()[whole_match.start() - 1] == b'\\' {
+            continue;
+        }
+        let end = whole_match.end();
+        let closed = end == line.len()
+            || matches!(line.as_bytes()[end], b' ' | b'\t' | b'\r' | b'\n' | b'\0');
+        if !closed {
             continue;
         }
 
@@ -170,19 +179,58 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
         .collect()
 }
 
-/// Priority for a `@req:ID:PRIORITY` tag, defaulting to `Must`.
-fn req_priority(part2: Option<&str>) -> Priority {
-    let p = match part2 {
-        Some(p) => p,
-        None => return Priority::Must,
-    };
-    if p.eq_ignore_ascii_case("SHOULD") {
-        return Priority::Should;
+// @impl:FR-AUD-25
+/// Priority for a `@req:ID:PRIORITY` tag.
+///
+/// Only `MUST`, `SHOULD`, and `DRAFT` (case-insensitive) are recognized.
+/// Returns `None` when a priority token is present but unrecognized; the
+/// caller skips the tag instead of silently defaulting it to `Must`. A missing
+/// priority still defaults to `Must` for backward compatibility.
+fn req_priority(part2: Option<&str>) -> Option<Priority> {
+    match part2 {
+        None => Some(Priority::Must),
+        Some(p) => priority_from_token(p),
     }
-    if p.eq_ignore_ascii_case("DRAFT") {
-        return Priority::Draft;
+}
+
+fn priority_from_token(token: &str) -> Option<Priority> {
+    match token.to_ascii_uppercase().as_str() {
+        "MUST" => Some(Priority::Must),
+        "SHOULD" => Some(Priority::Should),
+        "DRAFT" => Some(Priority::Draft),
+        _ => None,
     }
-    Priority::Must
+}
+
+/// Diagnostic for a `@req` tag whose priority token is not `MUST`, `SHOULD`,
+/// or `DRAFT`. Returns `Some(message)` when the tag on `line` must be skipped,
+/// `None` when the line carries no diagnosable priority problem.
+/// `parse_tags_from_line` skips such tags instead of silently defaulting them
+/// to `Must`; callers record the returned string as a parse diagnostic.
+pub fn parse_tag_diagnostic(line: &str, line_no: usize) -> Option<String> {
+    for caps in TAG_REGEX.captures_iter(line) {
+        let whole_match = caps.get(0).expect("regex group 0 always participates");
+        if whole_match.start() > 0 && line.as_bytes()[whole_match.start() - 1] == b'\\' {
+            continue;
+        }
+        let tag_type = caps.get(1).map_or("", |m| m.as_str());
+        let part2 = caps.get(3).map(|m| m.as_str());
+        let unknown = match tag_type {
+            "req" => match part2 {
+                None => false,
+                Some(p) => priority_from_token(p).is_none(),
+            },
+            _ => false,
+        };
+        if unknown {
+            let id = caps.get(2).map_or("", |m| m.as_str());
+            let token = part2.unwrap_or("<missing>");
+            return Some(format!(
+                "line {line_no}: unknown priority '{token}' in @req:{id}; tag skipped"
+            ));
+        }
+    }
+    None
 }
 
 /// Splits a `@gov` tag into `(category, id)`.
@@ -195,4 +243,71 @@ fn gov_parts(part1: &str, part2: Option<&str>) -> (String, String) {
     }
     let (cat, rest) = part1.split_once('-').expect("part1 contains '-'");
     (cat.to_string(), rest.to_string())
+}
+
+// @test:FR-AUD-25
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unknown_priority_is_skipped_not_must() {
+        let tags = parse_tags_from_line("// @req:FR-AUD-25-A:UNKNOWN", 1);
+        assert!(tags.is_empty(), "unknown priority must not default to Must");
+
+        let diagnostic = parse_tag_diagnostic("// @req:FR-AUD-25-A:UNKNOWN", 1);
+        assert!(
+            diagnostic.is_some(),
+            "unknown priority must record a diagnostic"
+        );
+        let message = diagnostic.expect("diagnostic present");
+        assert!(
+            message.contains("UNKNOWN"),
+            "diagnostic names the bad token: {message}"
+        );
+        assert!(
+            message.contains("line 1"),
+            "diagnostic names the line: {message}"
+        );
+    }
+
+    #[test]
+    fn test_malformed_rel_suffix_is_rejected() {
+        let rejected = parse_tags_from_line(
+            &format!("// {}satisfies:auth/session->AUTH-01;bogus", "@rel:"),
+            1,
+        );
+        assert!(
+            rejected.is_empty(),
+            "trailing garbage after targets must not match"
+        );
+
+        let valid =
+            parse_tags_from_line(&format!("// {}satisfies:auth/session->AUTH-01", "@rel:"), 1);
+        assert_eq!(valid.len(), 1, "plain rel tag still parses");
+
+        let noted = parse_tags_from_line(
+            &format!("// {}satisfies:auth/session->AUTH-01 \"ok\"", "@rel:"),
+            1,
+        );
+        assert_eq!(noted.len(), 1, "rel tag with quoted note still parses");
+    }
+
+    #[test]
+    fn test_valid_priorities_still_parse() {
+        let cases = [
+            ("// @req:FR-P-1:MUST", Priority::Must),
+            ("// @req:FR-P-2:SHOULD", Priority::Should),
+            ("// @req:FR-P-3:DRAFT", Priority::Draft),
+            ("// @req:FR-P-4", Priority::Must),
+        ];
+        for (line, expected) in cases {
+            let tags = parse_tags_from_line(line, 1);
+            assert_eq!(tags.len(), 1, "line {line} should yield exactly one tag");
+            match &tags[0].kind {
+                TagKind::Req { priority, .. } => assert_eq!(*priority, expected),
+                other => panic!("expected Req tag, got {other:?}"),
+            }
+        }
+    }
 }

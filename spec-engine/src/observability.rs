@@ -1,10 +1,12 @@
 // @impl:IN-01-CONTRACT
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::agent_protocol::{hash_file, now_rfc3339};
@@ -68,15 +70,16 @@ fn rate(count: u64, total: u64) -> Option<f64> {
 
 impl TraceReport {
     // Derivation rules:
-    // gate_pass_rate    = count(event name contains "pass") / total events
+    // gate_pass_rate    = pass gate-result events / gate-result events (name is gate_pass/gate_fail or ends _pass/_fail)
     // defect_severity   = count(event name contains "defect")
     // reproducibility   = count(event name contains "repro") / total events
     // tool_call_count   = count(event name contains "tool")
-    // token_count       = count(event name contains "token")
-    // latency_ms        = sum of duration_ms values
-    // cost_per_verified_result = sum of cost.value / events carrying cost; None when no cost metadata exists
+    // token_count       = sum of numeric detail.tokens / detail.token_count; None when no event carries either
+    // latency_ms        = sum of duration_ms from events that have one; None when none have it
+    // cost_per_verified_result = sum of cost.value / events whose cost.value is Some; None when none
     // recovery_fidelity = count(event name contains "recover") / total events
     // overhead          = count(events with parent_id set) / total events
+    // @impl:FR-AUD-18
     pub fn from_events(
         events: &[TraceEvent],
         verification: Option<&serde_json::Value>,
@@ -84,12 +87,19 @@ impl TraceReport {
         event_coverage: &str,
     ) -> Self {
         let total = events.len() as u64;
-        let cost_denominator = events.iter().filter(|event| event.cost.is_some()).count() as u64;
 
-        let pass_count = events
+        let is_gate_result = |name: &str| name.ends_with("_pass") || name.ends_with("_fail");
+        let is_gate_pass = |name: &str| name.ends_with("_pass");
+        let gate_events: Vec<&TraceEvent> = events
             .iter()
-            .filter(|event| event.event.contains("pass"))
+            .filter(|event| is_gate_result(&event.event))
+            .collect();
+        let gate_total = gate_events.len() as u64;
+        let pass_count = gate_events
+            .iter()
+            .filter(|event| is_gate_pass(&event.event))
             .count() as u64;
+
         let defect_count = events
             .iter()
             .filter(|event| event.event.contains("defect"))
@@ -102,10 +112,6 @@ impl TraceReport {
             .iter()
             .filter(|event| event.event.contains("tool"))
             .count() as u64;
-        let token_count = events
-            .iter()
-            .filter(|event| event.event.contains("token"))
-            .count() as u64;
         let recover_count = events
             .iter()
             .filter(|event| event.event.contains("recover"))
@@ -115,17 +121,32 @@ impl TraceReport {
             .filter(|event| event.parent_id.is_some())
             .count() as u64;
 
-        let have_events = total > 0;
-        let gate_pass_rate = rate(pass_count, total);
-        let defect_severity = have_events.then_some(defect_count as f64);
+        let gate_pass_rate = rate(pass_count, gate_total);
+        let defect_severity = rate(defect_count, total);
         let reproducibility = rate(repro_count, total);
-        let tool_call_count = have_events.then_some(tool_count as f64);
-        let token_count = have_events.then_some(token_count as f64);
-        let latency_sum: f64 = events
+        let tool_call_count = (total > 0).then_some(tool_count as f64);
+
+        let token_count: Option<f64> = events
+            .iter()
+            .filter_map(|event| {
+                event.detail.as_ref().and_then(|detail| {
+                    detail
+                        .get("tokens")
+                        .or_else(|| detail.get("token_count"))
+                        .and_then(|value| value.as_f64())
+                })
+            })
+            .fold(None, |acc, value| Some(acc.unwrap_or(0.0) + value));
+
+        let latency_ms: Option<f64> = events
             .iter()
             .filter_map(|event| event.duration_ms.map(|millis| millis as f64))
-            .sum();
-        let latency_ms = have_events.then_some(latency_sum);
+            .fold(None, |acc, value| Some(acc.unwrap_or(0.0) + value));
+
+        let cost_denominator = events
+            .iter()
+            .filter(|event| event.cost.as_ref().and_then(|cost| cost.value).is_some())
+            .count() as u64;
         let cost_sum: f64 = events
             .iter()
             .filter_map(|event| event.cost.as_ref().and_then(|cost| cost.value))
@@ -139,7 +160,7 @@ impl TraceReport {
             Metric {
                 name: "gate_pass_rate".to_string(),
                 value: gate_pass_rate,
-                denominator: Some(total),
+                denominator: Some(gate_total),
             },
             Metric {
                 name: "defect_severity".to_string(),
@@ -185,8 +206,16 @@ impl TraceReport {
 
         let failures: Vec<String> = events
             .iter()
-            .filter(|event| event.event.contains("fail") || event.event.contains("error"))
-            .map(|event| event.event.clone())
+            .filter_map(|event| {
+                let failed_observation = event.event == "observation"
+                    && event
+                        .detail
+                        .as_ref()
+                        .and_then(|detail| detail.get("ok"))
+                        .and_then(|ok| ok.as_bool())
+                        == Some(false);
+                failed_observation.then(|| format!("observation failed: task={}", event.task_id))
+            })
             .collect();
 
         let skipped = verification
@@ -273,6 +302,11 @@ impl Drop for SpanGuard {
     }
 }
 
+// @impl:FR-AUD-16
+pub fn trace_key(trace_id: &str) -> String {
+    trace_id.bytes().map(|byte| format!("{byte:02x}")).collect()
+}
+
 // @impl:IN-01-COLLECT
 pub struct TraceCollector {
     target_dir: PathBuf,
@@ -284,6 +318,65 @@ pub struct TraceCollector {
     buffer_cap: usize,
     buffer: HashMap<String, Vec<TraceEvent>>,
 }
+
+const MAX_ROTATION_ATTEMPTS: usize = 1024;
+
+// @impl:FR-AUD-35
+/// Open the active trace NDJSON file for appending, restricting access at
+/// creation time so the file is never created world-readable and the
+/// restriction is not applied only after the first write.
+///
+/// Unix: `.mode(0o600)` on the create options; the OS applies it to newly
+/// created files.
+///
+/// Windows: std exposes no ACL API, so creation is exclusive
+/// (`create_new(true)`). A pre-existing file cannot be silently opened for
+/// append; equivalent ACL enforcement is a documented platform limitation,
+/// not a silently skipped restriction.
+#[cfg(unix)]
+fn open_trace_file(path: &Path) -> Result<fs::File, String> {
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+fn open_trace_file(path: &Path) -> Result<fs::File, String> {
+    // No std-only ACL API exists on Windows; exclusive creation restricts
+    // access at creation time instead of after the write.
+    fs::OpenOptions::new()
+        .create_new(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())
+}
+
+/// Read seq values of already committed events from the active NDJSON file.
+/// Malformed or empty lines are ignored so a torn write cannot block retries.
+fn committed_seqs(active: &Path) -> Result<HashSet<u64>, String> {
+    let mut seqs = HashSet::new();
+    if !active.exists() {
+        return Ok(seqs);
+    }
+    let content = fs::read_to_string(active).map_err(|e| e.to_string())?;
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Option<serde_json::Value> = serde_json::from_str(line).ok();
+        let seq = value.and_then(|value| value.get("seq").and_then(|value| value.as_u64()));
+        if let Some(seq) = seq {
+            seqs.insert(seq);
+        }
+    }
+    Ok(seqs)
+}
+
+// @impl:FR-AUD-19
+static ROTATION_ORDINAL: AtomicU64 = AtomicU64::new(0);
 
 impl TraceCollector {
     pub fn new(root: &Path, config: &TelemetryConfig) -> Self {
@@ -335,44 +428,62 @@ impl TraceCollector {
         Ok(())
     }
 
+    // @impl:FR-AUD-20
     pub fn flush(&mut self, trace_id: &str) -> Result<(), String> {
         let events = match self.buffer.get(trace_id) {
             Some(v) if !v.is_empty() => v.clone(),
             _ => return Ok(()),
         };
         fs::create_dir_all(&self.target_dir).map_err(|e| e.to_string())?;
-        let active = self.target_dir.join(format!("{trace_id}.ndjson"));
-        let mut rotate = false;
+        let key = trace_key(trace_id);
+        let active = self.target_dir.join(format!("{key}.ndjson"));
+        let mut committed = committed_seqs(&active)?;
+        let serialized: Vec<String> = events
+            .iter()
+            .filter(|event| committed.insert(event.seq))
+            .map(|event| serialize_event(event, &self.allowlist, &self.redact_patterns))
+            .collect::<Result<Vec<_>, _>>()?;
+        let serialized_len: u64 = serialized.iter().map(|line| line.len() as u64 + 1).sum();
+        let mut current_len = 0u64;
         if active.exists() {
-            rotate = fs::metadata(&active).map_err(|e| e.to_string())?.len() >= self.max_bytes;
+            current_len = fs::metadata(&active).map_err(|e| e.to_string())?.len();
         }
-        if rotate {
-            let secs = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|e| e.to_string())?
-                .as_secs();
-            let rotated = self.target_dir.join(format!("{trace_id}.{secs}.ndjson"));
-            fs::rename(&active, &rotated).map_err(|e| e.to_string())?;
+        if active.exists() && current_len + serialized_len > self.max_bytes {
+            self.rotate_segment(&key, &active)?;
         }
         self.expire_rotated_segments(trace_id)?;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&active)
-            .map_err(|e| e.to_string())?;
-        for event in &events {
-            let line = serialize_event(event, &self.allowlist, &self.redact_patterns)?;
+        let mut file = open_trace_file(&active)?;
+        for line in &serialized {
             writeln!(file, "{line}").map_err(|e| e.to_string())?;
         }
-        file.set_permissions(PermissionsExt::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
         file.flush().map_err(|e| e.to_string())?;
         self.buffer.remove(trace_id);
         Ok(())
     }
 
+    fn rotate_segment(&self, key: &str, active: &Path) -> Result<(), String> {
+        let mut ordinal = ROTATION_ORDINAL.fetch_add(1, Ordering::Relaxed);
+        let mut attempts = 0usize;
+        while attempts < MAX_ROTATION_ATTEMPTS {
+            attempts += 1;
+            let rotated = self.target_dir.join(format!("{key}.{ordinal}.ndjson"));
+            if let Ok(file) = fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&rotated)
+            {
+                drop(file);
+                let _ = fs::remove_file(&rotated);
+                return fs::rename(active, &rotated).map_err(|e| e.to_string());
+            }
+            ordinal = ROTATION_ORDINAL.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(format!("rotation destination exhausted for {key}"))
+    }
+
     pub fn purge(&self, trace_id: &str) -> Result<(), String> {
-        let active = self.target_dir.join(format!("{trace_id}.ndjson"));
+        let key = trace_key(trace_id);
+        let active = self.target_dir.join(format!("{key}.ndjson"));
         if active.exists() {
             fs::remove_file(&active).map_err(|e| e.to_string())?;
         }
@@ -386,6 +497,50 @@ impl TraceCollector {
         let trace_ids: Vec<String> = self.buffer.keys().cloned().collect();
         for trace_id in trace_ids {
             self.flush(&trace_id)?;
+        }
+        self.expire_all()
+    }
+
+    pub fn expire_all(&self) -> Result<(), String> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_secs();
+        if !self.target_dir.exists() {
+            return Ok(());
+        }
+        let read_dir = fs::read_dir(&self.target_dir).map_err(|e| e.to_string())?;
+        for entry in read_dir {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let mut parts = name.split('.');
+            let key = parts.next().unwrap_or("");
+            let ordinal = parts.next().unwrap_or("");
+            let suffix = parts.next().unwrap_or("");
+            let extra = parts.next();
+            if suffix != "ndjson" || extra.is_some() || key.is_empty() || ordinal.is_empty() {
+                continue;
+            }
+            if !ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            let metadata = match fs::metadata(&path) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let mtime = match metadata.modified() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let mtime_secs = match mtime.duration_since(UNIX_EPOCH) {
+                Ok(value) => value.as_secs(),
+                Err(_) => continue,
+            };
+            let age = now.saturating_sub(mtime_secs);
+            if age >= self.ttl_secs {
+                let _ = fs::remove_file(&path);
+            }
         }
         Ok(())
     }
@@ -412,8 +567,9 @@ impl TraceCollector {
             return Ok(Vec::new());
         }
         let mut out = Vec::new();
-        let prefix = format!("{trace_id}.");
-        let active = format!("{trace_id}.ndjson");
+        let key = trace_key(trace_id);
+        let prefix = format!("{key}.");
+        let active = format!("{key}.ndjson");
         let read_dir = fs::read_dir(&self.target_dir).map_err(|e| e.to_string())?;
         for entry in read_dir {
             let entry = entry.map_err(|e| e.to_string())?;
@@ -626,6 +782,8 @@ fn redact(value: serde_json::Value, patterns: &[String]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -744,8 +902,9 @@ mod tests {
     }
 
     fn rotated_segment_count(root: &Path, trace_id: &str) -> usize {
-        let active = format!("{trace_id}.ndjson");
-        let prefix = format!("{trace_id}.");
+        let key = trace_key(trace_id);
+        let active = format!("{key}.ndjson");
+        let prefix = format!("{key}.");
         fs::read_dir(root)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -801,7 +960,9 @@ mod tests {
             .record(test_event("trace-full", 1, "next"))
             .unwrap();
         collector.flush("trace-full").unwrap();
-        let path = collector.target_dir.join("trace-full.ndjson");
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-full")));
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
@@ -845,7 +1006,9 @@ mod tests {
         });
         collector.record(event).unwrap();
         collector.flush("trace-redact").unwrap();
-        let path = collector.target_dir.join("trace-redact.ndjson");
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-redact")));
         let content = fs::read_to_string(&path).unwrap();
         let value: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
         assert_eq!(
@@ -875,17 +1038,29 @@ mod tests {
         let mut collector = TraceCollector::new(root.path(), &config);
         collector.record(test_event("trace-a", 0, "start")).unwrap();
         collector.flush("trace-a").unwrap();
+        let key_a = trace_key("trace-a");
         fs::write(
-            collector.target_dir.join("trace-a.1000000000.ndjson"),
+            collector
+                .target_dir
+                .join(format!("{key_a}.1000000000.ndjson")),
             "rotated\n",
         )
         .unwrap();
         collector.record(test_event("trace-b", 0, "begin")).unwrap();
         collector.flush("trace-b").unwrap();
         collector.purge("trace-a").unwrap();
-        assert!(!collector.target_dir.join("trace-a.ndjson").exists());
-        assert!(!root.path().join("trace-a.1000000000.ndjson").exists());
-        assert!(collector.target_dir.join("trace-b.ndjson").exists());
+        assert!(!collector
+            .target_dir
+            .join(format!("{key_a}.ndjson"))
+            .exists());
+        assert!(!root
+            .path()
+            .join(format!("{key_a}.1000000000.ndjson"))
+            .exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-b")))
+            .exists());
         collector.purge("trace-missing").unwrap();
     }
 
@@ -906,12 +1081,18 @@ mod tests {
             .unwrap();
         collector.flush("trace-r").unwrap();
         assert_eq!(rotated_segment_count(&collector.target_dir, "trace-r"), 1);
-        assert!(collector.target_dir.join("trace-r.ndjson").exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-r")))
+            .exists());
         collector.ttl_secs = 0;
         collector.record(test_event("trace-r", 2, "third")).unwrap();
         collector.flush("trace-r").unwrap();
         assert_eq!(rotated_segment_count(&collector.target_dir, "trace-r"), 0);
-        assert!(collector.target_dir.join("trace-r.ndjson").exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-r")))
+            .exists());
     }
 
     // @test:IN-01-METRIC
@@ -954,14 +1135,15 @@ mod tests {
     #[test]
     fn events_give_every_metric_a_denominator_and_at_least_one_value() {
         let events = vec![
-            test_event("trace", 0, "gate pass"),
-            test_event("trace", 1, "defect"),
-            test_event("trace", 2, "repro"),
-            test_event("trace", 3, "tool call"),
-            test_event("trace", 4, "token"),
-            test_event("trace", 5, "recover"),
-            event_with_cost("trace", 6, Some(3.0)),
-            event_nested("trace", 7),
+            test_event("trace", 0, "gate_pass"),
+            test_event("trace", 1, "gate_fail"),
+            test_event("trace", 2, "defect"),
+            test_event("trace", 3, "repro"),
+            test_event("trace", 4, "tool call"),
+            test_event("trace", 5, "token"),
+            test_event("trace", 6, "recover"),
+            event_with_cost("trace", 7, Some(3.0)),
+            event_nested("trace", 8),
         ];
         let report = TraceReport::from_events(&events, None, "commit-1", "full");
         assert_eq!(report.metrics.len(), 9);
@@ -982,19 +1164,29 @@ mod tests {
             .map(|metric| metric.name.as_str())
             .collect();
         assert_eq!(names, expected);
+        let gate = report
+            .metrics
+            .iter()
+            .find(|metric| metric.name == "gate_pass_rate")
+            .unwrap();
+        assert_eq!(gate.value, Some(0.5));
+        assert_eq!(gate.denominator, Some(2));
         let others: Vec<&Metric> = report
             .metrics
             .iter()
-            .filter(|metric| metric.name != "cost_per_verified_result")
+            .filter(|metric| {
+                metric.name != "cost_per_verified_result" && metric.name != "gate_pass_rate"
+            })
             .collect();
         for metric in others {
-            assert_eq!(metric.denominator, Some(8));
+            assert_eq!(metric.denominator, Some(9));
         }
         let cost_metric = report
             .metrics
             .iter()
             .find(|metric| metric.name == "cost_per_verified_result")
             .unwrap();
+        assert_eq!(cost_metric.value, Some(3.0));
         assert_eq!(cost_metric.denominator, Some(1));
         assert!(report.metrics.iter().any(|metric| metric.value.is_some()));
     }
@@ -1032,9 +1224,10 @@ mod tests {
     #[test]
     fn skipped_and_failures_are_preserved_from_verification() {
         let events = vec![
-            test_event("trace", 0, "task fail"),
-            test_event("trace", 1, "error happened"),
-            test_event("trace", 2, "ok"),
+            observation_event("trace", 0, true),
+            observation_event("trace", 1, false),
+            test_event("trace", 2, "task fail"),
+            test_event("trace", 3, "error happened"),
         ];
         let verification = serde_json::json!({
             "status": "partial",
@@ -1047,7 +1240,48 @@ mod tests {
         );
         assert_eq!(
             report.failures,
-            vec!["task fail".to_string(), "error happened".to_string()]
+            vec!["observation failed: task=task-1".to_string()]
+        );
+    }
+
+    // @test:FR-AUD-18
+    #[test]
+    fn fr_aud_18_contract_examples() {
+        // 1 pass + 1 fail + 8 unrelated events => gate pass rate 0.5
+        let mut events: Vec<TraceEvent> = vec![
+            bare_event("trace", 0, "gate_pass"),
+            bare_event("trace", 1, "gate_fail"),
+        ];
+        for i in 2..10 {
+            events.push(bare_event("trace", i, "run"));
+        }
+        // one event carries tokens: 500
+        events.push(event_with_tokens("trace", 10, 500.0));
+        // cost.value None and no duration_ms anywhere => both None
+        let mut cost_event = event_with_cost("trace", 11, None);
+        cost_event.duration_ms = None;
+        events.push(cost_event);
+        // failed observation => descriptive failure
+        events.push(observation_event("trace", 12, false));
+
+        let report = TraceReport::from_events(&events, None, "commit-1", "full");
+
+        assert_eq!(metric_value(&report, "gate_pass_rate"), Some(0.5));
+        assert_eq!(
+            report
+                .metrics
+                .iter()
+                .find(|metric| metric.name == "gate_pass_rate")
+                .unwrap()
+                .denominator,
+            Some(2)
+        );
+        assert_eq!(metric_value(&report, "token_count"), Some(500.0));
+        assert_eq!(metric_value(&report, "cost_per_verified_result"), None);
+        assert_eq!(metric_value(&report, "latency_ms"), None);
+        assert_eq!(
+            report.failures,
+            vec!["observation failed: task=task-1".to_string()]
         );
     }
 
@@ -1066,6 +1300,43 @@ mod tests {
         let mut event = test_event(trace_id, seq, "nested");
         event.parent_id = Some("parent-1".to_string());
         event
+    }
+
+    fn bare_event(trace_id: &str, seq: u64, event: &str) -> TraceEvent {
+        TraceEvent {
+            schema_version: 1,
+            trace_id: trace_id.to_string(),
+            parent_id: None,
+            task_id: "task-1".to_string(),
+            seq,
+            ts_wall: "2026-11-24T00:00:00Z".to_string(),
+            event: event.to_string(),
+            duration_ms: None,
+            cost: None,
+            missing: Vec::new(),
+            detail: None,
+        }
+    }
+
+    fn observation_event(trace_id: &str, seq: u64, ok: bool) -> TraceEvent {
+        let mut event = bare_event(trace_id, seq, "observation");
+        event.detail = Some(serde_json::json!({ "ok": ok }));
+        event
+    }
+
+    fn event_with_tokens(trace_id: &str, seq: u64, tokens: f64) -> TraceEvent {
+        let mut event = bare_event(trace_id, seq, "tokens_seen");
+        event.detail = Some(serde_json::json!({ "tokens": tokens }));
+        event
+    }
+
+    fn metric_value(report: &TraceReport, name: &str) -> Option<f64> {
+        report
+            .metrics
+            .iter()
+            .find(|metric| metric.name == name)
+            .expect("metric present")
+            .value
     }
 
     // @test:IN-01-FILE-EVIDENCE
@@ -1200,5 +1471,167 @@ mod tests {
         let json = r#"{"schema_version":1,"trace_id":"t","parent_id":null,"task_id":"task","seq":0,"ts_wall":"2026-01-01T00:00:00Z","event":"run","duration_ms":null,"cost":null,"missing":[]}"#;
         let event: TraceEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.detail, None);
+    }
+
+    // @test:FR-AUD-16
+    #[test]
+    fn trace_key_does_not_match_prefix() {
+        assert_ne!(trace_key("run1"), trace_key("run10"));
+        assert!(!trace_key("run10").starts_with(&format!("{}.", trace_key("run1"))));
+
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        collector.record(test_event("run10", 0, "start")).unwrap();
+        collector.flush("run10").unwrap();
+        let run10 = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("run10")));
+        assert!(run10.exists());
+        assert!(collector.rotated_segment_paths("run1").unwrap().is_empty());
+        collector.purge("run1").unwrap();
+        assert!(run10.exists());
+    }
+
+    // @test:FR-AUD-19
+    #[test]
+    fn fr_aud_19_same_second_rotations_retain_unique_segments() {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            max_bytes: 1,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        for seq in 0..6 {
+            collector
+                .record(test_event("trace-same-second", seq, "event"))
+                .unwrap();
+            collector.flush("trace-same-second").unwrap();
+        }
+        let segments = collector
+            .rotated_segment_paths("trace-same-second")
+            .unwrap();
+        assert_eq!(segments.len(), 5);
+        let mut names: Vec<String> = segments
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), 5);
+        for path in &segments {
+            let content = fs::read_to_string(path).unwrap();
+            assert!(!content.is_empty());
+            assert_eq!(content.lines().count(), 1);
+        }
+        let active = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-same-second")));
+        assert!(active.exists());
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
+    }
+
+    // @test:FR-AUD-20
+    #[test]
+    fn fr_aud_20_retry_skips_committed_seqs_and_expire_all_sweeps_idle_segments(
+    ) -> Result<(), String> {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ttl_secs: 0,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        let key = trace_key("trace-retry");
+        let active = collector.target_dir.join(format!("{key}.ndjson"));
+
+        collector
+            .record(test_event("trace-retry", 0, "first"))
+            .unwrap();
+        collector.flush("trace-retry").unwrap();
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
+
+        // Retry re-flushes an already committed seq: no duplicate line.
+        collector
+            .record(test_event("trace-retry", 0, "first"))
+            .unwrap();
+        collector.flush("trace-retry").unwrap();
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
+
+        // Simulate a committed partial write from a crashed retry.
+        let committed_line = serde_json::to_string(&serde_json::json!({
+            "schema_version": 1,
+            "trace_id": "trace-retry",
+            "task_id": "task-1",
+            "seq": 1,
+            "event": "retry"
+        }))
+        .unwrap();
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&active)
+            .and_then(|mut file| writeln!(file, "{committed_line}"))
+            .map_err(|e| e.to_string())?;
+        collector
+            .record(test_event("trace-retry", 1, "retry"))
+            .unwrap();
+        collector.flush("trace-retry").unwrap();
+        let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
+        seqs.sort_unstable();
+        assert_eq!(seqs, vec![0, 1]);
+
+        // New seq after the retry is appended once.
+        collector
+            .record(test_event("trace-retry", 2, "next"))
+            .unwrap();
+        collector.flush("trace-retry").unwrap();
+        let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
+        seqs.sort_unstable();
+        assert_eq!(seqs, vec![0, 1, 2]);
+
+        // Idle trace: its rotated segment is swept by expire_all via flush_all.
+        let idle_key = trace_key("trace-idle");
+        let idle_active = collector.target_dir.join(format!("{idle_key}.ndjson"));
+        let idle_rotated = collector.target_dir.join(format!("{idle_key}.777.ndjson"));
+        fs::write(&idle_active, "idle\n").unwrap();
+        fs::write(&idle_rotated, "rotated\n").unwrap();
+
+        collector
+            .record(test_event("trace-active", 0, "only"))
+            .unwrap();
+        collector.flush_all().unwrap();
+
+        assert!(idle_active.exists());
+        assert!(!idle_rotated.exists());
+        Ok(())
+    }
+
+    // @test:FR-AUD-35
+    #[cfg(unix)]
+    #[test]
+    fn fr_aud_35_secure_mode_is_set_at_creation() {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        collector
+            .record(test_event("trace-secure", 0, "start"))
+            .unwrap();
+        collector.flush("trace-secure").unwrap();
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-secure")));
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(PermissionsExt::mode(&metadata.permissions()) & 0o777, 0o600);
     }
 }

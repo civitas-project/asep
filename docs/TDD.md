@@ -518,3 +518,101 @@ Same module: `impl From<Observation> for TraceEvent` (or `to_trace_event(&self, 
 - `asep affected` cannot map new files until their tags land; L1–L9 rely on targeted `cargo test`.
 - Full suite reserved for merges to `main`.
 - New modules must be declared in `lib.rs` and registered in the module tree.
+
+## Static engineering audit remediation — design (snapshot 4355dbc8)
+
+Sumber: `ASEP_dev_audit_4355dbc.md`. Keputusan arsitektur dibuat di sini, bukan oleh executor: tidak ada engine/store/dependency baru; evidence memakai direktori `.spec-engine` yang ada; identitas snapshot memakai Git tree hash (content-addressed) + status working tree; graf typed memakai policy yang ada; trace report memakai satu builder bersama di `observability.rs`. Setiap unit kerja menyentuh satu file sumber dan satu file test, serta menambahkan tepat satu `@impl` dan satu `@test` per requirement (COV-06). Semua kode baru wajib mematuhi `FR-ANTISLOP-08`: tanpa `else`, tanpa `if` bersarang, dan docstring tidak boleh parroting nama identifier.
+
+<!-- @design:FR-AUD-01 -->
+<!-- @design:FR-AUD-02 -->
+<!-- @design:FR-AUD-03 -->
+<!-- @design:FR-AUD-04 -->
+<!-- @design:FR-AUD-05 -->
+<!-- @design:FR-AUD-06 -->
+<!-- @design:FR-AUD-07 -->
+<!-- @design:FR-AUD-08 -->
+<!-- @design:FR-AUD-09 -->
+<!-- @design:FR-AUD-10 -->
+<!-- @design:FR-AUD-11 -->
+<!-- @design:FR-AUD-12 -->
+<!-- @design:FR-AUD-13 -->
+<!-- @design:FR-AUD-14 -->
+<!-- @design:FR-AUD-15 -->
+<!-- @design:FR-AUD-16 -->
+<!-- @design:FR-AUD-17 -->
+<!-- @design:FR-AUD-18 -->
+<!-- @design:FR-AUD-19 -->
+<!-- @design:FR-AUD-20 -->
+<!-- @design:FR-AUD-21 -->
+<!-- @design:FR-AUD-22 -->
+<!-- @design:FR-AUD-23 -->
+<!-- @design:FR-AUD-24 -->
+<!-- @design:FR-AUD-25 -->
+<!-- @design:FR-AUD-26 -->
+<!-- @design:FR-AUD-27 -->
+<!-- @design:FR-AUD-28 -->
+<!-- @design:FR-AUD-29 -->
+<!-- @design:FR-AUD-30 -->
+<!-- @design:FR-AUD-31 -->
+<!-- @design:FR-AUD-32 -->
+<!-- @design:FR-AUD-33 -->
+<!-- @design:FR-AUD-34 -->
+<!-- @design:FR-AUD-35 -->
+<!-- @design:FR-OPT-00 -->
+
+### Keputusan arsitektur kunci
+
+**B02/B03/B04 — proof integrity.** `acceptance_scoped.rs` tidak boleh lagi mempercayai string commit. Sebelum gate, hitung `snapshot_identity`: `git rev-parse <commit>^{tree}` sebagai tree digest, `git rev-parse HEAD` harus sama dengan commit, `git status --porcelain` harus kosong (termasuk untracked), serta digest policy dan versi toolchain. Karena sandbox me-bind working tree secara read-only, clean tree + HEAD cocok menjamin isi sandbox sama dengan tree commit tanpa meng-materialisasi arsip baru. Evidence per-requirement ditulis dengan status `ACCEPTED` hanya untuk requirement in-scope yang benar-benar mencapai test tereksekusi; sisanya `UNPROVEN`. Header evidence memuat `schema_version`, `revision`, `tree_digest`, `changed_paths_digest`, `policy_digest`, `toolchain`, `verdict`, `reviewer`, `rationale`. `verification/mod.rs` memetakan kondisi ke state `PASS`, `MISSING`, `STALE`, `REJECTED`, `UNPROVEN`.
+
+**B05 — test selection.** `build_test_plan` mengambil `commands` dari `asep affected --json`, menyisipkan `-p asep` bila belum ada, dan gagal bila `executed == 0`. Daftar hardcode `NONEXISTENT_TEST_TARGETS` dihapus; target yang tidak ada menjadi error eksplisit.
+
+**B06/B07 — typed graph.** Satu `NodeKey` typed + tabel admissible `(source_kind, edge_kind, target_kind)` dari policy, dipakai ulang oleh traversal impact. Edge dengan note whitespace-only ditolak. ID yang sama antar kind tetap berbeda. Node dangling dilaporkan invalid/unproven, bukan node sintetis.
+
+**B08 — scanner.** `scan_project_tags_detailed` memisahkan file non-teks, permission/IO error, dan root tidak ada; `ScanCompleteness` mencatat jumlah file dan error.
+
+**B16/B18 — trace.** Satu `TraceReport::from_events` di `observability.rs` dipakai CLI dan MCP. Lookup memakai exact opaque key (bukan `starts_with`). Denominator per domain pengukuran.
+
+**B26–B33 — srcdump/srcwalk.** Comment stripper memverifikasi prefix `/*`. Token dibedakan `original_tokens` vs `emitted_tokens`. Format dispatch mengikuti `config.format`. Symlink default tidak diikuti. Truncation menghitung ellipsis di dalam `max_len`. srcwalk menyetak semua flag git-ignore secara eksplisit.
+
+**B35 — cross-platform (keputusan user).** Tidak ada import `std::os::unix` tanpa `cfg`; jalur Windows memakai implementasi `#[cfg(windows)]` setara.
+
+### Ordered implementation plan
+
+| Wave | ID | File & symbol | Acceptance criteria | Verification command |
+|---|---|---|---|---|
+| P0-1 | FR-AUD-01 | `spec-engine/src/context/mod.rs`, `spec-engine/tests/context_test.rs`; `.gitignore`, `vendor/cc/src/target/` | Modul dan test ter-git-add; clean checkout build tanpa E0583; vendor tidak diabaikan. | clean-worktree `cargo check -p asep --lib --offline --locked` |
+| P0-2 | FR-AUD-02 | `acceptance_scoped.rs::snapshot_identity` + test | Dirty tree/HEAD beda → error; evidence memuat 6 field identitas. | `cargo test -p asep --test acceptance_scoped_test --offline --locked` |
+| P1-1 | FR-AUD-03 | `acceptance_scoped.rs::in_scope_requirement_ids` | Requirement di luar scope → UNPROVEN; zero tests → error. | `cargo test -p asep --test acceptance_scoped_test --offline --locked` |
+| P1-2 | FR-AUD-04 | `verification/mod.rs::evidence_state` | STALE/REJECTED/MISSING dibedakan. | `cargo test -p asep --lib verification --offline --locked` |
+| P1-3 | FR-AUD-05 | `acceptance_scoped.rs::build_test_plan` | JSON commands, `-p`, executed>0. | `cargo test -p asep --test acceptance_scoped_test --offline --locked` |
+| P1-4 | FR-AUD-06 | `graph/builder.rs::admissible_edge` | Kind tidak admissible tidak menutup COV; note whitespace ditolak. | `cargo test -p asep --test graph_test --offline --locked` |
+| P1-5 | FR-AUD-07 | `affected/mod.rs` traversal | Dangling → invalid; provenance typed. | `cargo test -p asep --test affected_test --offline --locked` |
+| P1-6 | FR-AUD-08 | `scanner/mod.rs::scan_project_tags_detailed` | Root invalid → error; binary/error tercatat. | `cargo test -p asep --test scanner_test --offline --locked` |
+| P1-7 | FR-AUD-09 | `formal/mod.rs::FormalState` | Solver wajib absent → bukan PASS. | `cargo test -p asep --lib formal --offline --locked` |
+| P1-8 | FR-AUD-10/11 | `harness/process.rs::spawn_shell_quiet`, `run_cmd_memory` | Exit nonzero → error; 1 MiB stdout sukses. | `cargo test -p asep --lib harness --offline --locked` |
+| P1-9 | FR-AUD-12 | `harness/process.rs::process_tree_rss_bytes` | Tree RSS terukur; unsupported → UNAVAILABLE. | `cargo test -p asep --lib harness --offline --locked` |
+| P1-10 | FR-AUD-13 | `harness/asymptotic.rs::CancellationToken` | Wall-clock terikat; label cooperative eksplisit. | `cargo test -p asep --lib harness --offline --locked` |
+| P1-11 | FR-AUD-15 | `runtime/react.rs::Observation.task_id` | Task identity tidak tergabung. | `cargo test -p asep --lib runtime --offline --locked` |
+| P1-12 | FR-AUD-16/18 | `observability.rs::TraceReport` | Exact key, denominator benar, CLI/MCP parity. | `cargo test -p asep --lib observability --offline --locked` |
+| P1-13 | FR-AUD-17 | `config/settings.rs::default_allowlist` | Field wajib ada, secret opt-in. | `cargo test -p asep --test config_test --offline --locked` |
+| P1-14 | FR-AUD-19/20 | `observability.rs::rotate`/`append_batch` | Rotasi unik; retry tidak duplikasi. | `cargo test -p asep --lib observability --offline --locked` |
+| P1-15 | FR-AUD-21 | `config/settings.rs::validate_capabilities` | Config rusak fail-closed. | `cargo test -p asep --test config_test --offline --locked` |
+| P1-16 | FR-AUD-23 | `agent_protocol/mod.rs::publish`/`ack` | Parallel send/ack tanpa partial/lost update. | `cargo test -p asep --lib agent_protocol --offline --locked` |
+| P1-17 | FR-AUD-26 | `srcdump/formatter.rs::skip_block_comment` | Dua statement preserved. | `cargo test -p srcdump --offline --locked` |
+| P1-18 | FR-AUD-28 | `srcdump/formatter.rs::TokenCounts` | original vs emitted tokens. | `cargo test -p srcdump --offline --locked` |
+| P1-19 | FR-AUD-30 | `srcdump/walker.rs::is_safe_entry` | Symlink external tidak dibaca. | `cargo test -p srcdump --offline --locked` |
+| P2-1 | FR-AUD-14 | `harness/process.rs::steps_from_output` | NaN/mixed metric → error; repeat + baseline. | `cargo test -p asep --lib harness --offline --locked` |
+| P2-2 | FR-AUD-22 | `runtime/budget.rs::record_cost` | Negative/NaN/inf ditolak. | `cargo test -p asep --lib runtime --offline --locked` |
+| P2-3 | FR-AUD-24 | `agent_protocol/mod.rs::validate_envelope_dir` | Duplicate/mismatch/orphan → error. | `cargo test -p asep --lib agent_protocol --offline --locked` |
+| P2-4 | FR-AUD-25 | `scanner/lexer.rs::parse_tag` | Delimiter wajib; unknown priority error. | `cargo test -p asep --lib scanner --offline --locked` |
+| P2-5 | FR-AUD-27 | `srcdump/formatter.rs::format_dispatch` | JSON satu dokumen; text bukan NDJSON. | `cargo test -p srcdump --offline --locked` |
+| P2-6 | FR-AUD-29 | `srcdump/config.rs::resolve_options` | TOML precedence; jobs=1. | `cargo test -p srcdump --offline --locked` |
+| P2-7 | FR-AUD-31/32 | `srcwalk/lib.rs` | Git-ignore flags; symlink/dedup contract. | `cargo test -p srcwalk --offline --locked` |
+| P2-8 | FR-AUD-34 | `mcp/protocol.rs::parse_request` | Version/ID divalidasi; error terpisah. | `cargo test -p asep --test mcp_test --offline --locked` |
+| P2-9 | FR-AUD-35 | `observability.rs` + `harness/process.rs` (cfg) | Cross-platform compile. | `cargo check --workspace --all-targets --offline --locked` |
+| P3-1 | FR-AUD-33 | `srcdump/formatter.rs::truncate_line` | max_len termasuk ellipsis, Unicode aman. | `cargo test -p srcdump --offline --locked` |
+| OPT | FR-OPT-00 | `docs/OPTIMIZATION_BENCHMARKS.md` + test | Adopsi hanya dengan before/after benchmark. | `cargo test -p asep --test optimization_evidence_test --offline --locked` |
+
+### Verification scope per wave
+
+Untuk setiap wave, jalankan `asep affected <changed-paths>` dan pakai keluaran sebagai verification command; gate `asep check . --rigor T1` dan `T2` dijalankan setelah traceability final. Clean-archive build diwajibkan sebelum `accept-scoped`. Setiap executor dilarang menjalankan `git checkout` tanpa pathspec karena dapat mengembalikan spec artifacts yang belum ter-commit.

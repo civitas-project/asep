@@ -1,6 +1,6 @@
 //! Standard I/O loop and JSON-RPC message processing for MCP.
 
-use crate::mcp::protocol::{JsonRpcRequest, JsonRpcResponse};
+use crate::mcp::protocol::{validate_request, JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::tools::{execute_tool, get_tools_list};
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -10,41 +10,55 @@ use std::path::Path;
 // @impl:FR-MCP-PROTO-03-B
 // @impl:FR-MCP-PROTO-04
 
-/// Processes a single JSON-RPC string message and returns the response string if one is required.
-pub fn process_jsonrpc_request(raw_json: &str, default_dir: &Path) -> Option<String> {
-    let req: JsonRpcRequest = match serde_json::from_str(raw_json) {
-        Ok(r) => r,
-        Err(_) => {
-            let err = JsonRpcResponse::error(serde_json::Value::Null, -32700, "Parse error");
-            return serde_json::to_string(&err).ok();
-        }
-    };
+/// Maps an error category to its JSON-RPC error code.
+fn error_code(category: &str) -> i64 {
+    match category {
+        "parse" => -32700,
+        "invalid_request" => -32600,
+        "method_not_found" => -32601,
+        "invalid_params" => -32602,
+        _ => -32600,
+    }
+}
 
-    let id = match req.id {
-        Some(id_val) => id_val,
-        None => {
-            // Notification: No response is sent
-            return None;
-        }
-    };
+/// Returns the echoable request id (string or integer), else JSON null.
+fn request_id_value(value: &serde_json::Value) -> serde_json::Value {
+    match value.get("id") {
+        Some(v) => match v {
+            serde_json::Value::String(_) => v.clone(),
+            n @ serde_json::Value::Number(_) if n.is_i64() || n.is_u64() => v.clone(),
+            _ => serde_json::Value::Null,
+        },
+        None => serde_json::Value::Null,
+    }
+}
 
-    let res = match req.method.as_str() {
-        "initialize" => JsonRpcResponse::success(
-            id,
-            serde_json::json!({
-                "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {}
-                },
-                "serverInfo": {
-                    "name": "asep",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }),
-        ),
+/// Builds an error response frame for a failed validation/category.
+fn error_response(value: &serde_json::Value, category: &str) -> Option<String> {
+    let code = error_code(category);
+    let id = request_id_value(value);
+    let err = JsonRpcResponse::error(id, code, category);
+    serde_json::to_string(&err).ok()
+}
 
-        "tools/list" => JsonRpcResponse::success(id, get_tools_list()),
-
+/// Dispatches a validated request to its method handler.
+fn handle_method(
+    req: &JsonRpcRequest,
+    default_dir: &Path,
+) -> Result<serde_json::Value, &'static str> {
+    match req.method.as_str() {
+        "initialize" => Ok(serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {
+                "tools": {}
+            },
+            "serverInfo": {
+                "name": "asep",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        })),
+        "tools/list" => Ok(get_tools_list()),
+        "ping" => Ok(serde_json::json!({})),
         "tools/call" => {
             let name = req
                 .params
@@ -54,15 +68,39 @@ pub fn process_jsonrpc_request(raw_json: &str, default_dir: &Path) -> Option<Str
             let empty_obj = serde_json::json!({});
             let arguments = req.params.get("arguments").unwrap_or(&empty_obj);
 
-            match execute_tool(name, arguments, default_dir) {
-                Ok(content_val) => JsonRpcResponse::success(id, content_val),
-                Err(err_msg) => JsonRpcResponse::error(id, -32603, &err_msg),
-            }
+            execute_tool(name, arguments, default_dir).map_err(|_| "invalid_params")
         }
+        _ => Err("method_not_found"),
+    }
+}
 
-        "ping" => JsonRpcResponse::success(id, serde_json::json!({})),
+/// Processes a single JSON-RPC string message and returns the response string if one is required.
+pub fn process_jsonrpc_request(raw_json: &str, default_dir: &Path) -> Option<String> {
+    let value: serde_json::Value = match serde_json::from_str(raw_json) {
+        Ok(v) => v,
+        Err(_) => {
+            let err = JsonRpcResponse::error(serde_json::Value::Null, -32700, "Parse error");
+            return serde_json::to_string(&err).ok();
+        }
+    };
 
-        _ => JsonRpcResponse::error(id, -32601, "Method not found"),
+    let req = match validate_request(&value) {
+        Ok(r) => r,
+        Err(category) => return error_response(&value, category),
+    };
+
+    let id = match &req.id {
+        Some(id_val) => id_val.clone(),
+        None => {
+            // Notification: still dispatched to the method handler; no response is sent.
+            let _ = handle_method(&req, default_dir);
+            return None;
+        }
+    };
+
+    let res = match handle_method(&req, default_dir) {
+        Ok(result) => JsonRpcResponse::success(id, result),
+        Err(category) => JsonRpcResponse::error(id, error_code(category), category),
     };
 
     serde_json::to_string(&res).ok()
@@ -74,10 +112,7 @@ pub fn run_mcp_server(default_dir: &Path) -> Result<(), Box<dyn std::error::Erro
     let mut stdout = std::io::stdout();
 
     for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break, // EOF or IO error
-        };
+        let line = line?;
 
         let trimmed = line.trim();
         if trimmed.is_empty() {

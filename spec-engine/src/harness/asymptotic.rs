@@ -1,6 +1,30 @@
 //! Empirical asymptotic complexity measurement and assertion (ARCH-07).
 
+use std::sync::mpsc::sync_channel;
 use std::time::{Duration, Instant};
+
+// @impl:FR-AUD-13
+#[derive(Clone)]
+pub struct CancellationToken {
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self {
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 const SLOPE_TOLERANCE: f64 = 0.25;
 
@@ -38,22 +62,37 @@ impl AsymptoticAnalyzer {
             .collect()
     }
 
-    /// Run `f` in a scoped spawned thread and receive its result over an mpsc
-    /// channel with `recv_timeout`. Returns `Err` on timeout.
+    /// Run `f` in a detached spawned thread and receive its result over an mpsc
+    /// channel with `recv_timeout`. Wall-clock is bounded by `timeout`.
+    ///
+    /// Rust cannot forcibly cancel a thread: on timeout the worker is only
+    /// cooperatively cancelled via `CancellationToken` and may keep running
+    /// until it observes the token. This function returns immediately without
+    /// joining the worker.
     pub fn run_with_timeout<F, R>(timeout: Duration, f: F) -> Result<R, String>
     where
         F: FnOnce() -> R + Send + 'static,
         R: Send + 'static,
     {
-        let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        std::thread::scope(|s| {
-            s.spawn(move || {
-                let result = f();
+        let token = CancellationToken::new();
+        let worker_token = token.clone();
+        let (tx, rx) = sync_channel(1);
+        std::thread::spawn(move || {
+            let result = f();
+            if !worker_token.is_cancelled() {
                 let _ = tx.send(result);
-            });
-            rx.recv_timeout(timeout)
-                .map_err(|_| format!("timed out after {:?}", timeout))
-        })
+            }
+        });
+        match rx.recv_timeout(timeout) {
+            Ok(result) => Ok(result),
+            Err(_) => {
+                token.cancel();
+                Err(format!(
+                    "timed out after {:?} (cooperative cancellation; worker may still be running)",
+                    timeout
+                ))
+            }
+        }
     }
 
     /// Estimate the log-log slope of `f`'s step counts across `sizes` and
@@ -164,5 +203,23 @@ mod tests {
     fn run_with_timeout_returns_value_when_task_completes() {
         let result = AsymptoticAnalyzer::run_with_timeout(Duration::from_secs(5), || 7u32);
         assert_eq!(result.unwrap(), 7);
+    }
+
+    // @test:FR-AUD-13
+    #[test]
+    fn run_with_timeout_bounds_wall_clock() {
+        let token = CancellationToken::new();
+        let start = Instant::now();
+        let result = AsymptoticAnalyzer::run_with_timeout(Duration::from_millis(20), move || {
+            let mut slept_ms = 0u64;
+            while slept_ms < 500 && !token.is_cancelled() {
+                std::thread::sleep(Duration::from_millis(10));
+                slept_ms += 10;
+            }
+            slept_ms
+        });
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(start.elapsed() < Duration::from_millis(250));
     }
 }

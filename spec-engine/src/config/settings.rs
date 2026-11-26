@@ -65,11 +65,21 @@ pub struct TelemetryConfig {
     pub dir: String,
 }
 
+pub const MANDATORY_EVIDENCE_FIELDS: [&str; 6] = [
+    "schema_version",
+    "trace_id",
+    "task_id",
+    "event",
+    "seq",
+    "detail",
+];
+
+// @impl:FR-AUD-17
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            allowlist: Vec::new(),
+            allowlist: MANDATORY_EVIDENCE_FIELDS.map(ToString::to_string).to_vec(),
             redact_patterns: Vec::new(),
             ttl_secs: 86_400,
             max_bytes: 10_485_760,
@@ -84,6 +94,7 @@ impl Default for TelemetryConfig {
 /// 200k context window, preserving existing scaffold behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[serde(deny_unknown_fields)]
 pub struct CapabilityProfile {
     pub file_read: bool,
     pub file_write: bool,
@@ -161,6 +172,14 @@ impl CapabilityProfile {
     }
 }
 
+// @impl:FR-AUD-21
+
+/// Validates declared capability configuration. Unknown keys or malformed
+/// TOML are rejected (fail closed). A valid profile is returned unchanged.
+pub fn validate_capabilities(text: &str) -> Result<CapabilityProfile, String> {
+    toml::from_str(text).map_err(|err| err.to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineConfig {
     #[serde(default)]
@@ -211,4 +230,41 @@ pub fn save_config(target_dir: &Path, config: &EngineConfig) -> Result<(), std::
 
     fs::write(path, toml_str)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    // @test:FR-AUD-17
+    fn default_allowlist_contains_mandatory_fields() {
+        let config = TelemetryConfig::default();
+        for field in MANDATORY_EVIDENCE_FIELDS {
+            assert!(
+                config.allowlist.iter().any(|name| name == field),
+                "missing {field}"
+            );
+        }
+        assert_eq!(config.allowlist.len(), MANDATORY_EVIDENCE_FIELDS.len());
+    }
+
+    #[test]
+    // @test:FR-AUD-21
+    fn unknown_capability_is_rejected() {
+        let err = validate_capabilities("unknown_capability = true\n").unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn malformed_toml_is_rejected() {
+        assert!(validate_capabilities("[[unclosed\n").is_err());
+    }
+
+    #[test]
+    fn valid_capability_profile_parses() {
+        let profile = validate_capabilities("file_read = false\ncontext_window = 100\n").unwrap();
+        assert!(!profile.file_read);
+        assert_eq!(profile.context_window, 100);
+    }
 }

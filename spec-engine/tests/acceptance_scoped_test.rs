@@ -3,74 +3,20 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
-use asep::acceptance_scoped::{affected_test_commands, bwrap_args, run_scoped_acceptance};
+static BWRAP_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+use asep::acceptance_scoped::{build_test_plan, bwrap_args, run_scoped_acceptance};
 
 #[test]
 fn scoped_acceptance_writes_accepted_evidence() {
-    let root = tempfile::tempdir().expect("temp dir");
-    let root_path = root.path();
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    let commit = head_of(root_path);
 
-    // Minimal temp git repo.
-    run(
-        root_path,
-        &["git", "init", "-q", root_path.to_str().unwrap()],
-    );
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("config")
-        .arg("user.email")
-        .arg("test@example.com")
-        .status()
-        .expect("git config email");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("config")
-        .arg("user.name")
-        .arg("test")
-        .status()
-        .expect("git config name");
-    fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("add")
-        .arg("README.md")
-        .status()
-        .expect("git add");
-    Command::new("git")
-        .arg("-C")
-        .arg(root_path)
-        .arg("commit")
-        .arg("-q")
-        .arg("-m")
-        .arg("init")
-        .status()
-        .expect("git commit");
-
-    // Policy + PRD with one SHOULD (excluded) and two MUST requirements.
-    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
-    fs::write(
-        root_path.join("docs/PRD.md"),
-        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
-    )
-    .expect("write PRD");
-    fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
-    let policy = r#"{
-        "approved_commit": "abc123",
-        "changed_paths": ["docs/PRD.md"],
-        "evidence_dir": "evidence"
-    }"#;
-    fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
-
-    // Fake bwrap shim: every gate exits 0 without running anything.
-    let shim_path = bwrap_shim();
-    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
-
-    let commit = "abc123";
-    let evidence_dir = run_scoped_acceptance(root_path, commit)
+    let evidence_dir = run_scoped_acceptance(root_path, &commit)
         .unwrap_or_else(|e| panic!("run_scoped_acceptance failed: {e}"));
     assert_eq!(evidence_dir, root_path.join("evidence"));
 
@@ -84,13 +30,34 @@ fn scoped_acceptance_writes_accepted_evidence() {
             content.contains("reviewer: scoped-trusted-runner"),
             "{id} reviewer"
         );
-        assert!(content.contains("verdict: ACCEPTED"), "{id} verdict");
+        let verdict = match id {
+            "REQ-ALPHA" => "ACCEPTED",
+            _ => "UNPROVEN",
+        };
+        let scope = match id {
+            "REQ-ALPHA" => "in_scope",
+            _ => "out_of_scope",
+        };
+        assert!(
+            content.contains(&format!("verdict: {verdict}")),
+            "{id} verdict"
+        );
+        assert!(content.contains(&format!("scope: {scope}")), "{id} scope");
         assert!(
             content.contains(&format!(
                 "rationale: commit {commit}, scoped gates passed, changed paths docs/PRD.md"
             )),
             "{id} rationale"
         );
+        assert!(content.contains("schema_version: 1"), "{id} schema_version");
+        assert!(content.contains("revision:"), "{id} revision");
+        assert!(content.contains("tree_digest:"), "{id} tree_digest");
+        assert!(
+            content.contains("changed_paths_digest:"),
+            "{id} changed_paths_digest"
+        );
+        assert!(content.contains("policy_digest:"), "{id} policy_digest");
+        assert!(content.contains("toolchain:"), "{id} toolchain");
     }
     assert!(
         !semantic.join("REQ-GAMMA.md").exists(),
@@ -197,6 +164,7 @@ fn bwrap_args_binds_evidence_files_when_present() {
 /// sandbox), not a host path invisible inside bwrap.
 #[test]
 fn scoped_gate_commands_use_sandbox_exe() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let root = scoped_acceptance_root();
     let root_path = root.path();
 
@@ -207,7 +175,7 @@ fn scoped_gate_commands_use_sandbox_exe() {
     let shim_path = bwrap_shim();
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
-    run_scoped_acceptance(root_path, "abc123")
+    run_scoped_acceptance(root_path, &head_of(root_path))
         .unwrap_or_else(|e| panic!("run_scoped_acceptance failed: {e}"));
 
     let log = fs::read_to_string(&record).expect("read gate command log");
@@ -240,16 +208,30 @@ fn run(root: &Path, args: &[&str]) {
 /// Persistent bwrap shim shared by all tests in this binary. Tests run in
 /// parallel and `ASEP_BWRAP` is process-global, so every test must point at
 /// the same path that outlives any single test's temp dirs.
+/// `asep affected --json` shim output: only REQ-ALPHA is in scope.
+const AFFECTED_JSON: &str =
+    "{\"requirements\":[{\"id\":\"REQ-ALPHA\"}],\"impls\":[],\"tests\":[],\"adrs\":[],\"unmapped\":[],\"commands\":[\"cargo test --test scoped_traceability\"],\"provenance\":{}}";
+
 fn bwrap_shim() -> PathBuf {
     let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap");
     let log = bwrap_log();
     let mut shim = fs::File::create(&shim_path).expect("create shim");
+    writeln!(shim, "#!/bin/sh").expect("write shebang");
+    writeln!(shim, "echo \"$@\" >> {}", log.display()).expect("write log line");
+    writeln!(shim, "case \"$*\" in").expect("write case open");
     writeln!(
         shim,
-        "#!/bin/sh\necho \"$@\" >> {}\nexit 0\n",
-        log.display()
+        "  *affected*) printf '%s\\n' '{}' 'cargo test --test scoped_traceability' ;;",
+        AFFECTED_JSON
     )
-    .expect("write shim");
+    .expect("write affected arm");
+    writeln!(
+        shim,
+        "  *\"cargo test\"*) echo 'test result: ok. 1 passed; 0 failed' ;;"
+    )
+    .expect("write cargo test arm");
+    writeln!(shim, "esac").expect("write case close");
+    writeln!(shim, "exit 0").expect("write exit");
     drop(shim);
     let mut perms = fs::metadata(&shim_path)
         .expect("shim metadata")
@@ -264,9 +246,26 @@ fn bwrap_log() -> PathBuf {
     std::env::temp_dir().join("asep-acceptance-test-bwrap.log")
 }
 
+/// `git -C <root> rev-parse HEAD`; panics on failure. Trimmed stdout.
+fn head_of(root: &Path) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse HEAD");
+    assert!(output.status.success(), "git rev-parse HEAD failed");
+    String::from_utf8(output.stdout)
+        .expect("git rev-parse HEAD output not utf8")
+        .trim()
+        .to_string()
+}
+
 /// Minimal temp git repo with an acceptance policy, a PRD with two MUST
 /// requirements and one SHOULD, and an ASEP_BWRAP shim that makes every gate
-/// exit 0 without running anything.
+/// exit 0 without running anything. The policy approves the actual HEAD
+/// commit so the snapshot-identity check passes.
 fn scoped_acceptance_root() -> tempfile::TempDir {
     let root = tempfile::tempdir().expect("temp dir");
     let root_path = root.path();
@@ -291,12 +290,22 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .arg("test")
         .status()
         .expect("git config name");
+    fs::write(root_path.join(".gitignore"), "acceptance.json\nevidence/\n")
+        .expect("write .gitignore");
     fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
+    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
+    fs::write(
+        root_path.join("docs/PRD.md"),
+        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
+    )
+    .expect("write PRD");
     Command::new("git")
         .arg("-C")
         .arg(root_path)
         .arg("add")
         .arg("README.md")
+        .arg("docs/PRD.md")
+        .arg(".gitignore")
         .status()
         .expect("git add");
     Command::new("git")
@@ -309,18 +318,16 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .status()
         .expect("git commit");
 
-    fs::create_dir_all(root_path.join("docs")).expect("docs dir");
-    fs::write(
-        root_path.join("docs/PRD.md"),
-        "# PRD\n\n@req:REQ-ALPHA:MUST\n@req:REQ-BETA:MUST\n@req:REQ-GAMMA:SHOULD\n",
-    )
-    .expect("write PRD");
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
-    let policy = r#"{
-        "approved_commit": "abc123",
+    let commit = head_of(root_path);
+    let policy = format!(
+        r#"{{
+        "approved_commit": "{}",
         "changed_paths": ["docs/PRD.md"],
         "evidence_dir": "evidence"
-    }"#;
+    }}"#,
+        commit
+    );
     fs::write(root_path.join(".spec-engine/acceptance.json"), policy).expect("write policy");
 
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
@@ -346,9 +353,10 @@ fn asep_bin() -> PathBuf {
 
 #[test]
 fn accept_scoped_cli_writes_evidence() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _root = scoped_acceptance_root();
     let root_path = _root.path();
-    let commit = "abc123";
+    let commit = head_of(root_path);
 
     let output = Command::new(asep_bin())
         .arg("accept-scoped")
@@ -381,6 +389,7 @@ fn accept_scoped_cli_writes_evidence() {
 
 #[test]
 fn accept_scoped_cli_rejects_unapproved_commit() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let _root = scoped_acceptance_root();
     let root_path = _root.path();
 
@@ -402,15 +411,20 @@ fn accept_scoped_cli_rejects_unapproved_commit() {
     );
 }
 
+// @test:FR-AUD-05
 #[test]
-fn affected_test_commands_filters_nonexistent_test_targets() {
-    // Fake `asep affected` output: two commands naming nonexistent test
-    // targets plus one valid command. Only the valid command must be returned.
-    let shim_path = fake_affected_bwrap_shim(&[
-        "cargo test --test TRACEABILITY",
-        "cargo test --test traceability_tests",
-        "cargo test --test scoped_traceability",
-    ]);
+fn build_test_plan_uses_json_commands_and_adds_package() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let root_path = root.path();
+    fs::create_dir_all(root_path.join("spec-engine").join("tests")).expect("tests dir");
+    fs::write(
+        root_path.join("spec-engine/tests/alpha.rs"),
+        "#[test]\nfn alpha() {}\n",
+    )
+    .expect("write alpha.rs");
+
+    let shim_path =
+        affected_json_bwrap_shim(&["cargo test --test alpha", "cargo test --test ghost"]);
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
     let base = bwrap_args(
@@ -418,28 +432,38 @@ fn affected_test_commands_filters_nonexistent_test_targets() {
         Path::new("/toolchain"),
         Path::new("/workspace/target"),
     );
-    let commands = affected_test_commands(&base, &["docs/PRD.md".to_string()])
-        .unwrap_or_else(|e| panic!("affected_test_commands failed: {e}"));
+    let plan = build_test_plan(&base, &["docs/PRD.md".to_string()], root_path)
+        .unwrap_or_else(|e| panic!("build_test_plan failed: {e}"));
 
+    assert_eq!(plan.selected, 2, "plan must select both commands");
+    assert_eq!(plan.commands.len(), 2);
     assert_eq!(
-        commands,
-        vec!["cargo test --test scoped_traceability".to_string()],
-        "only the valid test command must survive the filter"
+        plan.commands[0], "cargo test -p asep --test alpha",
+        "existing target kept with -p asep: {}",
+        plan.commands[0]
+    );
+    assert_eq!(
+        plan.commands[1], "cargo test -p asep --lib",
+        "nonexistent target converted to --lib fallback: {}",
+        plan.commands[1]
     );
 
     // Restore the shared shim so other tests see the default bwrap behavior.
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
 }
 
-/// bwrap shim that prints `lines` to stdout and exits 0, faking `asep
-/// affected` output without a real sandbox.
-fn fake_affected_bwrap_shim(lines: &[&str]) -> PathBuf {
-    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-fake-affected");
+/// bwrap shim that prints one JSON object whose `commands` array holds `cmds`
+/// and exits 0, faking `asep affected` output without a real sandbox.
+fn affected_json_bwrap_shim(cmds: &[&str]) -> PathBuf {
+    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-affected-json");
     let mut shim = fs::File::create(&shim_path).expect("create shim");
     writeln!(shim, "#!/bin/sh").expect("write shebang");
-    for line in lines {
-        writeln!(shim, "echo {}", line).expect("write echo");
-    }
+    let joined = cmds.join("\", \"");
+    writeln!(
+        shim,
+        "printf '%s\\n' '{{\"requirements\":[],\"impls\":[],\"tests\":[],\"adrs\":[],\"commands\":[\"{joined}\"],\"provenance\":{{}}}}'",
+    )
+    .expect("write affected json");
     writeln!(shim, "exit 0").expect("write exit");
     drop(shim);
     let mut perms = fs::metadata(&shim_path)
@@ -449,4 +473,94 @@ fn fake_affected_bwrap_shim(lines: &[&str]) -> PathBuf {
     perms.set_mode(0o755);
     fs::set_permissions(&shim_path, perms).expect("shim perms");
     shim_path
+}
+
+// @test:FR-AUD-03
+#[test]
+fn zero_executed_tests_is_error() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    let commit = head_of(root_path);
+
+    std::env::set_var("ASEP_BWRAP", zero_tests_bwrap_shim().to_str().unwrap());
+
+    let result = run_scoped_acceptance(root_path, &commit);
+    assert!(result.is_err(), "expected zero-tests error: {result:?}");
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("zero tests"),
+        "error must mention zero tests: {error}"
+    );
+}
+
+/// bwrap shim: `asep affected` prints the affected JSON plus a cargo test
+/// command line, but scoped test invocations print no `test result:` line,
+/// so zero tests execute and run_scoped_acceptance must fail.
+fn zero_tests_bwrap_shim() -> PathBuf {
+    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-zero-tests");
+    let log = bwrap_log();
+    let mut shim = fs::File::create(&shim_path).expect("create shim");
+    writeln!(shim, "#!/bin/sh").expect("write shebang");
+    writeln!(shim, "echo \"$@\" >> {}", log.display()).expect("write log line");
+    writeln!(shim, "case \"$*\" in").expect("write case open");
+    writeln!(
+        shim,
+        "  *affected*) printf '%s\\n' '{}' 'cargo test --test scoped_traceability' ;;",
+        AFFECTED_JSON
+    )
+    .expect("write affected arm");
+    writeln!(shim, "esac").expect("write case close");
+    writeln!(shim, "exit 0").expect("write exit");
+    drop(shim);
+    let mut perms = fs::metadata(&shim_path)
+        .expect("shim metadata")
+        .permissions();
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).expect("shim perms");
+    shim_path
+}
+
+// @test:FR-AUD-02
+#[test]
+fn dirty_tree_evidence_is_rejected() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    fs::write(root_path.join("dirty.txt"), "dirty\n").expect("write dirty.txt");
+    let result = run_scoped_acceptance(root_path, &head_of(root_path));
+    assert!(result.is_err(), "expected dirty tree error: {result:?}");
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("dirty") || error.contains("untracked"),
+        "error must mention dirty/untracked: {error}"
+    );
+    assert!(
+        !root_path.join("evidence/semantic/REQ-ALPHA.md").is_file(),
+        "no evidence written for REQ-ALPHA"
+    );
+}
+
+#[test]
+fn head_mismatch_is_rejected() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _root = scoped_acceptance_root();
+    let root_path = _root.path();
+    let policy_path = root_path.join(".spec-engine/acceptance.json");
+    let policy = format!(
+        r#"{{
+        "approved_commit": "deadbeef",
+        "changed_paths": ["docs/PRD.md"],
+        "evidence_dir": "evidence"
+    }}"#
+    );
+    fs::write(&policy_path, policy).expect("rewrite policy");
+    let result = run_scoped_acceptance(root_path, "deadbeef");
+    assert!(result.is_err(), "expected HEAD mismatch error: {result:?}");
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("HEAD") || error.contains("commit"),
+        "error must mention HEAD or commit: {error}"
+    );
 }

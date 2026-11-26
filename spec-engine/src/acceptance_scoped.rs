@@ -7,6 +7,8 @@
 
 use regex::Regex;
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,6 +34,79 @@ struct AcceptancePolicy {
     evidence_dir: String,
 }
 
+/// Immutable snapshot identity: commit must equal HEAD and tree must be clean.
+#[derive(Debug)]
+pub struct SnapshotIdentity {
+    pub revision: String,
+    pub tree_digest: String,
+    pub changed_paths_digest: String,
+    pub policy_digest: String,
+    pub toolchain: String,
+}
+
+/// Encodes the digest of the supplied bytes as lowercase hexadecimal.
+fn hex(bytes: impl AsRef<[u8]>) -> String {
+    let digest = Sha256::digest(bytes.as_ref());
+    format!("{digest:x}")
+}
+
+/// Run `git -C <root>` with `args`; failure to spawn, non-exit-success, or
+/// non-utf8 output is an error. Stdout is trimmed.
+fn git_output(root: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git spawn failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git failed (exit {}): {stderr}", output.status));
+    }
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("git output not utf8: {e}"))
+}
+
+// @impl:FR-AUD-02
+fn snapshot_identity(
+    root: &Path,
+    commit: &str,
+    policy_text: &str,
+    changed_paths: &[String],
+) -> Result<SnapshotIdentity, String> {
+    let head = git_output(root, &["rev-parse", "HEAD"])?;
+    if head != commit {
+        return Err(format!("HEAD {head} is not the approved commit {commit}"));
+    }
+    let tree_digest = git_output(root, &["rev-parse", &format!("{commit}^{{tree}}")])?;
+    let dirty = git_output(root, &["status", "--porcelain"])?;
+    if !dirty.is_empty() {
+        return Err(format!("working tree is dirty: {dirty}"));
+    }
+    let policy_digest = hex(policy_text);
+    let mut sorted = changed_paths.to_vec();
+    sorted.sort();
+    let changed_paths_digest = hex(sorted.join("\n"));
+    let rustc = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .map_err(|e| format!("rustc spawn failed: {e}"))?;
+    if !rustc.status.success() {
+        return Err("rustc --version failed".to_string());
+    }
+    let toolchain = String::from_utf8(rustc.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("rustc --version output not utf8: {e}"))?;
+    Ok(SnapshotIdentity {
+        revision: head,
+        tree_digest,
+        changed_paths_digest,
+        policy_digest,
+        toolchain,
+    })
+}
+
 /// Run scoped acceptance for `commit` against `root`.
 ///
 /// Every gate command runs inside an unprivileged `bwrap` sandbox. If `bwrap`
@@ -52,6 +127,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
             policy.approved_commit
         ));
     }
+    let identity = snapshot_identity(root, commit, &policy_text, &policy.changed_paths)?;
 
     let sysroot = sysroot()?;
     let scratch = scratch_dir()?;
@@ -76,10 +152,15 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         &[SANDBOX_EXE, "check", "--rigor", "T1"],
         "structural (check --rigor T1)",
     )?;
-    // Gate (c): ScopedTests from `asep affected <changed_paths>`.
-    let test_cmds = affected_test_commands(&base, &policy.changed_paths)?;
-    for cmd in test_cmds {
-        run_bwrap(&base, &["sh", "-c", &cmd], &format!("scoped test: {cmd}"))?;
+    // Gate (c): ScopedTests from `asep affected <changed_paths> --json`.
+    let plan = build_test_plan(&base, &policy.changed_paths, root)?;
+    let mut total_executed: usize = 0;
+    for cmd in &plan.commands {
+        let stdout = run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
+        total_executed += executed_test_count(&stdout);
+    }
+    if total_executed == 0 {
+        return Err("scoped acceptance executed zero tests".to_string());
     }
     // Gate (d): Format.
     run_bwrap(
@@ -91,6 +172,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     // Evidence: one semantic file per `@req:*:MUST` in docs/PRD.md.
     let evidence_dir = resolve_evidence_dir(root, &policy.evidence_dir)?;
     let req_ids = must_req_ids(root)?;
+    let in_scope = in_scope_requirement_ids(&base, &policy.changed_paths)?;
     let semantic_dir = evidence_dir.join("semantic");
     fs::create_dir_all(&semantic_dir).map_err(|e| {
         format!(
@@ -100,8 +182,23 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     })?;
     let changed_list = policy.changed_paths.join(", ");
     for req_id in &req_ids {
+        let proven = in_scope.contains(req_id) && total_executed > 0;
+        let verdict = match proven {
+            true => "ACCEPTED",
+            false => "UNPROVEN",
+        };
+        let scope = match proven {
+            true => "in_scope",
+            false => "out_of_scope",
+        };
         let content = format!(
-            "reviewer: scoped-trusted-runner\nverdict: ACCEPTED\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n"
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_selected: {}\ntests_executed: {total_executed}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            plan.selected,
+            identity.revision,
+            identity.tree_digest,
+            identity.changed_paths_digest,
+            identity.policy_digest,
+            identity.toolchain,
         );
         fs::write(semantic_dir.join(format!("{req_id}.md")), content)
             .map_err(|e| format!("failed to write evidence for {req_id}: {e}"))?;
@@ -235,58 +332,156 @@ fn run_bwrap(base: &[String], cmd: &[&str], label: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Run `asep affected <changed_paths>` inside the sandbox and return the lines
-/// beginning with `cargo test` to execute as scoped tests.
-pub fn affected_test_commands(
-    base: &[String],
-    changed_paths: &[String],
-) -> Result<Vec<String>, String> {
-    let mut cmd = vec![SANDBOX_EXE.to_string(), "affected".to_string()];
-    cmd.extend(changed_paths.iter().cloned());
-    let mut args: Vec<String> = base.to_vec();
-    args.push("--".to_string());
-    args.extend(cmd);
+/// Run bwrap like `run_bwrap` but return trimmed stdout on success and Err
+/// (with stderr) on failure.
+fn run_bwrap_capture(base: &[String], cmd: &[&str], label: &str) -> Result<String, String> {
+    require_bwrap()?;
+    let mut command_args: Vec<String> = base.iter().cloned().collect();
+    command_args.push("--".to_string());
+    command_args.extend(cmd.iter().map(|s| s.to_string()));
     let output = Command::new(bwrap_bin())
-        .args(&args)
+        .args(&command_args)
         .output()
-        .map_err(|e| format!("failed to run bwrap for affected: {e}"))?;
+        .map_err(|e| format!("failed to run bwrap for {label}: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("asep affected failed: {stderr}"));
+        return Err(format!("{label} failed (exit {}): {stderr}", output.status));
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| line.starts_with("cargo test"))
-        .filter(|line| !names_nonexistent_test_target(line))
-        .map(|line| line.to_string())
-        .collect())
+    String::from_utf8(output.stdout)
+        .map(|s| s.trim().to_string())
+        .map_err(|e| format!("bwrap output not utf8 for {label}: {e}"))
 }
 
-/// Test targets that `asep affected` may emit but which do not exist in this
-/// repo; commands naming them are dropped so scoped tests never fail on a
-/// missing test target.
-const NONEXISTENT_TEST_TARGETS: &[&str] = &["TRACEABILITY", "traceability_tests"];
+// @impl:FR-AUD-03
+// Run `asep affected <paths> --json` inside the sandbox and collect the
+/// requirement ids. Fail closed on spawn or JSON parse failure.
+fn in_scope_requirement_ids(
+    base: &[String],
+    changed_paths: &[String],
+) -> Result<HashSet<String>, String> {
+    let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
+    cmd.extend(changed_paths.iter().map(|s| s.as_str()));
+    cmd.push("--json");
+    let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
+    let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
+    let value = match values.next() {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
+        None => return Err("asep affected output is empty".to_string()),
+    };
+    let requirements = match value.get("requirements").and_then(|v| v.as_array()) {
+        Some(array) => array,
+        None => return Err("asep affected output missing requirements array".to_string()),
+    };
+    let mut ids: HashSet<String> = HashSet::new();
+    for req in requirements {
+        let id = match req.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => return Err("requirement entry missing id string".to_string()),
+        };
+        ids.insert(id);
+    }
+    Ok(ids)
+}
 
-/// True when `line` is a `cargo test --test <target>` command whose target is
-/// nonexistent.
-fn names_nonexistent_test_target(line: &str) -> bool {
-    let mut tokens = line.split_whitespace();
-    let mut found = false;
-    for token in tokens.by_ref() {
-        match token {
-            "--test" => match tokens.next() {
-                Some(target) => {
-                    found = NONEXISTENT_TEST_TARGETS.contains(&target);
-                    break;
-                }
-                None => break,
-            },
-            _ => {}
+/// Sum the `N` in lines matching `test result: ok. N passed`; ignore lines
+/// with 0.
+fn executed_test_count(output: &str) -> usize {
+    let mut total: usize = 0;
+    for line in output.lines() {
+        let line = line.trim();
+        if !line.starts_with("test result: ok.") {
+            continue;
+        }
+        let after_ok = &line["test result: ok.".len()..];
+        let count: usize = match after_ok.split_whitespace().next().unwrap_or("").parse() {
+            Ok(n) => n,
+            Err(_) => 0,
+        };
+        if count > 0 {
+            total += count;
         }
     }
-    found
+    total
+}
+
+// @impl:FR-AUD-05
+#[derive(Debug)]
+pub struct TestPlan {
+    pub commands: Vec<String>,
+    pub selected: usize,
+}
+
+/// Run `asep affected <paths> --json` inside the sandbox and build a test plan
+/// from the `commands` array of the first JSON value. Fail closed on spawn,
+/// JSON parse, or missing/invalid `commands`. Commands beginning with
+/// `cargo test` get `-p asep` inserted after `cargo test` unless they already
+/// carry a `-p` token. A command naming a `--test <target>` whose
+/// `root/spec-engine/tests/<target>.rs` does not exist is replaced with the
+/// `cargo test -p asep --lib` fallback; identical fallbacks are deduplicated.
+/// Target discovery is dynamic: the tests directory is consulted, no target
+/// list is hardcoded.
+pub fn build_test_plan(
+    base: &[String],
+    changed_paths: &[String],
+    root: &Path,
+) -> Result<TestPlan, String> {
+    let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
+    cmd.extend(changed_paths.iter().map(|s| s.as_str()));
+    cmd.push("--json");
+    let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
+    let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
+    let value = match values.next() {
+        Some(Ok(v)) => v,
+        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
+        None => return Err("asep affected output is empty".to_string()),
+    };
+    let commands = match value.get("commands").and_then(|v| v.as_array()) {
+        Some(array) => array,
+        None => return Err("asep affected output missing commands array".to_string()),
+    };
+    const FALLBACK: &str = "cargo test -p asep --lib";
+    let tests_dir = root.join("spec-engine").join("tests");
+    let mut planned: Vec<String> = Vec::new();
+    let mut fallbacks: HashSet<String> = HashSet::new();
+    for item in commands {
+        let command = match item.as_str() {
+            Some(s) => s.to_string(),
+            None => return Err("asep affected command is not a string".to_string()),
+        };
+        let mut final_cmd = command;
+        let is_cargo_test = final_cmd.starts_with("cargo test");
+        let has_p = final_cmd.split_whitespace().any(|token| token == "-p");
+        if is_cargo_test && !has_p {
+            let rest = final_cmd.strip_prefix("cargo test").unwrap_or("");
+            final_cmd = format!("cargo test -p asep{rest}");
+        }
+        let missing_target = test_target(&final_cmd)
+            .map(|target| !tests_dir.join(format!("{target}.rs")).is_file())
+            .unwrap_or(false);
+        if missing_target {
+            fallbacks.insert(FALLBACK.to_string());
+            continue;
+        }
+        planned.push(final_cmd);
+    }
+    planned.extend(fallbacks.into_iter());
+    let selected = planned.len();
+    Ok(TestPlan {
+        commands: planned,
+        selected,
+    })
+}
+
+/// Target of a `--test <target>` token in `command`, or None when absent.
+fn test_target(command: &str) -> Option<&str> {
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    for (i, token) in tokens.iter().enumerate() {
+        if *token == "--test" {
+            return tokens.get(i + 1).copied();
+        }
+    }
+    None
 }
 
 fn resolve_evidence_dir(root: &Path, evidence_dir: &str) -> Result<PathBuf, String> {

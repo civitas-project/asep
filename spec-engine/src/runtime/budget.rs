@@ -1,4 +1,4 @@
-// @impl:FR-BUDGET-01 // @impl:FR-BUDGET-02 // @impl:FR-BUDGET-03
+// @impl:FR-BUDGET-01 // @impl:FR-BUDGET-02 // @impl:FR-BUDGET-03 // @impl:FR-AUD-22
 
 use serde::{Deserialize, Serialize};
 
@@ -32,8 +32,34 @@ impl BudgetTracker {
         self.tool_calls = self.tool_calls.saturating_add(1);
     }
 
-    pub fn record_cost(&mut self, usd: f64) {
+    pub fn try_record_cost(&mut self, usd: f64) -> Result<(), String> {
+        if !usd.is_finite() || usd < 0.0 {
+            return Err(format!(
+                "invalid cost: {usd} (must be finite and non-negative)"
+            ));
+        }
         self.cost_usd += usd;
+        Ok(())
+    }
+
+    pub fn reserve_cost(&mut self, usd: f64) -> Result<(), String> {
+        if !usd.is_finite() || usd < 0.0 {
+            return Err(format!(
+                "invalid cost: {usd} (must be finite and non-negative)"
+            ));
+        }
+        let limit = match self.budget.max_cost_usd {
+            Some(limit) => limit,
+            None => return self.try_record_cost(usd),
+        };
+        if self.cost_usd + usd > limit {
+            return Err(format!(
+                "budget exhausted: cost {} + {usd} > {limit}",
+                self.cost_usd
+            ));
+        }
+        self.cost_usd += usd;
+        Ok(())
     }
 
     pub fn record_latency(&mut self, ms: u64) {
@@ -135,5 +161,61 @@ mod tests {
         t.record_tokens(1_000_000);
         assert!(t.exceeded().is_none());
         assert!(t.blocked_message().is_none());
+    }
+
+    // @test:FR-AUD-22
+    #[test]
+    fn cost_rejects_negative_nan_inf() {
+        let mut t = BudgetTracker::default();
+        assert!(t.try_record_cost(-1.0).is_err());
+        assert!(t.try_record_cost(f64::NAN).is_err());
+        assert!(t.try_record_cost(f64::INFINITY).is_err());
+        assert!(t.try_record_cost(f64::NEG_INFINITY).is_err());
+        assert_eq!(t.cost_usd, 0.0);
+        assert!(t.reserve_cost(-0.5).is_err());
+        assert!(t.reserve_cost(f64::NAN).is_err());
+        assert_eq!(t.cost_usd, 0.0);
+    }
+
+    #[test]
+    fn cost_accumulates_normally() {
+        let mut t = BudgetTracker::default();
+        t.try_record_cost(1.0).unwrap();
+        t.try_record_cost(2.5).unwrap();
+        assert_eq!(t.cost_usd, 3.5);
+    }
+
+    #[test]
+    fn reserve_blocks_exhausted_budget() {
+        let mut t = BudgetTracker {
+            budget: ResourceBudget {
+                max_cost_usd: Some(5.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        t.reserve_cost(5.0).unwrap();
+        assert_eq!(t.exceeded(), None);
+        assert_eq!(t.cost_usd, 5.0);
+        assert!(t.reserve_cost(0.1).is_err());
+        assert_eq!(t.cost_usd, 5.0);
+        t.try_record_cost(1.0).unwrap();
+        assert_eq!(t.exceeded(), Some("cost"));
+    }
+
+    #[test]
+    fn reserve_records_within_budget() {
+        let mut t = BudgetTracker {
+            budget: ResourceBudget {
+                max_cost_usd: Some(5.0),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        t.reserve_cost(2.0).unwrap();
+        assert_eq!(t.exceeded(), None);
+        t.reserve_cost(2.0).unwrap();
+        assert_eq!(t.exceeded(), None);
+        assert_eq!(t.cost_usd, 4.0);
     }
 }

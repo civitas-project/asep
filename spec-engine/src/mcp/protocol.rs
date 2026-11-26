@@ -55,3 +55,38 @@ impl JsonRpcResponse {
         }
     }
 }
+
+// @impl:FR-AUD-34
+pub fn validate_request(value: &serde_json::Value) -> Result<JsonRpcRequest, &'static str> {
+    let jsonrpc = match value.get("jsonrpc").and_then(|v| v.as_str()) {
+        Some("2.0") => "2.0",
+        _ => return Err("invalid_request"),
+    };
+
+    let id = match value.get("id") {
+        None => None,
+        Some(v) => match v {
+            serde_json::Value::String(_) => Some(v.clone()),
+            n @ serde_json::Value::Number(_) if n.is_i64() || n.is_u64() => Some(v.clone()),
+            serde_json::Value::Null => None,
+            _ => return Err("invalid_request"),
+        },
+    };
+
+    let method = match value.get("method").and_then(|v| v.as_str()) {
+        Some(m) if !m.is_empty() => m,
+        _ => return Err("invalid_request"),
+    };
+
+    let params = value
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    Ok(JsonRpcRequest {
+        jsonrpc: jsonrpc.to_string(),
+        id,
+        method: method.to_string(),
+        params,
+    })
+}

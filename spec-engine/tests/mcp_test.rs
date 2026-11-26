@@ -506,19 +506,36 @@ fn test_accept_scoped_success_writes_evidence() {
         .arg("test")
         .status()
         .expect("git config name");
+    fs::write(root_path.join(".gitignore"), "acceptance.json\nevidence/\n")
+        .expect("write .gitignore");
     fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
-    git(root_path, &["add", "README.md"]);
-    git(root_path, &["commit", "-q", "-m", "init"]);
-
-    // Policy + PRD with one MUST requirement.
     fs::create_dir_all(root_path.join("docs")).expect("docs dir");
     fs::write(
         root_path.join("docs/PRD.md"),
         "# PRD\n\n@req:REQ-ALPHA:MUST\n",
     )
     .expect("write PRD");
+
+    git(
+        root_path,
+        &["add", ".gitignore", "README.md", "docs/PRD.md"],
+    );
+    git(root_path, &["commit", "-q", "-m", "init"]);
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root_path)
+        .arg("rev-parse")
+        .arg("HEAD")
+        .output()
+        .expect("git rev-parse HEAD");
+    let commit = String::from_utf8(output.stdout)
+        .expect("commit sha is utf-8")
+        .trim()
+        .to_string();
+
+    // Policy + PRD with one MUST requirement.
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
-    let commit = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
     let policy = format!(
         r#"{{"approved_commit":"{commit}","changed_paths":["docs/PRD.md"],"evidence_dir":"evidence"}}"#
     );
@@ -712,7 +729,7 @@ fn test_asep_affected_returns_structured_report() {
     fs::write(
         root.join("spec.rel"),
         "@rel:satisfies:IMP-ALPHA->REQ-ALPHA \"impl satisfies req\"\n\
-         @rel:verifies:TEST-BETA->IMP-ALPHA \"test verifies impl\"\n\
+         @rel:verifies:TEST-BETA->REQ-ALPHA \"test verifies req\"\n\
          @rel:informs:REQ-ALPHA->ADR-1 \"req informs adr\"\n",
     )
     .unwrap();
@@ -879,6 +896,37 @@ fn test_asep_context_rejects_empty_and_missing_paths() {
     }
 }
 
+// @test:FR-AUD-34
+#[test]
+fn test_fr_aud_34_jsonrpc_error_categories() {
+    let repo_path = PathBuf::from(".");
+
+    let assert_code = |req: &str, code: i64| {
+        let res = process_jsonrpc_request(req, &repo_path).expect("must return an error frame");
+        let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+        assert_eq!(val["error"]["code"], code);
+    };
+
+    assert_code("{broken json", -32700);
+    assert_code(r#"{"jsonrpc":"1.0","id":1,"method":"initialize"}"#, -32600);
+    assert_code(
+        r#"{"jsonrpc":"2.0","id":{"foo":1},"method":"ping"}"#,
+        -32600,
+    );
+    assert_code(r#"{"jsonrpc":"2.0","id":[1],"method":"ping"}"#, -32600);
+    assert_code(
+        r#"{"jsonrpc":"2.0","id":7,"method":"no/such.method","params":{}}"#,
+        -32601,
+    );
+    assert_code(
+        r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"does-not-exist-tool"}}"#,
+        -32602,
+    );
+
+    let res = process_jsonrpc_request(r#"{"jsonrpc":"2.0","method":"ping"}"#, &repo_path);
+    assert!(res.is_none(), "notification must not produce a response");
+}
+
 fn git(root: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
@@ -893,7 +941,23 @@ fn git(root: &Path, args: &[&str]) {
 fn bwrap_shim() -> PathBuf {
     let shim_path = std::env::temp_dir().join("asep-mcp-test-bwrap");
     let mut shim = fs::File::create(&shim_path).expect("create shim");
-    writeln!(shim, "#!/bin/sh\nexit 0\n").expect("write shim");
+    writeln!(
+        shim,
+        r#"#!/bin/sh
+# Fake bwrap shim: scoped gates exit 0. `asep affected --json` returns a plan
+# that covers the PRD requirement; `sh -c` runs report one passing test.
+case "$*" in
+    *affected*--json*)
+        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
+        ;;
+    *)
+        echo "test result: ok. 1 passed"
+        ;;
+esac
+exit 0
+"#
+    )
+    .expect("write shim");
     drop(shim);
     let mut perms = fs::metadata(&shim_path)
         .expect("shim metadata")
