@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 
 use crate::harness::asymptotic::AsymptoticAnalyzer;
 
+#[cfg(target_os = "linux")]
+use std::collections::HashSet;
+
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Parse a byte size string into bytes.
@@ -201,6 +204,8 @@ pub fn run_cmd_complexity(
 /// Sample RSS (kB -> bytes) of `pid` from `/proc/{pid}/status`, preferring
 /// `VmHWM` (high-water mark) and falling back to `VmRSS`. Returns 0 when
 /// `/proc` is unavailable or the process has already exited.
+/// Kept for compatibility; `run_cmd_memory_detailed` does not use it.
+#[allow(dead_code)]
 fn sample_rss_bytes(pid: u32) -> usize {
     #[cfg(target_os = "linux")]
     {
@@ -231,19 +236,118 @@ fn sample_rss_bytes(pid: u32) -> usize {
     }
 }
 
-/// @impl:FR-AUD-10
-/// Run `cmd` through the platform shell while sampling peak RSS, enforcing
-/// `timeout` and `peak_budget_bytes`. Returns the observed peak RSS in bytes.
-pub fn run_cmd_memory(
+/// @impl:FR-AUD-12
+/// Peak RSS of `root_pid` and every descendant discovered through
+/// `/proc/<pid>/task/<tid>/children`, in bytes. Descendants are collected in
+/// a `HashSet<u32>` (cycle avoidance), recursion stops at depth 16, and each
+/// pid's resident pages come from `/proc/<pid>/statm` times a documented
+/// page size of 4096 (the Linux baseline page size). Any `/proc` read
+/// failure returns `Err` with path context; an exited process is never
+/// reported as a zero-byte measurement.
+#[cfg(target_os = "linux")]
+fn process_tree_rss_bytes(root_pid: u32) -> Result<usize, String> {
+    const PAGE_SIZE: usize = 4096; // Linux baseline page size; sysconf(_SC_PAGESIZE) may differ on exotic kernels.
+    std::fs::read_to_string(format!("/proc/{root_pid}/status"))
+        .map_err(|e| format!("failed to read /proc/{root_pid}/status: {e}"))?;
+    let mut pids = HashSet::new();
+    discover_tree(root_pid, 0, &mut pids)?;
+    pids.insert(root_pid);
+    let mut total = 0usize;
+    for pid in pids {
+        let pages = statm_resident_pages(pid)?;
+        total = total
+            .checked_add(pages * PAGE_SIZE)
+            .ok_or("rss sum overflow".to_string())?;
+    }
+    Ok(total)
+}
+
+#[cfg(target_os = "linux")]
+fn discover_tree(pid: u32, depth: u32, seen: &mut HashSet<u32>) -> Result<(), String> {
+    if depth >= 16 {
+        return Ok(());
+    }
+    for tid in task_ids(pid)? {
+        let content = std::fs::read_to_string(format!("/proc/{pid}/task/{tid}/children"))
+            .map_err(|e| format!("failed to read /proc/{pid}/task/{tid}/children: {e}"))?;
+        for token in content.split_whitespace() {
+            let child: u32 = token
+                .parse()
+                .map_err(|e| format!("invalid child pid '{token}' in /proc/{pid}/task/{tid}/children: {e}"))?;
+            if seen.insert(child) {
+                discover_tree(child, depth + 1, seen)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn task_ids(pid: u32) -> Result<Vec<u32>, String> {
+    let mut ids = Vec::new();
+    for entry in std::fs::read_dir(format!("/proc/{pid}/task"))
+        .map_err(|e| format!("failed to read /proc/{pid}/task: {e}"))?
+    {
+        let entry = entry
+            .map_err(|e| format!("failed to read task dir entry for /proc/{pid}/task: {e}"))?;
+        let id: u32 = entry
+            .file_name()
+            .to_string_lossy()
+            .parse()
+            .map_err(|e| format!("non-numeric task dir under /proc/{pid}/task: {e}"))?;
+        ids.push(id);
+    }
+    Ok(ids)
+}
+
+#[cfg(target_os = "linux")]
+fn statm_resident_pages(pid: u32) -> Result<usize, String> {
+    let content = std::fs::read_to_string(format!("/proc/{pid}/statm"))
+        .map_err(|e| format!("failed to read /proc/{pid}/statm: {e}"))?;
+    let pages = content
+        .split_whitespace()
+        .nth(1)
+        .ok_or(format!("missing resident field in /proc/{pid}/statm"))?
+        .parse()
+        .map_err(|e| format!("invalid resident field in /proc/{pid}/statm: {e}"))?;
+    Ok(pages)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_tree_rss_bytes(_root_pid: u32) -> Result<usize, String> {
+    Err("memory measurement unavailable on this platform".to_string())
+}
+
+#[cfg(target_os = "linux")]
+const MEMORY_METHOD: &str = "linux-process-tree-rss";
+#[cfg(not(target_os = "linux"))]
+const MEMORY_METHOD: &str = "unavailable";
+
+#[cfg(target_os = "linux")]
+const MEMORY_COMPLETE: bool = true;
+#[cfg(not(target_os = "linux"))]
+const MEMORY_COMPLETE: bool = false;
+
+/// Peak RSS measurement result.
+pub struct MemoryMeasurement {
+    pub peak_bytes: usize,
+    pub method: &'static str,
+    pub complete: bool,
+}
+
+/// Run `cmd` through the platform shell while sampling peak RSS of the whole
+/// process tree, enforcing `timeout` and `peak_budget_bytes`. A sampling
+/// failure returns `Err`; zero is never accepted as a valid measurement.
+pub fn run_cmd_memory_detailed(
     cmd: &str,
     peak_budget_bytes: usize,
     timeout: Duration,
-) -> Result<usize, String> {
+) -> Result<MemoryMeasurement, String> {
     let mut child = spawn_shell_quiet(cmd)?;
     let pid = child.id();
     let start = Instant::now();
-    let mut peak: usize = sample_rss_bytes(pid);
-
+    let mut peak = process_tree_rss_bytes(pid)
+        .map_err(|e| format!("memory measurement unavailable: {e}"))?;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -253,7 +357,9 @@ pub fn run_cmd_memory(
                 break;
             }
             Ok(None) => {
-                peak = peak.max(sample_rss_bytes(pid));
+                let sample = process_tree_rss_bytes(pid)
+                    .map_err(|e| format!("memory measurement unavailable: {e}"))?;
+                peak = peak.max(sample);
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -265,14 +371,27 @@ pub fn run_cmd_memory(
         }
     }
 
-    peak = peak.max(sample_rss_bytes(pid));
-
     if peak > peak_budget_bytes {
         return Err(format!(
             "peak RSS {peak} bytes exceeds budget {peak_budget_bytes} bytes"
         ));
     }
-    Ok(peak)
+    Ok(MemoryMeasurement {
+        peak_bytes: peak,
+        method: MEMORY_METHOD,
+        complete: MEMORY_COMPLETE,
+    })
+}
+
+/// @impl:FR-AUD-10
+/// Run `cmd` through the platform shell while sampling peak RSS, enforcing
+/// `timeout` and `peak_budget_bytes`. Returns the observed peak RSS in bytes.
+pub fn run_cmd_memory(
+    cmd: &str,
+    peak_budget_bytes: usize,
+    timeout: Duration,
+) -> Result<usize, String> {
+    run_cmd_memory_detailed(cmd, peak_budget_bytes, timeout).map(|m| m.peak_bytes)
 }
 
 #[cfg(test)]
@@ -389,5 +508,62 @@ mod tests {
             Duration::from_secs(30),
         );
         assert!(ok.is_ok(), "expected ok, got {ok:?}");
+    }
+
+    // @test:FR-AUD-12
+    #[test]
+    fn memory_measurement_records_method() {
+        let result = run_cmd_memory_detailed(
+            "sh -c 'sleep 0.2'",
+            10 * 1_024 * 1_024 * 1_024,
+            Duration::from_secs(30),
+        );
+        #[cfg(target_os = "linux")]
+        {
+            let m = result.unwrap();
+            assert_eq!(m.method, "linux-process-tree-rss");
+            assert!(m.complete);
+            assert!(m.peak_bytes > 0, "peak was {}", m.peak_bytes);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(result.is_err(), "expected err on non-linux, got {result:?}");
+        }
+    }
+
+    #[test]
+    fn child_process_memory_is_counted() {
+        let cmd = match memory_intensive_command() {
+            Some(c) => c,
+            None => {
+                eprintln!("skip child_process_memory_is_counted: no python3 or perl available");
+                return;
+            }
+        };
+        let m = run_cmd_memory_detailed(&cmd, 10 * 1_024 * 1_024 * 1_024, Duration::from_secs(30))
+            .unwrap_or_else(|e| panic!("memory measurement failed: {e}"));
+        assert!(
+            m.peak_bytes > 8 * 1_024 * 1_024,
+            "peak {} bytes is not above 8 MiB",
+            m.peak_bytes
+        );
+    }
+
+    fn memory_intensive_command() -> Option<String> {
+        let probes = [
+            ("python3", "a=bytearray(8*1024*1024)"),
+            ("perl", "my $a=\"x\" x (8*1024*1024);"),
+        ];
+        for (interpreter, code) in probes {
+            let ok = std::process::Command::new(interpreter)
+                .arg("-c")
+                .arg(code)
+                .status()
+                .map_or(false, |status| status.success());
+            if ok {
+                return Some(format!("{interpreter} -c '{code}'"));
+            }
+        }
+        None
     }
 }
