@@ -1,6 +1,8 @@
 .superpowers/
 superpowers/
 **/target/
+!vendor/cc/src/target/
+!vendor/cc/src/target/**
 .agents/
 .spec-engine/
 
