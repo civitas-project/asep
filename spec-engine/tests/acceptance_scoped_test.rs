@@ -290,11 +290,8 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .arg("test")
         .status()
         .expect("git config name");
-    fs::write(
-        root_path.join(".gitignore"),
-        "acceptance.json\nevidence/\n",
-    )
-    .expect("write .gitignore");
+    fs::write(root_path.join(".gitignore"), "acceptance.json\nevidence/\n")
+        .expect("write .gitignore");
     fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
     fs::create_dir_all(root_path.join("docs")).expect("docs dir");
     fs::write(
@@ -417,10 +414,8 @@ fn accept_scoped_cli_rejects_unapproved_commit() {
 // @test:FR-AUD-05
 #[test]
 fn build_test_plan_uses_json_commands_and_adds_package() {
-    let shim_path = affected_json_bwrap_shim(&[
-        "cargo test --test alpha",
-        "cargo test -p other --test beta",
-    ]);
+    let shim_path =
+        affected_json_bwrap_shim(&["cargo test --test alpha", "cargo test -p other --test beta"]);
     std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
 
     let base = bwrap_args(
@@ -439,8 +434,7 @@ fn build_test_plan_uses_json_commands_and_adds_package() {
         plan.commands[0]
     );
     assert_eq!(
-        plan.commands[1],
-        "cargo test -p other --test beta",
+        plan.commands[1], "cargo test -p other --test beta",
         "command that already has -p must be unchanged"
     );
 

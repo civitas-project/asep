@@ -1,6 +1,7 @@
 // @impl:IN-01-CONTRACT
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -317,6 +318,11 @@ pub struct TraceCollector {
     buffer: HashMap<String, Vec<TraceEvent>>,
 }
 
+const MAX_ROTATION_ATTEMPTS: usize = 1024;
+
+// @impl:FR-AUD-19
+static ROTATION_ORDINAL: AtomicU64 = AtomicU64::new(0);
+
 impl TraceCollector {
     pub fn new(root: &Path, config: &TelemetryConfig) -> Self {
         let mut buffer_cap = config.max_buffer_events;
@@ -375,17 +381,17 @@ impl TraceCollector {
         fs::create_dir_all(&self.target_dir).map_err(|e| e.to_string())?;
         let key = trace_key(trace_id);
         let active = self.target_dir.join(format!("{key}.ndjson"));
-        let mut rotate = false;
+        let serialized: Vec<String> = events
+            .iter()
+            .map(|event| serialize_event(event, &self.allowlist, &self.redact_patterns))
+            .collect::<Result<Vec<_>, _>>()?;
+        let serialized_len: u64 = serialized.iter().map(|line| line.len() as u64 + 1).sum();
+        let mut current_len = 0u64;
         if active.exists() {
-            rotate = fs::metadata(&active).map_err(|e| e.to_string())?.len() >= self.max_bytes;
+            current_len = fs::metadata(&active).map_err(|e| e.to_string())?.len();
         }
-        if rotate {
-            let secs = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_err(|e| e.to_string())?
-                .as_secs();
-            let rotated = self.target_dir.join(format!("{key}.{secs}.ndjson"));
-            fs::rename(&active, &rotated).map_err(|e| e.to_string())?;
+        if active.exists() && current_len + serialized_len > self.max_bytes {
+            self.rotate_segment(&key, &active)?;
         }
         self.expire_rotated_segments(trace_id)?;
         let mut file = fs::OpenOptions::new()
@@ -393,8 +399,7 @@ impl TraceCollector {
             .append(true)
             .open(&active)
             .map_err(|e| e.to_string())?;
-        for event in &events {
-            let line = serialize_event(event, &self.allowlist, &self.redact_patterns)?;
+        for line in &serialized {
             writeln!(file, "{line}").map_err(|e| e.to_string())?;
         }
         file.set_permissions(PermissionsExt::from_mode(0o600))
@@ -402,6 +407,26 @@ impl TraceCollector {
         file.flush().map_err(|e| e.to_string())?;
         self.buffer.remove(trace_id);
         Ok(())
+    }
+
+    fn rotate_segment(&self, key: &str, active: &Path) -> Result<(), String> {
+        let mut ordinal = ROTATION_ORDINAL.fetch_add(1, Ordering::Relaxed);
+        let mut attempts = 0usize;
+        while attempts < MAX_ROTATION_ATTEMPTS {
+            attempts += 1;
+            let rotated = self.target_dir.join(format!("{key}.{ordinal}.ndjson"));
+            if let Ok(file) = fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&rotated)
+            {
+                drop(file);
+                let _ = fs::remove_file(&rotated);
+                return fs::rename(active, &rotated).map_err(|e| e.to_string());
+            }
+            ordinal = ROTATION_ORDINAL.fetch_add(1, Ordering::Relaxed);
+        }
+        Err(format!("rotation destination exhausted for {key}"))
     }
 
     pub fn purge(&self, trace_id: &str) -> Result<(), String> {
@@ -1352,5 +1377,45 @@ mod tests {
         assert!(collector.rotated_segment_paths("run1").unwrap().is_empty());
         collector.purge("run1").unwrap();
         assert!(run10.exists());
+    }
+
+    // @test:FR-AUD-19
+    #[test]
+    fn fr_aud_19_same_second_rotations_retain_unique_segments() {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            max_bytes: 1,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        for seq in 0..6 {
+            collector
+                .record(test_event("trace-same-second", seq, "event"))
+                .unwrap();
+            collector.flush("trace-same-second").unwrap();
+        }
+        let segments = collector
+            .rotated_segment_paths("trace-same-second")
+            .unwrap();
+        assert_eq!(segments.len(), 5);
+        let mut names: Vec<String> = segments
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), 5);
+        for path in &segments {
+            let content = fs::read_to_string(path).unwrap();
+            assert!(!content.is_empty());
+            assert_eq!(content.lines().count(), 1);
+        }
+        let active = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-same-second")));
+        assert!(active.exists());
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
     }
 }

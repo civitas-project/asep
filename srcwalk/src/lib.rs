@@ -1,7 +1,7 @@
 //! Source tree walking with ignore rules, extension/glob filters,
 //! circular-symlink guards, and binary-file detection.
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use glob::Pattern;
 use ignore::WalkBuilder;
 use std::collections::HashSet;
@@ -47,17 +47,51 @@ impl WalkConfig {
     }
 }
 
+// @impl:FR-AUD-31
 /// Build an [`ignore::Walk`] from a [`WalkConfig`].
+///
+/// The `gitignore` switch controls every ignore source: `.ignore`,
+/// `.gitignore`, `.git/exclude`, the global gitignore, and ignore files in
+/// parent directories.
 pub fn build_walker(config: &WalkConfig) -> ignore::Walk {
     let mut builder = WalkBuilder::new(&config.root);
     builder.follow_links(config.follow_symlinks);
     builder.ignore(config.gitignore);
+    builder.git_ignore(config.gitignore);
+    builder.git_global(config.gitignore);
+    builder.git_exclude(config.gitignore);
     builder.parents(config.gitignore);
+    builder.require_git(false);
     if let Some(path) = &config.ignore_file {
-        builder.add_ignore(path);
+        let _ = builder.add_ignore(path);
     }
     builder.max_depth(config.max_depth);
     builder.build()
+}
+
+/// Validate the custom ignore file when one is configured.
+///
+/// Reads the file and reports unreadable files or invalid pattern lines as
+/// errors instead of silently ignoring them.
+pub fn validate_ignore_files(config: &WalkConfig) -> Result<(), Error> {
+    match &config.ignore_file {
+        Some(path) => {
+            let contents = fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("cannot read ignore file {path:?}: {e}"))?;
+            for line in contents.lines() {
+                let pattern = line.trim();
+                if pattern.is_empty() || pattern.starts_with('#') {
+                    continue;
+                }
+                glob::Pattern::new(pattern)
+                    .map_err(|e| {
+                        anyhow::anyhow!("invalid ignore pattern {pattern:?} in {path:?}: {e}")
+                    })?;
+            }
+        }
+        None => {},
+    }
+    Ok(())
 }
 
 /// Returns true if the first 8KB of `path` contain a NUL byte.
@@ -76,13 +110,15 @@ pub fn is_binary_file(path: &Path) -> Result<bool> {
     Ok(buf[..read].contains(&0))
 }
 
+// @impl:FR-AUD-32
 /// Walk `config.root` and return the matching regular files.
 ///
-/// Symbolic-link directories are tracked by canonical path so circular
-/// symlinks cannot loop. Directories, non-regular files, and binary files
-/// are filtered out. Extensions and glob patterns are matched against the
-/// path relative to `config.root`.
+/// Symbolic links to regular files inside `config.root` are followed when
+/// `follow_symlinks` is set and skipped otherwise. Every accepted file is
+/// canonicalized; duplicates are pruned with a canonical-path set, paths
+/// outside `config.root` are rejected, and special files are refused.
 pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
+    validate_ignore_files(config)?;
     let walker = build_walker(config);
     let inc_ext = &config.include_ext;
     let exc_ext = &config.exclude_ext;
@@ -97,11 +133,19 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
         .map(|p| Pattern::new(p).map_err(|e| anyhow::anyhow!("invalid exclude pattern {p:?}: {e}")))
         .collect::<Result<Vec<_>>>()?;
 
+    let root = match config.root.canonicalize() {
+        Ok(root) => root,
+        Err(_) => config.root.clone(),
+    };
+
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<PathBuf> = Vec::new();
 
     for result in walker {
-        let entry = result?;
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
         let path = entry.path();
         let meta = match symlink_metadata(path) {
             Ok(meta) => meta,
@@ -110,15 +154,37 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
         let ft = meta.file_type();
 
         if ft.is_dir() {
-            let canon = match path.canonicalize() {
-                Ok(canon) => canon,
-                Err(_) => continue,
-            };
-            seen.insert(canon);
+            match path.canonicalize() {
+                Ok(canon) => {
+                    seen.insert(canon);
+                }
+                Err(_) => {},
+            }
             continue;
         }
 
-        if !ft.is_file() {
+        if ft.is_symlink() && !config.follow_symlinks {
+            continue;
+        }
+
+        let canon = match path.canonicalize() {
+            Ok(canon) => canon,
+            Err(_) => continue,
+        };
+
+        if !canon.starts_with(&root) {
+            continue;
+        }
+
+        let mut canon_ft = ft;
+        if ft.is_symlink() {
+            canon_ft = match symlink_metadata(&canon) {
+                Ok(meta) => meta.file_type(),
+                Err(_) => continue,
+            };
+        }
+
+        if !canon_ft.is_file() {
             continue;
         }
 
@@ -147,6 +213,10 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
         }
 
         if is_binary_file(path)? {
+            continue;
+        }
+
+        if !seen.insert(canon) {
             continue;
         }
 
@@ -219,5 +289,79 @@ mod tests {
         let config = WalkConfig::new(&dir);
         let files = walk_files(&config).unwrap();
         assert_eq!(files, vec![dir.join("text.txt")]);
+    }
+
+    // @test:FR-AUD-31
+    #[test]
+    fn gitignore_honored_only_when_enabled() {
+        let dir = test_dir("gitignore");
+        write_file(&dir.join(".gitignore"), b"*.log\n");
+        write_file(&dir.join("keep.rs"), b"fn main() {}\n");
+        write_file(&dir.join("drop.log"), b"junk\n");
+
+        let mut disabled = WalkConfig::new(&dir);
+        disabled.gitignore = false;
+        let disabled_files = walk_files(&disabled).unwrap();
+        assert!(disabled_files.iter().any(|path| path.ends_with("drop.log")));
+
+        let enabled = WalkConfig::new(&dir);
+        let enabled_files = walk_files(&enabled).unwrap();
+        assert!(enabled_files.iter().any(|path| path.ends_with("keep.rs")));
+        assert!(!enabled_files.iter().any(|path| path.ends_with("drop.log")));
+    }
+
+    #[test]
+    fn unreadable_custom_ignore_file_errors() {
+        let dir = test_dir("unreadable");
+        write_file(&dir.join("a.rs"), b"fn a() {}\n");
+        let missing = dir.join("does-not-exist.ignore");
+        let mut config = WalkConfig::new(&dir);
+        config.ignore_file = Some(missing);
+        let error = walk_files(&config).unwrap_err();
+        assert!(error.to_string().contains("does-not-exist.ignore"));
+    }
+
+    // @test:FR-AUD-32
+    #[test]
+    fn symlink_to_internal_regular_file_follows_only_when_enabled() {
+        let dir = test_dir("symlink");
+        write_file(&dir.join("target.txt"), b"hello\n");
+        std::os::unix::fs::symlink(&dir.join("target.txt"), &dir.join("link.rs"))
+            .expect("create internal symlink");
+        std::os::unix::fs::symlink("/tmp/opencode-does-not-exist", &dir.join("external.rs"))
+            .expect("create external symlink");
+
+        let mut disabled = WalkConfig::new(&dir);
+        disabled.include_ext.push("rs".to_string());
+        let disabled_files = walk_files(&disabled).unwrap();
+        assert!(disabled_files.is_empty());
+
+        let mut enabled = WalkConfig::new(&dir);
+        enabled.follow_symlinks = true;
+        enabled.include_ext.push("rs".to_string());
+        let enabled_files = walk_files(&enabled).unwrap();
+        assert_eq!(enabled_files, vec![dir.join("link.rs")]);
+    }
+
+    #[test]
+    fn two_aliases_of_same_canonical_file_produce_one_result() {
+        let dir = test_dir("aliases");
+        write_file(&dir.join("target.bin"), b"bin\n");
+        std::os::unix::fs::symlink(&dir.join("target.bin"), &dir.join("a.rs"))
+            .expect("create alias a");
+        std::os::unix::fs::symlink(&dir.join("target.bin"), &dir.join("b.rs"))
+            .expect("create alias b");
+
+        let mut config = WalkConfig::new(&dir);
+        config.follow_symlinks = true;
+        config.include_ext.push("rs".to_string());
+
+        let files = walk_files(&config).unwrap();
+        assert_eq!(files.len(), 1);
+        let name = files[0]
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("file name");
+        assert!(name == "a.rs" || name == "b.rs");
     }
 }

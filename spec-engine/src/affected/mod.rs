@@ -11,8 +11,8 @@
 //! incoming `Verifies` edges lead to tests. Repos without `@rel` tags keep
 //! working via the same-id legacy fallback.
 
-use crate::graph::{build_relation_graph, NodeKind, TraceNode};
 use crate::graph::builder::admissible_edge;
+use crate::graph::{build_relation_graph, NodeKind, TraceNode};
 use crate::policy::{load_policy, EdgeKind};
 use crate::scanner::scan_project_tags;
 use serde::Serialize;

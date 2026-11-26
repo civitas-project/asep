@@ -21,7 +21,8 @@ impl CancellationToken {
     }
 
     fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

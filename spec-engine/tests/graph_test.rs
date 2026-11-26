@@ -375,8 +375,18 @@ fn inadmissible_edge_does_not_close_graph() {
             },
             1,
         ),
-        scanned_tag(TagKind::Impl { id: "FR-X-Impl".to_string() }, 10),
-        scanned_tag(TagKind::Test { id: "FR-X-Test".to_string() }, 20),
+        scanned_tag(
+            TagKind::Impl {
+                id: "FR-X-Impl".to_string(),
+            },
+            10,
+        ),
+        scanned_tag(
+            TagKind::Test {
+                id: "FR-X-Test".to_string(),
+            },
+            20,
+        ),
         scanned_tag(
             TagKind::Rel {
                 kind: EdgeKind::Satisfies,
@@ -403,7 +413,12 @@ fn inadmissible_edge_does_not_close_graph() {
 fn whitespace_verifies_note_is_not_counted() {
     let policy = policy();
     let tags = vec![
-        scanned_tag(TagKind::Test { id: "T-1".to_string() }, 1),
+        scanned_tag(
+            TagKind::Test {
+                id: "T-1".to_string(),
+            },
+            1,
+        ),
         scanned_tag(
             TagKind::Req {
                 id: "R-1".to_string(),
@@ -445,7 +460,12 @@ fn same_id_across_kinds_stays_distinct() {
             },
             1,
         ),
-        scanned_tag(TagKind::Impl { id: "X".to_string() }, 10),
+        scanned_tag(
+            TagKind::Impl {
+                id: "X".to_string(),
+            },
+            10,
+        ),
     ];
 
     let report = build_relation_graph(&tags, &policy);

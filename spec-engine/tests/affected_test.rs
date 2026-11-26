@@ -523,7 +523,9 @@ fn same_id_kinds_traverse_only_admissible_edges() {
         .get("Req:X")
         .expect("Req:X must be reached via an admissible edge");
     assert!(
-        req_chain.iter().any(|h| h.edge.as_deref() == Some("Satisfies:forward")),
+        req_chain
+            .iter()
+            .any(|h| h.edge.as_deref() == Some("Satisfies:forward")),
         "chain: {:?}",
         req_chain
     );

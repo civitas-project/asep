@@ -271,9 +271,9 @@ fn discover_tree(pid: u32, depth: u32, seen: &mut HashSet<u32>) -> Result<(), St
         let content = std::fs::read_to_string(format!("/proc/{pid}/task/{tid}/children"))
             .map_err(|e| format!("failed to read /proc/{pid}/task/{tid}/children: {e}"))?;
         for token in content.split_whitespace() {
-            let child: u32 = token
-                .parse()
-                .map_err(|e| format!("invalid child pid '{token}' in /proc/{pid}/task/{tid}/children: {e}"))?;
+            let child: u32 = token.parse().map_err(|e| {
+                format!("invalid child pid '{token}' in /proc/{pid}/task/{tid}/children: {e}")
+            })?;
             if seen.insert(child) {
                 discover_tree(child, depth + 1, seen)?;
             }
@@ -346,8 +346,8 @@ pub fn run_cmd_memory_detailed(
     let mut child = spawn_shell_quiet(cmd)?;
     let pid = child.id();
     let start = Instant::now();
-    let mut peak = process_tree_rss_bytes(pid)
-        .map_err(|e| format!("memory measurement unavailable: {e}"))?;
+    let mut peak =
+        process_tree_rss_bytes(pid).map_err(|e| format!("memory measurement unavailable: {e}"))?;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
