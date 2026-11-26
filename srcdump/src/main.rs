@@ -125,8 +125,8 @@ struct Cli {
     jobs: usize,
 
     /// Follow symlinks (with safety limits)
-    #[arg(long, default_value_t = true)]
-    follow_symlinks: bool,
+    #[arg(long)]
+    follow_symlinks: Option<bool>,
 
     /// Verbose logging
     #[arg(short, long)]
@@ -198,7 +198,9 @@ fn main() -> anyhow::Result<()> {
     config.gitignore = cli.gitignore;
     config.ignore_file = cli.ignore_file;
     config.jobs = cli.jobs;
-    config.follow_symlinks = cli.follow_symlinks;
+    if let Some(value) = cli.follow_symlinks {
+        config.follow_symlinks = value;
+    }
     config.use_default_includes = !cli.no_default_includes;
 
     info!("Dumping: {}", config.root.display());

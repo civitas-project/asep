@@ -146,7 +146,7 @@ impl Default for Config {
             gitignore: true,
             ignore_file: None,
             jobs: num_cpus::get(),
-            follow_symlinks: true,
+            follow_symlinks: false,
             verbose: false,
             config_file: None,
             use_default_includes: true,

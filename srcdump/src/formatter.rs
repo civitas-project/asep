@@ -3,14 +3,13 @@
 use anyhow::Result;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tiktoken::{get_encoding, CoreBpe};
 
-use crate::config::{Config, OutputMode};
+use crate::config::{Config, OutputFormat, OutputMode};
 
 use tree_sitter::Query;
 
@@ -39,6 +38,26 @@ struct FileEntry {
     symbols: Option<Vec<SymbolInfo>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<String>,
+}
+
+/// Outcome of processing a single file: either an emitted entry with its
+/// original token estimate, or a skip with a reason.
+enum ProcessedFile {
+    Emitted(FileEntry, usize),
+    Skipped { path: String, reason: String },
+}
+
+/// Token accounting for a batch of files.
+#[derive(Debug, Clone, Default)]
+pub struct TokenCounts {
+    /// Tokens estimated from original file content.
+    pub original_tokens: usize,
+    /// Tokens estimated from the exact emitted serialized entry.
+    pub emitted_tokens: usize,
+    /// Number of skipped files.
+    pub skipped: usize,
+    /// Human-readable skip reasons.
+    pub skip_reasons: Vec<String>,
 }
 
 /// Symbol info from srcidx.
@@ -186,52 +205,199 @@ impl Formatter {
     }
 
     /// Format multiple files and write to output (streaming).
+    /// Delegates to `format_dispatch`; existing callers are unchanged.
     pub fn format_files<W: Write>(&mut self, files: Vec<PathBuf>, writer: &mut W) -> Result<()> {
+        self.format_dispatch(files, writer)
+    }
+
+    /// Format files and write to output, branching on `config.format`.
+    /// `Json` writes one JSON document with `files` as an array of entries;
+    /// `Ndjson` writes one JSON object per line (header line + entry lines);
+    /// `Text` writes plain text lines, not NDJSON. Unknown formats error.
+    // @impl:FR-AUD-27
+    pub fn format_dispatch<W: Write>(
+        &mut self,
+        files: Vec<PathBuf>,
+        writer: &mut W,
+    ) -> Result<()> {
+        if self.config.format == OutputFormat::Json {
+            return self.format_json(files, writer);
+        }
+        if self.config.format == OutputFormat::Ndjson {
+            return self.format_ndjson(files, writer);
+        }
+        if self.config.format == OutputFormat::Text {
+            return self.format_text(files, writer);
+        }
+        Err(anyhow::anyhow!(
+            "unsupported output format: {:?}",
+            self.config.format
+        ))
+    }
+
+    /// Token accounting for `files`: tokens estimated from original content
+    /// and from the exact emitted serialized entry, plus skip reasons for
+    /// files that could not be emitted instead of silently dropping them.
+    // @impl:FR-AUD-28
+    pub fn token_counts(&self, files: &[PathBuf]) -> TokenCounts {
+        let (entries, mut counts) = self.prepare_files(files);
+        for entry in &entries {
+            match serde_json::to_string(entry) {
+                Ok(entry_json) => counts.emitted_tokens += self.tokenizer.count(&entry_json),
+                Err(_) => {}
+            }
+        }
+        counts
+    }
+
+    /// Process every file, returning emitted entries and partial counts
+    /// (original tokens and skips). Emitted tokens are added by the caller
+    /// at serialization time.
+    fn prepare_files(&self, files: &[PathBuf]) -> (Vec<FileEntry>, TokenCounts) {
+        let mut entries = Vec::new();
+        let mut counts = TokenCounts::default();
+        for chunk in files.chunks(256) {
+            let results: Vec<_> = chunk
+                .par_iter()
+                .map(|path| self.process_file(path.as_path()))
+                .collect();
+            for result in results {
+                match result {
+                    ProcessedFile::Emitted(entry, original_tokens) => {
+                        counts.original_tokens += original_tokens;
+                        entries.push(entry);
+                    }
+                    ProcessedFile::Skipped { path, reason } => {
+                        counts.skipped += 1;
+                        counts.skip_reasons.push(format!("{path}: {reason}"));
+                    }
+                }
+            }
+        }
+        (entries, counts)
+    }
+
+    /// Write `Json` mode: one JSON document; `files` is an array of entries.
+    fn format_json<W: Write>(&mut self, files: Vec<PathBuf>, writer: &mut W) -> Result<()> {
+        let (entries, mut counts) = self.prepare_files(&files);
+        let mut entry_values = Vec::new();
+        for entry in &entries {
+            let value = serde_json::to_value(entry)?;
+            counts.emitted_tokens += self.tokenizer.count(&value.to_string());
+            entry_values.push(value);
+        }
+        let root = self.config.root.to_string_lossy().to_string();
+        let mode = format!("{:?}", self.config.mode).to_lowercase();
+        let generated = chrono::Utc::now().to_rfc3339();
+        let doc = serde_json::json!({
+            "version": 1u32,
+            "schema": "srcdump.v1",
+            "root": root,
+            "files": entry_values,
+            "total_tokens_est": counts.emitted_tokens,
+            "mode": mode,
+            "generated": generated,
+        });
+        let doc_json = serde_json::to_string(&doc)?;
+        writer.write_all(doc_json.as_bytes())?;
+        writer.write_all(b"\n")?;
+        Ok(())
+    }
+
+    /// Write `Ndjson` mode: one JSON object per line (header line + entry lines).
+    fn format_ndjson<W: Write>(&mut self, files: Vec<PathBuf>, writer: &mut W) -> Result<()> {
+        let (entries, mut counts) = self.prepare_files(&files);
+        let mut lines = Vec::new();
+        for entry in &entries {
+            let line = serde_json::to_string(entry)?;
+            counts.emitted_tokens += self.tokenizer.count(&line);
+            lines.push(line);
+        }
         let header = DumpHeader {
             version: 1,
             schema: "srcdump.v1".to_string(),
             root: self.config.root.to_string_lossy().to_string(),
-            files: files.len(),
-            total_tokens_est: 0,
+            files: entries.len(),
+            total_tokens_est: counts.emitted_tokens,
             mode: format!("{:?}", self.config.mode).to_lowercase(),
             generated: chrono::Utc::now().to_rfc3339(),
         };
-
-        let header_json = serde_json::to_string(&json!({
-            "version": header.version,
-            "schema": header.schema,
-            "root": header.root,
-            "files": header.files,
-            "total_tokens_est": 0,
-            "mode": header.mode,
-            "generated": header.generated,
-        }))?;
+        let header_json = serde_json::to_string(&header)?;
         writer.write_all(header_json.as_bytes())?;
         writer.write_all(b"\n")?;
-
-        for chunk in files.chunks(256) {
-            let entries: Vec<_> = chunk
-                .par_iter()
-                .map(|path| self.process_file(path.as_path()))
-                .collect();
-
-            for (entry, _tokens) in entries.into_iter().flatten() {
-                let entry_json = serde_json::to_string(&entry)?;
-                writer.write_all(entry_json.as_bytes())?;
-                writer.write_all(b"\n")?;
-            }
+        for line in lines {
+            writer.write_all(line.as_bytes())?;
+            writer.write_all(b"\n")?;
         }
-
         Ok(())
     }
 
-    /// Process a single file.
-    #[allow(clippy::obfuscated_if_else)]
-    // then_some avoids else keyword (anti-slop rule)
-    fn process_file(&self, path: &Path) -> Option<(FileEntry, usize)> {
-        let rel_path = path.strip_prefix(&self.config.root).ok()?;
-        let content = fs::read_to_string(path).ok()?;
-        let lang = self.detect_language(path)?;
+    /// Write `Text` mode: plain text lines, not NDJSON.
+    fn format_text<W: Write>(&mut self, files: Vec<PathBuf>, writer: &mut W) -> Result<()> {
+        let (entries, mut counts) = self.prepare_files(&files);
+        let mut blocks = Vec::new();
+        for entry in &entries {
+            let mut block = String::new();
+            block.push_str(&format!("== {}\n", entry.path));
+            block.push_str(&format!("lang: {}\n", entry.lang));
+            block.push_str(&format!("tokens: {}\n", entry.tokens_est));
+            let content = entry.content.as_deref().unwrap_or("");
+            block.push_str(content);
+            if !content.ends_with('\n') {
+                block.push('\n');
+            }
+            block.push_str("\n");
+            counts.emitted_tokens += self.tokenizer.count(&block);
+            blocks.push(block);
+        }
+        let root = self.config.root.to_string_lossy().to_string();
+        let mode = format!("{:?}", self.config.mode).to_lowercase();
+        let generated = chrono::Utc::now().to_rfc3339();
+        let mut out = String::new();
+        out.push_str("srcdump text\n");
+        out.push_str(&format!("root: {root}\n"));
+        out.push_str(&format!("files: {}\n", blocks.len()));
+        out.push_str(&format!("total_tokens_est: {}\n", counts.emitted_tokens));
+        out.push_str(&format!("mode: {mode}\n"));
+        out.push_str(&format!("generated: {generated}\n"));
+        out.push_str("\n");
+        for block in blocks {
+            out.push_str(&block);
+        }
+        writer.write_all(out.as_bytes())?;
+        Ok(())
+    }
+
+    /// Process a single file. Skipped files carry a reason instead of
+    /// vanishing silently.
+    fn process_file(&self, path: &Path) -> ProcessedFile {
+        let rel_path = match path.strip_prefix(&self.config.root) {
+            Ok(rel_path) => rel_path,
+            Err(_) => {
+                return ProcessedFile::Skipped {
+                    path: path.to_string_lossy().to_string(),
+                    reason: "outside root".to_string(),
+                }
+            }
+        };
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(err) => {
+                return ProcessedFile::Skipped {
+                    path: path.to_string_lossy().to_string(),
+                    reason: format!("unreadable: {err}"),
+                }
+            }
+        };
+        let lang = match self.detect_language(path) {
+            Some(lang) => lang,
+            None => {
+                return ProcessedFile::Skipped {
+                    path: path.to_string_lossy().to_string(),
+                    reason: "undetectable language".to_string(),
+                }
+            }
+        };
 
         let tokens_est = self.estimate_tokens(&content);
         let symbols = self.symbols_for(path, &content);
@@ -247,8 +413,7 @@ impl Formatter {
             content: (!self.config.no_content).then_some(processed_content),
         };
 
-        let token_count = (!self.config.no_content).then_some(tokens_est).unwrap_or(0);
-        Some((entry, token_count))
+        ProcessedFile::Emitted(entry, tokens_est)
     }
 
     /// Symbol extraction; skipped unless symbols are enabled.
@@ -928,5 +1093,105 @@ def foo():
                 );
             }
         }
+    }
+
+    // @test:FR-AUD-27
+    #[test]
+    fn fr_aud_27_format_dispatch_modes() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "srcdump_fr_aud_27_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+        let file_a = temp_dir.join("a.rs");
+        let file_b = temp_dir.join("b.rs");
+        fs::write(&file_a, "pub fn foo() {}\n").unwrap();
+        fs::write(&file_b, "pub fn bar() {}\n").unwrap();
+        let files = vec![file_a.clone(), file_b.clone()];
+
+        let parsers = ParserRegistry::default();
+
+        // JSON: one document, `files` is an array of entries.
+        let mut config = Config::default();
+        config.root = temp_dir.clone();
+        config.format = OutputFormat::Json;
+        let mut formatter = Formatter::new(config.clone(), parsers.clone()).unwrap();
+        let mut output = Vec::new();
+        formatter.format_dispatch(files.clone(), &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&output_str).unwrap();
+        assert_eq!(doc["schema"], "srcdump.v1");
+        let entries = doc["files"].as_array().expect("files is an array");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0]["type"], "file");
+        assert!(doc["total_tokens_est"].as_u64().unwrap() > 0);
+
+        // NDJSON: every line parses as a JSON object.
+        config.format = OutputFormat::Ndjson;
+        let mut formatter = Formatter::new(config.clone(), parsers.clone()).unwrap();
+        let mut output = Vec::new();
+        formatter.format_dispatch(files.clone(), &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = output_str.lines().collect();
+        assert!(lines.len() >= 3);
+        for line in &lines {
+            let value: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(value.is_object());
+        }
+        let header: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(header["schema"], "srcdump.v1");
+        assert_eq!(header["files"], 2);
+
+        // Text: plain text lines, not NDJSON.
+        config.format = OutputFormat::Text;
+        let mut formatter = Formatter::new(config, parsers).unwrap();
+        let mut output = Vec::new();
+        formatter.format_dispatch(files, &mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        let lines: Vec<&str> = output_str.lines().collect();
+        assert!(!lines.is_empty());
+        assert!(lines
+            .iter()
+            .any(|line| serde_json::from_str::<serde_json::Value>(line).is_err()));
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    // @test:FR-AUD-28
+    #[test]
+    fn fr_aud_28_token_counts_and_skips() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "srcdump_fr_aud_28_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let long_file = temp_dir.join("long.rs");
+        let content = (0..300).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        fs::write(&long_file, &content).unwrap();
+
+        let missing_file = temp_dir.join("missing.rs");
+
+        let mut config = Config::default();
+        config.root = temp_dir.clone();
+        config.max_lines = Some(10);
+        let parsers = ParserRegistry::default();
+        let formatter = Formatter::new(config, parsers).unwrap();
+
+        let counts = formatter.token_counts(&[long_file, missing_file]);
+        assert_eq!(counts.skipped, 1);
+        assert!(!counts.skip_reasons.is_empty());
+        assert!(counts.skip_reasons[0].contains("unreadable"));
+        assert_ne!(counts.original_tokens, counts.emitted_tokens);
+        assert!(counts.emitted_tokens > 0);
+        assert!(counts.original_tokens > 0);
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
