@@ -1,5 +1,6 @@
 // @impl:FR-IMPACT-01 // @impl:FR-IMPACT-02 // @impl:FR-IMPACT-03 // @impl:FR-IMPACT-04
 // @impl:FR-IMPACT-05 // @impl:FR-IMPACT-06 // @impl:FR-IMPACT-07
+// @impl:FR-AUD-07
 // @impl:FR-ADRCOV-01 // @impl:FR-ADRCOV-02 // @impl:FR-ADRCOV-03
 //! Impact analysis: compute the impls, requirements, tests, and cargo test
 //! commands affected by a set of changed files.
@@ -11,6 +12,7 @@
 //! working via the same-id legacy fallback.
 
 use crate::graph::{build_relation_graph, NodeKind, TraceNode};
+use crate::graph::builder::admissible_edge;
 use crate::policy::{load_policy, EdgeKind};
 use crate::scanner::scan_project_tags;
 use serde::Serialize;
@@ -75,6 +77,10 @@ pub struct AffectedReport {
     pub provenance: std::collections::BTreeMap<String, Vec<ProvenanceHop>>,
     /// `cargo test` commands to run the impacted tests, deduplicated.
     pub commands: Vec<String>,
+    /// Edge endpoints with no graph node: `"EdgeKind:from->target"`, sorted and
+    /// deduplicated. Reported, not traversed.
+    #[serde(default)]
+    pub invalid_references: Vec<String>,
 }
 
 /// Computes the traceability impact of changed files.
@@ -86,6 +92,27 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     let tags = scan_project_tags(root).map_err(|e| e.to_string())?;
     let policy = load_policy();
     let graph = build_relation_graph(&tags, &policy);
+
+    // Invalid references: every edge endpoint absent from graph.nodes, reported
+    // but never traversed or synthesized.
+    let node_ids: HashSet<&String> = graph.nodes.iter().map(|n| &n.id).collect();
+    let mut invalid_references: Vec<String> = Vec::new();
+    for edge in &graph.edges {
+        let mut endpoints: Vec<&String> = Vec::new();
+        if !node_ids.contains(&edge.from) {
+            endpoints.push(&edge.from);
+        }
+        for target in &edge.to {
+            if !node_ids.contains(target) {
+                endpoints.push(target);
+            }
+        }
+        for ep in endpoints {
+            invalid_references.push(format!("{:?}:{}->{}", edge.kind, edge.from, ep));
+        }
+    }
+    invalid_references.sort();
+    invalid_references.dedup();
 
     let changed: Vec<PathBuf> = changed.iter().map(|p| normalize_path(root, p)).collect();
     let is_changed = |node: &TraceNode| changed.iter().any(|p| matches_path(&node.file_path, p));
@@ -198,6 +225,9 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
             }
             for target in &edge.to {
                 for (nk, nid) in resolve_id(&graph, target) {
+                    if !admissible_edge(kind, edge.kind, nk) {
+                        continue;
+                    }
                     let ttid = typed(nk, &nid);
                     if visited2.contains(&ttid) {
                         continue;
@@ -239,6 +269,9 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
             }
             let src = &edge.from;
             for (nk, nid) in resolve_id(&graph, src) {
+                if !admissible_edge(nk, edge.kind, kind) {
+                    continue;
+                }
                 let ttid = typed(nk, &nid);
                 if visited2.contains(&ttid) {
                     continue;
@@ -475,6 +508,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         unmapped,
         provenance,
         commands,
+        invalid_references,
     })
 }
 
@@ -491,10 +525,6 @@ fn resolve_id(graph: &crate::graph::GraphReport, id: &str) -> Vec<(NodeKind, Str
         if graph.nodes.iter().any(|n| n.kind == kind && n.id == id) {
             out.push((kind, id.to_string()));
         }
-    }
-    if out.is_empty() {
-        // fallback: unknown kind, treat as Impl
-        out.push((NodeKind::Impl, id.to_string()));
     }
     out
 }

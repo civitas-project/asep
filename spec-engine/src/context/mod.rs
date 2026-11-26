@@ -41,6 +41,7 @@ fn default_impacted() -> AffectedReport {
         unmapped: Vec::new(),
         provenance: Default::default(),
         commands: Vec::new(),
+        invalid_references: Vec::new(),
     }
 }
 

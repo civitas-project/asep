@@ -129,7 +129,7 @@ pub fn build_trace_graph(tags: &[ScannedTag]) -> TraceabilityReport {
 /// - Verifies: Test -> Req
 /// - Informs: ADR on exactly one side, the other side is Req/Impl/Test
 /// - Constrains: Adr -> Req/Impl, or Req -> Impl
-fn admissible_edge(source: NodeKind, edge: EdgeKind, target: NodeKind) -> bool {
+pub fn admissible_edge(source: NodeKind, edge: EdgeKind, target: NodeKind) -> bool {
     match edge {
         EdgeKind::Satisfies => {
             return matches!(source, NodeKind::Impl) && matches!(target, NodeKind::Req);
