@@ -78,7 +78,10 @@ pub fn validate_request(value: &serde_json::Value) -> Result<JsonRpcRequest, &'s
         _ => return Err("invalid_request"),
     };
 
-    let params = value.get("params").cloned().unwrap_or(serde_json::Value::Null);
+    let params = value
+        .get("params")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
 
     Ok(JsonRpcRequest {
         jsonrpc: jsonrpc.to_string(),

@@ -18,7 +18,6 @@ pub struct ScannedTag {
     pub raw_line: String,
 }
 
-// @design:FR-AUD-08
 #[derive(Debug, Clone, Default)]
 pub struct ScanCompleteness {
     pub files_seen: usize,
@@ -27,7 +26,6 @@ pub struct ScanCompleteness {
     pub errors: Vec<String>,
 }
 
-// @design:FR-AUD-08
 #[derive(Debug)]
 pub struct ScanResult {
     pub tags: Vec<ScannedTag>,

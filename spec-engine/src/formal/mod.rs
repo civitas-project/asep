@@ -46,7 +46,10 @@ pub fn formal_state(result: &FormalCheckResult, required: bool) -> FormalState {
     FormalState::Fail
 }
 
-pub fn aggregate_formal_state(results: &[FormalCheckResult], required_tools: &[&str]) -> FormalState {
+pub fn aggregate_formal_state(
+    results: &[FormalCheckResult],
+    required_tools: &[&str],
+) -> FormalState {
     if results.is_empty() {
         return FormalState::Skipped;
     }
@@ -299,7 +302,10 @@ mod tests {
 
     #[test]
     fn fr_aud_09_empty_results_aggregate_is_skipped() {
-        assert_eq!(aggregate_formal_state(&[], &["alloy"]), FormalState::Skipped);
+        assert_eq!(
+            aggregate_formal_state(&[], &["alloy"]),
+            FormalState::Skipped
+        );
     }
 
     #[test]

@@ -215,11 +215,7 @@ impl Formatter {
     /// `Ndjson` writes one JSON object per line (header line + entry lines);
     /// `Text` writes plain text lines, not NDJSON. Unknown formats error.
     // @impl:FR-AUD-27
-    pub fn format_dispatch<W: Write>(
-        &mut self,
-        files: Vec<PathBuf>,
-        writer: &mut W,
-    ) -> Result<()> {
+    pub fn format_dispatch<W: Write>(&mut self, files: Vec<PathBuf>, writer: &mut W) -> Result<()> {
         if self.config.format == OutputFormat::Json {
             return self.format_json(files, writer);
         }
@@ -1120,7 +1116,9 @@ def foo():
         config.format = OutputFormat::Json;
         let mut formatter = Formatter::new(config.clone(), parsers.clone()).unwrap();
         let mut output = Vec::new();
-        formatter.format_dispatch(files.clone(), &mut output).unwrap();
+        formatter
+            .format_dispatch(files.clone(), &mut output)
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&output_str).unwrap();
         assert_eq!(doc["schema"], "srcdump.v1");
@@ -1133,7 +1131,9 @@ def foo():
         config.format = OutputFormat::Ndjson;
         let mut formatter = Formatter::new(config.clone(), parsers.clone()).unwrap();
         let mut output = Vec::new();
-        formatter.format_dispatch(files.clone(), &mut output).unwrap();
+        formatter
+            .format_dispatch(files.clone(), &mut output)
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = output_str.lines().collect();
         assert!(lines.len() >= 3);
@@ -1173,7 +1173,10 @@ def foo():
         fs::create_dir_all(&temp_dir).unwrap();
 
         let long_file = temp_dir.join("long.rs");
-        let content = (0..300).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content = (0..300)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         fs::write(&long_file, &content).unwrap();
 
         let missing_file = temp_dir.join("missing.rs");

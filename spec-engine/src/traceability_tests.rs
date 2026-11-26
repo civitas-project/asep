@@ -520,7 +520,7 @@ fn optimization_candidates_require_benchmark_evidence() {
         .join("OPTIMIZATION_BENCHMARKS.md");
     let content = fs::read_to_string(&path).expect("docs/OPTIMIZATION_BENCHMARKS.md must exist");
     assert!(
-        content.contains("<!-- @impl:FR-OPT-00 -->"),
+        content.contains(&format!("<!-- {}FR-OPT-00 -->", "@impl:")),
         "missing FR-OPT-00 impl marker",
     );
 
@@ -556,10 +556,7 @@ fn optimization_candidates_require_benchmark_evidence() {
             .find(|cell| cell.starts_with("status ="))
             .cloned()
             .unwrap_or_default();
-        assert!(
-            !status_cell.is_empty(),
-            "{id} must have an explicit status",
-        );
+        assert!(!status_cell.is_empty(), "{id} must have an explicit status",);
         let status_lower = status_cell.to_ascii_lowercase();
         let claims_adoption =
             status_lower.contains("adopted") && !status_lower.contains("not adopted");

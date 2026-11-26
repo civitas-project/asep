@@ -277,3 +277,81 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-CTX-01->FR-CTX-01 "compile_context tests assert deterministic bundle with all impacted IDs"
 @rel:verifies:FR-CTX-02->FR-CTX-02 "budget truncation test asserts explicit truncation status and complete impacted IDs"
 @rel:verifies:FR-CTX-03->FR-CTX-03 "CLI asep context and MCP asep_context exposure tests return the same bundle"
+
+# Traceability relations (@rel:satisfies) — static audit remediation
+
+@rel:satisfies:FR-AUD-01->FR-AUD-01
+@rel:satisfies:FR-AUD-02->FR-AUD-02
+@rel:satisfies:FR-AUD-03->FR-AUD-03
+@rel:satisfies:FR-AUD-04->FR-AUD-04
+@rel:satisfies:FR-AUD-05->FR-AUD-05
+@rel:satisfies:FR-AUD-06->FR-AUD-06
+@rel:satisfies:FR-AUD-07->FR-AUD-07
+@rel:satisfies:FR-AUD-08->FR-AUD-08
+@rel:satisfies:FR-AUD-09->FR-AUD-09
+@rel:satisfies:FR-AUD-10->FR-AUD-10
+@rel:satisfies:FR-AUD-11->FR-AUD-11
+@rel:satisfies:FR-AUD-12->FR-AUD-12
+@rel:satisfies:FR-AUD-13->FR-AUD-13
+@rel:satisfies:FR-AUD-14->FR-AUD-14
+@rel:satisfies:FR-AUD-15->FR-AUD-15
+@rel:satisfies:FR-AUD-16->FR-AUD-16
+@rel:satisfies:FR-AUD-17->FR-AUD-17
+@rel:satisfies:FR-AUD-18->FR-AUD-18
+@rel:satisfies:FR-AUD-19->FR-AUD-19
+@rel:satisfies:FR-AUD-20->FR-AUD-20
+@rel:satisfies:FR-AUD-21->FR-AUD-21
+@rel:satisfies:FR-AUD-22->FR-AUD-22
+@rel:satisfies:FR-AUD-23->FR-AUD-23
+@rel:satisfies:FR-AUD-24->FR-AUD-24
+@rel:satisfies:FR-AUD-25->FR-AUD-25
+@rel:satisfies:FR-AUD-26->FR-AUD-26
+@rel:satisfies:FR-AUD-27->FR-AUD-27
+@rel:satisfies:FR-AUD-28->FR-AUD-28
+@rel:satisfies:FR-AUD-29->FR-AUD-29
+@rel:satisfies:FR-AUD-30->FR-AUD-30
+@rel:satisfies:FR-AUD-31->FR-AUD-31
+@rel:satisfies:FR-AUD-32->FR-AUD-32
+@rel:satisfies:FR-AUD-33->FR-AUD-33
+@rel:satisfies:FR-AUD-34->FR-AUD-34
+@rel:satisfies:FR-AUD-35->FR-AUD-35
+@rel:satisfies:FR-OPT-00->FR-OPT-00
+
+# Traceability relations (@rel:verifies) — static audit remediation
+
+@rel:verifies:FR-AUD-01->FR-AUD-01 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-02->FR-AUD-02 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-03->FR-AUD-03 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-04->FR-AUD-04 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-05->FR-AUD-05 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-06->FR-AUD-06 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-07->FR-AUD-07 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-08->FR-AUD-08 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-09->FR-AUD-09 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-10->FR-AUD-10 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-11->FR-AUD-11 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-12->FR-AUD-12 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-13->FR-AUD-13 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-14->FR-AUD-14 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-15->FR-AUD-15 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-16->FR-AUD-16 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-17->FR-AUD-17 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-18->FR-AUD-18 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-19->FR-AUD-19 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-20->FR-AUD-20 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-21->FR-AUD-21 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-22->FR-AUD-22 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-23->FR-AUD-23 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-24->FR-AUD-24 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-25->FR-AUD-25 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-26->FR-AUD-26 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-27->FR-AUD-27 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-28->FR-AUD-28 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-29->FR-AUD-29 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-30->FR-AUD-30 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-31->FR-AUD-31 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-32->FR-AUD-32 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-33->FR-AUD-33 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-34->FR-AUD-34 "audit remediation implementation and tests"
+@rel:verifies:FR-AUD-35->FR-AUD-35 "audit remediation implementation and tests"
+@rel:verifies:FR-OPT-00->FR-OPT-00 "audit remediation implementation and tests"

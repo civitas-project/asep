@@ -34,7 +34,9 @@ impl BudgetTracker {
 
     pub fn try_record_cost(&mut self, usd: f64) -> Result<(), String> {
         if !usd.is_finite() || usd < 0.0 {
-            return Err(format!("invalid cost: {usd} (must be finite and non-negative)"));
+            return Err(format!(
+                "invalid cost: {usd} (must be finite and non-negative)"
+            ));
         }
         self.cost_usd += usd;
         Ok(())
@@ -42,7 +44,9 @@ impl BudgetTracker {
 
     pub fn reserve_cost(&mut self, usd: f64) -> Result<(), String> {
         if !usd.is_finite() || usd < 0.0 {
-            return Err(format!("invalid cost: {usd} (must be finite and non-negative)"));
+            return Err(format!(
+                "invalid cost: {usd} (must be finite and non-negative)"
+            ));
         }
         let limit = match self.budget.max_cost_usd {
             Some(limit) => limit,

@@ -83,13 +83,12 @@ pub fn validate_ignore_files(config: &WalkConfig) -> Result<(), Error> {
                 if pattern.is_empty() || pattern.starts_with('#') {
                     continue;
                 }
-                glob::Pattern::new(pattern)
-                    .map_err(|e| {
-                        anyhow::anyhow!("invalid ignore pattern {pattern:?} in {path:?}: {e}")
-                    })?;
+                glob::Pattern::new(pattern).map_err(|e| {
+                    anyhow::anyhow!("invalid ignore pattern {pattern:?} in {path:?}: {e}")
+                })?;
             }
         }
-        None => {},
+        None => {}
     }
     Ok(())
 }
@@ -158,7 +157,7 @@ pub fn walk_files(config: &WalkConfig) -> Result<Vec<PathBuf>> {
                 Ok(canon) => {
                     seen.insert(canon);
                 }
-                Err(_) => {},
+                Err(_) => {}
             }
             continue;
         }

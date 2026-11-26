@@ -506,11 +506,8 @@ fn test_accept_scoped_success_writes_evidence() {
         .arg("test")
         .status()
         .expect("git config name");
-    fs::write(
-        root_path.join(".gitignore"),
-        "acceptance.json\nevidence/\n",
-    )
-    .expect("write .gitignore");
+    fs::write(root_path.join(".gitignore"), "acceptance.json\nevidence/\n")
+        .expect("write .gitignore");
     fs::write(root_path.join("README.md"), "# hello\n").expect("write README");
     fs::create_dir_all(root_path.join("docs")).expect("docs dir");
     fs::write(
@@ -519,7 +516,10 @@ fn test_accept_scoped_success_writes_evidence() {
     )
     .expect("write PRD");
 
-    git(root_path, &["add", ".gitignore", "README.md", "docs/PRD.md"]);
+    git(
+        root_path,
+        &["add", ".gitignore", "README.md", "docs/PRD.md"],
+    );
     git(root_path, &["commit", "-q", "-m", "init"]);
 
     let output = Command::new("git")
@@ -909,9 +909,15 @@ fn test_fr_aud_34_jsonrpc_error_categories() {
 
     assert_code("{broken json", -32700);
     assert_code(r#"{"jsonrpc":"1.0","id":1,"method":"initialize"}"#, -32600);
-    assert_code(r#"{"jsonrpc":"2.0","id":{"foo":1},"method":"ping"}"#, -32600);
+    assert_code(
+        r#"{"jsonrpc":"2.0","id":{"foo":1},"method":"ping"}"#,
+        -32600,
+    );
     assert_code(r#"{"jsonrpc":"2.0","id":[1],"method":"ping"}"#, -32600);
-    assert_code(r#"{"jsonrpc":"2.0","id":7,"method":"no/such.method","params":{}}"#, -32601);
+    assert_code(
+        r#"{"jsonrpc":"2.0","id":7,"method":"no/such.method","params":{}}"#,
+        -32601,
+    );
     assert_code(
         r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"does-not-exist-tool"}}"#,
         -32602,

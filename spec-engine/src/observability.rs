@@ -1,12 +1,12 @@
 // @impl:IN-01-CONTRACT
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::fs;
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::agent_protocol::{hash_file, now_rfc3339};
@@ -130,7 +130,10 @@ impl TraceReport {
             .iter()
             .filter_map(|event| {
                 event.detail.as_ref().and_then(|detail| {
-                    detail.get("tokens").or_else(|| detail.get("token_count")).and_then(|value| value.as_f64())
+                    detail
+                        .get("tokens")
+                        .or_else(|| detail.get("token_count"))
+                        .and_then(|value| value.as_f64())
                 })
             })
             .fold(None, |acc, value| Some(acc.unwrap_or(0.0) + value));
@@ -301,10 +304,7 @@ impl Drop for SpanGuard {
 
 // @impl:FR-AUD-16
 pub fn trace_key(trace_id: &str) -> String {
-    trace_id
-        .bytes()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    trace_id.bytes().map(|byte| format!("{byte:02x}")).collect()
 }
 
 // @impl:IN-01-COLLECT
@@ -960,7 +960,9 @@ mod tests {
             .record(test_event("trace-full", 1, "next"))
             .unwrap();
         collector.flush("trace-full").unwrap();
-        let path = collector.target_dir.join(format!("{}.ndjson", trace_key("trace-full")));
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-full")));
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2);
@@ -1004,7 +1006,9 @@ mod tests {
         });
         collector.record(event).unwrap();
         collector.flush("trace-redact").unwrap();
-        let path = collector.target_dir.join(format!("{}.ndjson", trace_key("trace-redact")));
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-redact")));
         let content = fs::read_to_string(&path).unwrap();
         let value: serde_json::Value = serde_json::from_str(content.trim()).unwrap();
         assert_eq!(
@@ -1036,16 +1040,27 @@ mod tests {
         collector.flush("trace-a").unwrap();
         let key_a = trace_key("trace-a");
         fs::write(
-            collector.target_dir.join(format!("{key_a}.1000000000.ndjson")),
+            collector
+                .target_dir
+                .join(format!("{key_a}.1000000000.ndjson")),
             "rotated\n",
         )
         .unwrap();
         collector.record(test_event("trace-b", 0, "begin")).unwrap();
         collector.flush("trace-b").unwrap();
         collector.purge("trace-a").unwrap();
-        assert!(!collector.target_dir.join(format!("{key_a}.ndjson")).exists());
-        assert!(!root.path().join(format!("{key_a}.1000000000.ndjson")).exists());
-        assert!(collector.target_dir.join(format!("{}.ndjson", trace_key("trace-b"))).exists());
+        assert!(!collector
+            .target_dir
+            .join(format!("{key_a}.ndjson"))
+            .exists());
+        assert!(!root
+            .path()
+            .join(format!("{key_a}.1000000000.ndjson"))
+            .exists());
+        assert!(collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-b")))
+            .exists());
         collector.purge("trace-missing").unwrap();
     }
 
@@ -1159,7 +1174,9 @@ mod tests {
         let others: Vec<&Metric> = report
             .metrics
             .iter()
-            .filter(|metric| metric.name != "cost_per_verified_result" && metric.name != "gate_pass_rate")
+            .filter(|metric| {
+                metric.name != "cost_per_verified_result" && metric.name != "gate_pass_rate"
+            })
             .collect();
         for metric in others {
             assert_eq!(metric.denominator, Some(9));
@@ -1470,7 +1487,9 @@ mod tests {
         let mut collector = TraceCollector::new(root.path(), &config);
         collector.record(test_event("run10", 0, "start")).unwrap();
         collector.flush("run10").unwrap();
-        let run10 = collector.target_dir.join(format!("{}.ndjson", trace_key("run10")));
+        let run10 = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("run10")));
         assert!(run10.exists());
         assert!(collector.rotated_segment_paths("run1").unwrap().is_empty());
         collector.purge("run1").unwrap();
@@ -1519,7 +1538,8 @@ mod tests {
 
     // @test:FR-AUD-20
     #[test]
-    fn fr_aud_20_retry_skips_committed_seqs_and_expire_all_sweeps_idle_segments() -> Result<(), String> {
+    fn fr_aud_20_retry_skips_committed_seqs_and_expire_all_sweeps_idle_segments(
+    ) -> Result<(), String> {
         let root = tempdir().unwrap();
         let config = TelemetryConfig {
             enabled: true,
@@ -1530,13 +1550,17 @@ mod tests {
         let key = trace_key("trace-retry");
         let active = collector.target_dir.join(format!("{key}.ndjson"));
 
-        collector.record(test_event("trace-retry", 0, "first")).unwrap();
+        collector
+            .record(test_event("trace-retry", 0, "first"))
+            .unwrap();
         collector.flush("trace-retry").unwrap();
         let content = fs::read_to_string(&active).unwrap();
         assert_eq!(content.lines().count(), 1);
 
         // Retry re-flushes an already committed seq: no duplicate line.
-        collector.record(test_event("trace-retry", 0, "first")).unwrap();
+        collector
+            .record(test_event("trace-retry", 0, "first"))
+            .unwrap();
         collector.flush("trace-retry").unwrap();
         let content = fs::read_to_string(&active).unwrap();
         assert_eq!(content.lines().count(), 1);
@@ -1548,21 +1572,26 @@ mod tests {
             "task_id": "task-1",
             "seq": 1,
             "event": "retry"
-        })).unwrap();
+        }))
+        .unwrap();
         fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&active)
             .and_then(|mut file| writeln!(file, "{committed_line}"))
             .map_err(|e| e.to_string())?;
-        collector.record(test_event("trace-retry", 1, "retry")).unwrap();
+        collector
+            .record(test_event("trace-retry", 1, "retry"))
+            .unwrap();
         collector.flush("trace-retry").unwrap();
         let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
         seqs.sort_unstable();
         assert_eq!(seqs, vec![0, 1]);
 
         // New seq after the retry is appended once.
-        collector.record(test_event("trace-retry", 2, "next")).unwrap();
+        collector
+            .record(test_event("trace-retry", 2, "next"))
+            .unwrap();
         collector.flush("trace-retry").unwrap();
         let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
         seqs.sort_unstable();
@@ -1575,7 +1604,9 @@ mod tests {
         fs::write(&idle_active, "idle\n").unwrap();
         fs::write(&idle_rotated, "rotated\n").unwrap();
 
-        collector.record(test_event("trace-active", 0, "only")).unwrap();
+        collector
+            .record(test_event("trace-active", 0, "only"))
+            .unwrap();
         collector.flush_all().unwrap();
 
         assert!(idle_active.exists());
@@ -1593,7 +1624,9 @@ mod tests {
             ..TelemetryConfig::default()
         };
         let mut collector = TraceCollector::new(root.path(), &config);
-        collector.record(test_event("trace-secure", 0, "start")).unwrap();
+        collector
+            .record(test_event("trace-secure", 0, "start"))
+            .unwrap();
         collector.flush("trace-secure").unwrap();
         let path = collector
             .target_dir

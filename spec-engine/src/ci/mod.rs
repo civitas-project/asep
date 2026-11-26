@@ -142,24 +142,23 @@ fn run_gate_0(dir: &Path) -> GateResult {
         let required = REQUIRED_FORMAL_TOOLS.iter().any(|t| *t == check.tool);
         let check_state = formal_state(check, required);
         details.push(match check_state {
-            FormalState::Fail => format!(
-                "[FAIL] {}: {} ({})",
-                check.tool, check.file, check.message
-            ),
+            FormalState::Fail => {
+                format!("[FAIL] {}: {} ({})", check.tool, check.file, check.message)
+            }
             FormalState::Unproven => format!(
                 "[UNPROVEN] {}: {} ({})",
                 check.tool, check.file, check.message
             ),
-            FormalState::Skipped => format!(
-                "[SKIP] {}: {} ({})",
-                check.tool, check.file, check.message
-            ),
+            FormalState::Skipped => {
+                format!("[SKIP] {}: {} ({})", check.tool, check.file, check.message)
+            }
             FormalState::Pass => format!("[PASS] {}: {}", check.tool, check.file),
         });
     }
 
     if details.is_empty() {
-        details.push("No formal specification models (.als, .tla, .dbml, api.yaml) found".to_string());
+        details
+            .push("No formal specification models (.als, .tla, .dbml, api.yaml) found".to_string());
     }
 
     GateResult {
@@ -429,10 +428,16 @@ mod tests {
         .unwrap();
         let res = run_gate_0(&tmp);
         let _ = std::fs::remove_dir_all(&tmp);
-        assert!(!res.passed, "absent required solver must not pass gate 0: {:?}", res.details);
+        assert!(
+            !res.passed,
+            "absent required solver must not pass gate 0: {:?}",
+            res.details
+        );
         assert!(!res.skipped, "unproven check must not mark gate 0 skipped");
         assert!(
-            res.details.iter().any(|d| d.contains("UNPROVEN") || d.contains("tlc")),
+            res.details
+                .iter()
+                .any(|d| d.contains("UNPROVEN") || d.contains("tlc")),
             "expected UNPROVEN/tlc detail, got {:?}",
             res.details
         );

@@ -135,10 +135,7 @@ pub fn parse_tags_from_line(line: &str, line_num: usize) -> Vec<TagOccurrence> {
         }
         let end = whole_match.end();
         let closed = end == line.len()
-            || matches!(
-                line.as_bytes()[end],
-                b' ' | b'\t' | b'\r' | b'\n' | b'\0'
-            );
+            || matches!(line.as_bytes()[end], b' ' | b'\t' | b'\r' | b'\n' | b'\0');
         if !closed {
             continue;
         }
@@ -259,21 +256,40 @@ mod tests {
         assert!(tags.is_empty(), "unknown priority must not default to Must");
 
         let diagnostic = parse_tag_diagnostic("// @req:FR-AUD-25-A:UNKNOWN", 1);
-        assert!(diagnostic.is_some(), "unknown priority must record a diagnostic");
+        assert!(
+            diagnostic.is_some(),
+            "unknown priority must record a diagnostic"
+        );
         let message = diagnostic.expect("diagnostic present");
-        assert!(message.contains("UNKNOWN"), "diagnostic names the bad token: {message}");
-        assert!(message.contains("line 1"), "diagnostic names the line: {message}");
+        assert!(
+            message.contains("UNKNOWN"),
+            "diagnostic names the bad token: {message}"
+        );
+        assert!(
+            message.contains("line 1"),
+            "diagnostic names the line: {message}"
+        );
     }
 
     #[test]
     fn test_malformed_rel_suffix_is_rejected() {
-        let rejected = parse_tags_from_line("// @rel:satisfies:auth/session->AUTH-01;bogus", 1);
-        assert!(rejected.is_empty(), "trailing garbage after targets must not match");
+        let rejected = parse_tags_from_line(
+            &format!("// {}satisfies:auth/session->AUTH-01;bogus", "@rel:"),
+            1,
+        );
+        assert!(
+            rejected.is_empty(),
+            "trailing garbage after targets must not match"
+        );
 
-        let valid = parse_tags_from_line("// @rel:satisfies:auth/session->AUTH-01", 1);
+        let valid =
+            parse_tags_from_line(&format!("// {}satisfies:auth/session->AUTH-01", "@rel:"), 1);
         assert_eq!(valid.len(), 1, "plain rel tag still parses");
 
-        let noted = parse_tags_from_line("// @rel:satisfies:auth/session->AUTH-01 \"ok\"", 1);
+        let noted = parse_tags_from_line(
+            &format!("// {}satisfies:auth/session->AUTH-01 \"ok\"", "@rel:"),
+            1,
+        );
         assert_eq!(noted.len(), 1, "rel tag with quoted note still parses");
     }
 

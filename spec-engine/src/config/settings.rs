@@ -65,8 +65,14 @@ pub struct TelemetryConfig {
     pub dir: String,
 }
 
-pub const MANDATORY_EVIDENCE_FIELDS: [&str; 6] =
-    ["schema_version", "trace_id", "task_id", "event", "seq", "detail"];
+pub const MANDATORY_EVIDENCE_FIELDS: [&str; 6] = [
+    "schema_version",
+    "trace_id",
+    "task_id",
+    "event",
+    "seq",
+    "detail",
+];
 
 // @impl:FR-AUD-17
 impl Default for TelemetryConfig {

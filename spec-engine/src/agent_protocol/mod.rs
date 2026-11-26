@@ -628,8 +628,8 @@ mod tests {
     // @test:FR-LEVEL-03
     use super::*;
     use crate::runtime::EngineerLevel;
-    use std::sync::Arc;
     use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn envelope_level_round_trips() {
@@ -691,7 +691,10 @@ mod tests {
         }
         let mut ids: Vec<String> = Vec::with_capacity(n);
         for handle in handles {
-            let envelope = handle.join().expect("publish thread panicked").expect("send failed");
+            let envelope = handle
+                .join()
+                .expect("publish thread panicked")
+                .expect("send failed");
             ids.push(envelope.id);
         }
         assert_eq!(ids.len(), n);
@@ -755,7 +758,10 @@ mod tests {
             }));
         }
         for handle in handles {
-            handle.join().expect("ack thread panicked").expect("ack failed");
+            handle
+                .join()
+                .expect("ack thread panicked")
+                .expect("ack failed");
         }
         let env_path = dir
             .path()
@@ -830,7 +836,9 @@ mod tests {
         let errors = validate_dir(dir.path()).unwrap_err();
         assert!(!errors.is_empty());
         assert!(
-            errors.iter().any(|error| error.contains("duplicate envelope id")),
+            errors
+                .iter()
+                .any(|error| error.contains("duplicate envelope id")),
             "expected duplicate id error: {errors:?}"
         );
         assert!(
