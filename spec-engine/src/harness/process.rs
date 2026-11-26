@@ -202,37 +202,38 @@ pub fn run_cmd_complexity(
 }
 
 /// Sample RSS (kB -> bytes) of `pid` from `/proc/{pid}/status`, preferring
-/// `VmHWM` (high-water mark) and falling back to `VmRSS`. Returns 0 when
-/// `/proc` is unavailable or the process has already exited.
+/// `VmHWM` (high-water mark) and falling back to `VmRSS`. Returns `Ok(0)` when
+/// `/proc` is unavailable or the process has already exited. On non-Unix
+/// platforms returns `Err` instead of a zero-byte success.
 /// Kept for compatibility; `run_cmd_memory_detailed` does not use it.
 #[allow(dead_code)]
-fn sample_rss_bytes(pid: u32) -> usize {
-    #[cfg(target_os = "linux")]
+fn sample_rss_bytes(pid: u32) -> Result<usize, String> {
+    #[cfg(unix)]
     {
         let content = match std::fs::read_to_string(format!("/proc/{pid}/status")) {
-            Ok(c) => c,
-            Err(_) => return 0,
+            Ok(content) => content,
+            Err(_) => return Ok(0),
         };
         for line in content.lines() {
             let key = line.split(':').next().unwrap_or("");
             let value = line.split(':').nth(1).unwrap_or("").trim();
             let kb: usize = match value.split_whitespace().next() {
-                Some(v) => v.parse().unwrap_or(0),
+                Some(value) => value.parse().unwrap_or(0),
                 None => 0,
             };
             if kb > 0 {
                 return match key {
-                    "VmHWM" | "VmRSS" => kb * 1_024,
+                    "VmHWM" | "VmRSS" => Ok(kb * 1_024),
                     _ => continue,
                 };
             }
         }
-        0
+        Ok(0)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(unix))]
     {
         let _ = pid;
-        0
+        Err("memory measurement unavailable on this platform".to_string())
     }
 }
 

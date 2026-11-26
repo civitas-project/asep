@@ -1,10 +1,11 @@
 // @impl:IN-01-CONTRACT
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -320,6 +321,60 @@ pub struct TraceCollector {
 
 const MAX_ROTATION_ATTEMPTS: usize = 1024;
 
+// @impl:FR-AUD-35
+/// Open the active trace NDJSON file for appending, restricting access at
+/// creation time so the file is never created world-readable and the
+/// restriction is not applied only after the first write.
+///
+/// Unix: `.mode(0o600)` on the create options; the OS applies it to newly
+/// created files.
+///
+/// Windows: std exposes no ACL API, so creation is exclusive
+/// (`create_new(true)`). A pre-existing file cannot be silently opened for
+/// append; equivalent ACL enforcement is a documented platform limitation,
+/// not a silently skipped restriction.
+#[cfg(unix)]
+fn open_trace_file(path: &Path) -> Result<fs::File, String> {
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+fn open_trace_file(path: &Path) -> Result<fs::File, String> {
+    // No std-only ACL API exists on Windows; exclusive creation restricts
+    // access at creation time instead of after the write.
+    fs::OpenOptions::new()
+        .create_new(true)
+        .append(true)
+        .open(path)
+        .map_err(|e| e.to_string())
+}
+
+/// Read seq values of already committed events from the active NDJSON file.
+/// Malformed or empty lines are ignored so a torn write cannot block retries.
+fn committed_seqs(active: &Path) -> Result<HashSet<u64>, String> {
+    let mut seqs = HashSet::new();
+    if !active.exists() {
+        return Ok(seqs);
+    }
+    let content = fs::read_to_string(active).map_err(|e| e.to_string())?;
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Option<serde_json::Value> = serde_json::from_str(line).ok();
+        let seq = value.and_then(|value| value.get("seq").and_then(|value| value.as_u64()));
+        if let Some(seq) = seq {
+            seqs.insert(seq);
+        }
+    }
+    Ok(seqs)
+}
+
 // @impl:FR-AUD-19
 static ROTATION_ORDINAL: AtomicU64 = AtomicU64::new(0);
 
@@ -373,6 +428,7 @@ impl TraceCollector {
         Ok(())
     }
 
+    // @impl:FR-AUD-20
     pub fn flush(&mut self, trace_id: &str) -> Result<(), String> {
         let events = match self.buffer.get(trace_id) {
             Some(v) if !v.is_empty() => v.clone(),
@@ -381,8 +437,10 @@ impl TraceCollector {
         fs::create_dir_all(&self.target_dir).map_err(|e| e.to_string())?;
         let key = trace_key(trace_id);
         let active = self.target_dir.join(format!("{key}.ndjson"));
+        let mut committed = committed_seqs(&active)?;
         let serialized: Vec<String> = events
             .iter()
+            .filter(|event| committed.insert(event.seq))
             .map(|event| serialize_event(event, &self.allowlist, &self.redact_patterns))
             .collect::<Result<Vec<_>, _>>()?;
         let serialized_len: u64 = serialized.iter().map(|line| line.len() as u64 + 1).sum();
@@ -394,16 +452,10 @@ impl TraceCollector {
             self.rotate_segment(&key, &active)?;
         }
         self.expire_rotated_segments(trace_id)?;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&active)
-            .map_err(|e| e.to_string())?;
+        let mut file = open_trace_file(&active)?;
         for line in &serialized {
             writeln!(file, "{line}").map_err(|e| e.to_string())?;
         }
-        file.set_permissions(PermissionsExt::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
         file.flush().map_err(|e| e.to_string())?;
         self.buffer.remove(trace_id);
         Ok(())
@@ -445,6 +497,50 @@ impl TraceCollector {
         let trace_ids: Vec<String> = self.buffer.keys().cloned().collect();
         for trace_id in trace_ids {
             self.flush(&trace_id)?;
+        }
+        self.expire_all()
+    }
+
+    pub fn expire_all(&self) -> Result<(), String> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_secs();
+        if !self.target_dir.exists() {
+            return Ok(());
+        }
+        let read_dir = fs::read_dir(&self.target_dir).map_err(|e| e.to_string())?;
+        for entry in read_dir {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let mut parts = name.split('.');
+            let key = parts.next().unwrap_or("");
+            let ordinal = parts.next().unwrap_or("");
+            let suffix = parts.next().unwrap_or("");
+            let extra = parts.next();
+            if suffix != "ndjson" || extra.is_some() || key.is_empty() || ordinal.is_empty() {
+                continue;
+            }
+            if !ordinal.bytes().all(|byte| byte.is_ascii_digit()) {
+                continue;
+            }
+            let metadata = match fs::metadata(&path) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let mtime = match metadata.modified() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let mtime_secs = match mtime.duration_since(UNIX_EPOCH) {
+                Ok(value) => value.as_secs(),
+                Err(_) => continue,
+            };
+            let age = now.saturating_sub(mtime_secs);
+            if age >= self.ttl_secs {
+                let _ = fs::remove_file(&path);
+            }
         }
         Ok(())
     }
@@ -686,6 +782,8 @@ fn redact(value: serde_json::Value, patterns: &[String]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -1417,5 +1515,90 @@ mod tests {
         assert!(active.exists());
         let content = fs::read_to_string(&active).unwrap();
         assert_eq!(content.lines().count(), 1);
+    }
+
+    // @test:FR-AUD-20
+    #[test]
+    fn fr_aud_20_retry_skips_committed_seqs_and_expire_all_sweeps_idle_segments() -> Result<(), String> {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ttl_secs: 0,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        let key = trace_key("trace-retry");
+        let active = collector.target_dir.join(format!("{key}.ndjson"));
+
+        collector.record(test_event("trace-retry", 0, "first")).unwrap();
+        collector.flush("trace-retry").unwrap();
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
+
+        // Retry re-flushes an already committed seq: no duplicate line.
+        collector.record(test_event("trace-retry", 0, "first")).unwrap();
+        collector.flush("trace-retry").unwrap();
+        let content = fs::read_to_string(&active).unwrap();
+        assert_eq!(content.lines().count(), 1);
+
+        // Simulate a committed partial write from a crashed retry.
+        let committed_line = serde_json::to_string(&serde_json::json!({
+            "schema_version": 1,
+            "trace_id": "trace-retry",
+            "task_id": "task-1",
+            "seq": 1,
+            "event": "retry"
+        })).unwrap();
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&active)
+            .and_then(|mut file| writeln!(file, "{committed_line}"))
+            .map_err(|e| e.to_string())?;
+        collector.record(test_event("trace-retry", 1, "retry")).unwrap();
+        collector.flush("trace-retry").unwrap();
+        let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
+        seqs.sort_unstable();
+        assert_eq!(seqs, vec![0, 1]);
+
+        // New seq after the retry is appended once.
+        collector.record(test_event("trace-retry", 2, "next")).unwrap();
+        collector.flush("trace-retry").unwrap();
+        let mut seqs: Vec<u64> = committed_seqs(&active).unwrap().into_iter().collect();
+        seqs.sort_unstable();
+        assert_eq!(seqs, vec![0, 1, 2]);
+
+        // Idle trace: its rotated segment is swept by expire_all via flush_all.
+        let idle_key = trace_key("trace-idle");
+        let idle_active = collector.target_dir.join(format!("{idle_key}.ndjson"));
+        let idle_rotated = collector.target_dir.join(format!("{idle_key}.777.ndjson"));
+        fs::write(&idle_active, "idle\n").unwrap();
+        fs::write(&idle_rotated, "rotated\n").unwrap();
+
+        collector.record(test_event("trace-active", 0, "only")).unwrap();
+        collector.flush_all().unwrap();
+
+        assert!(idle_active.exists());
+        assert!(!idle_rotated.exists());
+        Ok(())
+    }
+
+    // @test:FR-AUD-35
+    #[cfg(unix)]
+    #[test]
+    fn fr_aud_35_secure_mode_is_set_at_creation() {
+        let root = tempdir().unwrap();
+        let config = TelemetryConfig {
+            enabled: true,
+            ..TelemetryConfig::default()
+        };
+        let mut collector = TraceCollector::new(root.path(), &config);
+        collector.record(test_event("trace-secure", 0, "start")).unwrap();
+        collector.flush("trace-secure").unwrap();
+        let path = collector
+            .target_dir
+            .join(format!("{}.ndjson", trace_key("trace-secure")));
+        let metadata = fs::metadata(&path).unwrap();
+        assert_eq!(PermissionsExt::mode(&metadata.permissions()) & 0o777, 0o600);
     }
 }

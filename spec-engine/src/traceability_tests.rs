@@ -8,7 +8,7 @@
 // @test:FR-MCP-IMPACT-01 // @test:FR-MCP-IMPACT-02
 // @test:FR-CTX-01 // @test:FR-CTX-02 // @test:FR-CTX-03
 // @test:FR-ADRCOV-01 // @test:FR-ADRCOV-02 // @test:FR-ADRCOV-03
-// @test:FR-AUD-01 // @test:FR-AUD-02 // @test:FR-AUD-03 // @test:FR-AUD-05 // @test:FR-AUD-06 // @test:FR-AUD-07 // @test:FR-AUD-08
+// @test:FR-AUD-01 // @test:FR-AUD-02 // @test:FR-AUD-03 // @test:FR-AUD-05 // @test:FR-AUD-06 // @test:FR-AUD-07 // @test:FR-AUD-08 // @test:FR-AUD-34
 // @test:FR-CAP-01 // @test:FR-CAP-02 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-05 // @test:FR-CAP-06 // @test:FR-CAP-07 // @test:FR-CAP-08 // @test:FR-AMB-01 // @test:FR-AMB-02 // @test:FR-AMB-03 // @test:FR-AMB-04 // @test:FR-AMB-05 // @test:FR-AMB-06
 //! Unit tests for the 13 MUST requirements in docs/PRD.md.
 //! Each test carries one test-marker comment and asserts real behavior
@@ -506,4 +506,73 @@ fn test_engineer_level_default_in_profile() {
     use crate::runtime::EngineerLevel;
     let profile = crate::config::settings::CapabilityProfile::default();
     assert_eq!(profile.engineer_level, EngineerLevel::L1);
+}
+
+// @test:FR-OPT-00
+#[test]
+fn optimization_candidates_require_benchmark_evidence() {
+    use std::collections::HashSet;
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = manifest
+        .parent()
+        .unwrap()
+        .join("docs")
+        .join("OPTIMIZATION_BENCHMARKS.md");
+    let content = fs::read_to_string(&path).expect("docs/OPTIMIZATION_BENCHMARKS.md must exist");
+    assert!(
+        content.contains("<!-- @impl:FR-OPT-00 -->"),
+        "missing FR-OPT-00 impl marker",
+    );
+
+    let ids = [
+        "O01", "O02", "O03", "O04", "O05", "O06", "O07", "O08", "O09", "O10",
+    ];
+    for id in ids {
+        assert!(content.contains(id), "{id} must appear in benchmark doc");
+    }
+
+    let mut rows = vec![];
+    for line in content.lines() {
+        if !line.starts_with("| O") {
+            continue;
+        }
+        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
+        if cells.len() < 6 || cells[1].is_empty() {
+            continue;
+        }
+        if !ids.contains(&cells[1]) {
+            continue;
+        }
+        rows.push(cells);
+    }
+    assert_eq!(rows.len(), ids.len(), "one row per candidate O01..O10");
+
+    let mut seen = HashSet::new();
+    for cells in &rows {
+        let id = cells[1];
+        seen.insert(id.to_string());
+        let status_cell = cells
+            .iter()
+            .find(|cell| cell.starts_with("status ="))
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            !status_cell.is_empty(),
+            "{id} must have an explicit status",
+        );
+        let status_lower = status_cell.to_ascii_lowercase();
+        let claims_adoption =
+            status_lower.contains("adopted") && !status_lower.contains("not adopted");
+        if claims_adoption {
+            let before = cells.get(3).map(|cell| cell.trim()).unwrap_or("");
+            let after = cells.get(4).map(|cell| cell.trim()).unwrap_or("");
+            assert!(
+                !before.is_empty() && !after.is_empty(),
+                "{id} claims adoption without before+after benchmark evidence",
+            );
+        }
+    }
+    for id in ids {
+        assert!(seen.contains(id), "{id} row missing from benchmark table");
+    }
 }
