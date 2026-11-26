@@ -68,15 +68,16 @@ fn rate(count: u64, total: u64) -> Option<f64> {
 
 impl TraceReport {
     // Derivation rules:
-    // gate_pass_rate    = count(event name contains "pass") / total events
+    // gate_pass_rate    = pass gate-result events / gate-result events (name is gate_pass/gate_fail or ends _pass/_fail)
     // defect_severity   = count(event name contains "defect")
     // reproducibility   = count(event name contains "repro") / total events
     // tool_call_count   = count(event name contains "tool")
-    // token_count       = count(event name contains "token")
-    // latency_ms        = sum of duration_ms values
-    // cost_per_verified_result = sum of cost.value / events carrying cost; None when no cost metadata exists
+    // token_count       = sum of numeric detail.tokens / detail.token_count; None when no event carries either
+    // latency_ms        = sum of duration_ms from events that have one; None when none have it
+    // cost_per_verified_result = sum of cost.value / events whose cost.value is Some; None when none
     // recovery_fidelity = count(event name contains "recover") / total events
     // overhead          = count(events with parent_id set) / total events
+    // @impl:FR-AUD-18
     pub fn from_events(
         events: &[TraceEvent],
         verification: Option<&serde_json::Value>,
@@ -84,12 +85,19 @@ impl TraceReport {
         event_coverage: &str,
     ) -> Self {
         let total = events.len() as u64;
-        let cost_denominator = events.iter().filter(|event| event.cost.is_some()).count() as u64;
 
-        let pass_count = events
+        let is_gate_result = |name: &str| name.ends_with("_pass") || name.ends_with("_fail");
+        let is_gate_pass = |name: &str| name.ends_with("_pass");
+        let gate_events: Vec<&TraceEvent> = events
             .iter()
-            .filter(|event| event.event.contains("pass"))
+            .filter(|event| is_gate_result(&event.event))
+            .collect();
+        let gate_total = gate_events.len() as u64;
+        let pass_count = gate_events
+            .iter()
+            .filter(|event| is_gate_pass(&event.event))
             .count() as u64;
+
         let defect_count = events
             .iter()
             .filter(|event| event.event.contains("defect"))
@@ -102,10 +110,6 @@ impl TraceReport {
             .iter()
             .filter(|event| event.event.contains("tool"))
             .count() as u64;
-        let token_count = events
-            .iter()
-            .filter(|event| event.event.contains("token"))
-            .count() as u64;
         let recover_count = events
             .iter()
             .filter(|event| event.event.contains("recover"))
@@ -115,17 +119,29 @@ impl TraceReport {
             .filter(|event| event.parent_id.is_some())
             .count() as u64;
 
-        let have_events = total > 0;
-        let gate_pass_rate = rate(pass_count, total);
-        let defect_severity = have_events.then_some(defect_count as f64);
+        let gate_pass_rate = rate(pass_count, gate_total);
+        let defect_severity = rate(defect_count, total);
         let reproducibility = rate(repro_count, total);
-        let tool_call_count = have_events.then_some(tool_count as f64);
-        let token_count = have_events.then_some(token_count as f64);
-        let latency_sum: f64 = events
+        let tool_call_count = (total > 0).then_some(tool_count as f64);
+
+        let token_count: Option<f64> = events
+            .iter()
+            .filter_map(|event| {
+                event.detail.as_ref().and_then(|detail| {
+                    detail.get("tokens").or_else(|| detail.get("token_count")).and_then(|value| value.as_f64())
+                })
+            })
+            .fold(None, |acc, value| Some(acc.unwrap_or(0.0) + value));
+
+        let latency_ms: Option<f64> = events
             .iter()
             .filter_map(|event| event.duration_ms.map(|millis| millis as f64))
-            .sum();
-        let latency_ms = have_events.then_some(latency_sum);
+            .fold(None, |acc, value| Some(acc.unwrap_or(0.0) + value));
+
+        let cost_denominator = events
+            .iter()
+            .filter(|event| event.cost.as_ref().and_then(|cost| cost.value).is_some())
+            .count() as u64;
         let cost_sum: f64 = events
             .iter()
             .filter_map(|event| event.cost.as_ref().and_then(|cost| cost.value))
@@ -139,7 +155,7 @@ impl TraceReport {
             Metric {
                 name: "gate_pass_rate".to_string(),
                 value: gate_pass_rate,
-                denominator: Some(total),
+                denominator: Some(gate_total),
             },
             Metric {
                 name: "defect_severity".to_string(),
@@ -185,8 +201,16 @@ impl TraceReport {
 
         let failures: Vec<String> = events
             .iter()
-            .filter(|event| event.event.contains("fail") || event.event.contains("error"))
-            .map(|event| event.event.clone())
+            .filter_map(|event| {
+                let failed_observation = event.event == "observation"
+                    && event
+                        .detail
+                        .as_ref()
+                        .and_then(|detail| detail.get("ok"))
+                        .and_then(|ok| ok.as_bool())
+                        == Some(false);
+                failed_observation.then(|| format!("observation failed: task={}", event.task_id))
+            })
             .collect();
 
         let skipped = verification
@@ -954,14 +978,15 @@ mod tests {
     #[test]
     fn events_give_every_metric_a_denominator_and_at_least_one_value() {
         let events = vec![
-            test_event("trace", 0, "gate pass"),
-            test_event("trace", 1, "defect"),
-            test_event("trace", 2, "repro"),
-            test_event("trace", 3, "tool call"),
-            test_event("trace", 4, "token"),
-            test_event("trace", 5, "recover"),
-            event_with_cost("trace", 6, Some(3.0)),
-            event_nested("trace", 7),
+            test_event("trace", 0, "gate_pass"),
+            test_event("trace", 1, "gate_fail"),
+            test_event("trace", 2, "defect"),
+            test_event("trace", 3, "repro"),
+            test_event("trace", 4, "tool call"),
+            test_event("trace", 5, "token"),
+            test_event("trace", 6, "recover"),
+            event_with_cost("trace", 7, Some(3.0)),
+            event_nested("trace", 8),
         ];
         let report = TraceReport::from_events(&events, None, "commit-1", "full");
         assert_eq!(report.metrics.len(), 9);
@@ -982,19 +1007,27 @@ mod tests {
             .map(|metric| metric.name.as_str())
             .collect();
         assert_eq!(names, expected);
+        let gate = report
+            .metrics
+            .iter()
+            .find(|metric| metric.name == "gate_pass_rate")
+            .unwrap();
+        assert_eq!(gate.value, Some(0.5));
+        assert_eq!(gate.denominator, Some(2));
         let others: Vec<&Metric> = report
             .metrics
             .iter()
-            .filter(|metric| metric.name != "cost_per_verified_result")
+            .filter(|metric| metric.name != "cost_per_verified_result" && metric.name != "gate_pass_rate")
             .collect();
         for metric in others {
-            assert_eq!(metric.denominator, Some(8));
+            assert_eq!(metric.denominator, Some(9));
         }
         let cost_metric = report
             .metrics
             .iter()
             .find(|metric| metric.name == "cost_per_verified_result")
             .unwrap();
+        assert_eq!(cost_metric.value, Some(3.0));
         assert_eq!(cost_metric.denominator, Some(1));
         assert!(report.metrics.iter().any(|metric| metric.value.is_some()));
     }
@@ -1032,9 +1065,10 @@ mod tests {
     #[test]
     fn skipped_and_failures_are_preserved_from_verification() {
         let events = vec![
-            test_event("trace", 0, "task fail"),
-            test_event("trace", 1, "error happened"),
-            test_event("trace", 2, "ok"),
+            observation_event("trace", 0, true),
+            observation_event("trace", 1, false),
+            test_event("trace", 2, "task fail"),
+            test_event("trace", 3, "error happened"),
         ];
         let verification = serde_json::json!({
             "status": "partial",
@@ -1047,7 +1081,48 @@ mod tests {
         );
         assert_eq!(
             report.failures,
-            vec!["task fail".to_string(), "error happened".to_string()]
+            vec!["observation failed: task=task-1".to_string()]
+        );
+    }
+
+    // @test:FR-AUD-18
+    #[test]
+    fn fr_aud_18_contract_examples() {
+        // 1 pass + 1 fail + 8 unrelated events => gate pass rate 0.5
+        let mut events: Vec<TraceEvent> = vec![
+            bare_event("trace", 0, "gate_pass"),
+            bare_event("trace", 1, "gate_fail"),
+        ];
+        for i in 2..10 {
+            events.push(bare_event("trace", i, "run"));
+        }
+        // one event carries tokens: 500
+        events.push(event_with_tokens("trace", 10, 500.0));
+        // cost.value None and no duration_ms anywhere => both None
+        let mut cost_event = event_with_cost("trace", 11, None);
+        cost_event.duration_ms = None;
+        events.push(cost_event);
+        // failed observation => descriptive failure
+        events.push(observation_event("trace", 12, false));
+
+        let report = TraceReport::from_events(&events, None, "commit-1", "full");
+
+        assert_eq!(metric_value(&report, "gate_pass_rate"), Some(0.5));
+        assert_eq!(
+            report
+                .metrics
+                .iter()
+                .find(|metric| metric.name == "gate_pass_rate")
+                .unwrap()
+                .denominator,
+            Some(2)
+        );
+        assert_eq!(metric_value(&report, "token_count"), Some(500.0));
+        assert_eq!(metric_value(&report, "cost_per_verified_result"), None);
+        assert_eq!(metric_value(&report, "latency_ms"), None);
+        assert_eq!(
+            report.failures,
+            vec!["observation failed: task=task-1".to_string()]
         );
     }
 
@@ -1066,6 +1141,43 @@ mod tests {
         let mut event = test_event(trace_id, seq, "nested");
         event.parent_id = Some("parent-1".to_string());
         event
+    }
+
+    fn bare_event(trace_id: &str, seq: u64, event: &str) -> TraceEvent {
+        TraceEvent {
+            schema_version: 1,
+            trace_id: trace_id.to_string(),
+            parent_id: None,
+            task_id: "task-1".to_string(),
+            seq,
+            ts_wall: "2026-11-24T00:00:00Z".to_string(),
+            event: event.to_string(),
+            duration_ms: None,
+            cost: None,
+            missing: Vec::new(),
+            detail: None,
+        }
+    }
+
+    fn observation_event(trace_id: &str, seq: u64, ok: bool) -> TraceEvent {
+        let mut event = bare_event(trace_id, seq, "observation");
+        event.detail = Some(serde_json::json!({ "ok": ok }));
+        event
+    }
+
+    fn event_with_tokens(trace_id: &str, seq: u64, tokens: f64) -> TraceEvent {
+        let mut event = bare_event(trace_id, seq, "tokens_seen");
+        event.detail = Some(serde_json::json!({ "tokens": tokens }));
+        event
+    }
+
+    fn metric_value(report: &TraceReport, name: &str) -> Option<f64> {
+        report
+            .metrics
+            .iter()
+            .find(|metric| metric.name == name)
+            .expect("metric present")
+            .value
     }
 
     // @test:IN-01-FILE-EVIDENCE
