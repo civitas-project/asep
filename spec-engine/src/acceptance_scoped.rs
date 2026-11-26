@@ -44,7 +44,7 @@ pub struct SnapshotIdentity {
     pub toolchain: String,
 }
 
-/// Hex-encoded sha256 of `data`.
+/// Encodes the digest of the supplied bytes as lowercase hexadecimal.
 fn hex(bytes: impl AsRef<[u8]>) -> String {
     let digest = Sha256::digest(bytes.as_ref());
     format!("{digest:x}")
@@ -156,8 +156,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     let plan = build_test_plan(&base, &policy.changed_paths)?;
     let mut total_executed: usize = 0;
     for cmd in &plan.commands {
-        let stdout =
-            run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
+        let stdout = run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
         total_executed += executed_test_count(&stdout);
     }
     if total_executed == 0 {
@@ -364,8 +363,7 @@ fn in_scope_requirement_ids(
     cmd.extend(changed_paths.iter().map(|s| s.as_str()));
     cmd.push("--json");
     let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
-    let mut values = serde_json::Deserializer::from_str(&stdout)
-        .into_iter::<serde_json::Value>();
+    let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
     let value = match values.next() {
         Some(Ok(v)) => v,
         Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
@@ -420,16 +418,12 @@ pub struct TestPlan {
 /// `cargo test` get `-p asep` inserted after `cargo test` unless they already
 /// carry a `-p` token. No target is silently dropped: a nonexistent target
 /// fails explicitly when its command runs.
-pub fn build_test_plan(
-    base: &[String],
-    changed_paths: &[String],
-) -> Result<TestPlan, String> {
+pub fn build_test_plan(base: &[String], changed_paths: &[String]) -> Result<TestPlan, String> {
     let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
     cmd.extend(changed_paths.iter().map(|s| s.as_str()));
     cmd.push("--json");
     let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
-    let mut values = serde_json::Deserializer::from_str(&stdout)
-        .into_iter::<serde_json::Value>();
+    let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
     let value = match values.next() {
         Some(Ok(v)) => v,
         Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),

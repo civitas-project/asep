@@ -261,20 +261,18 @@ pub fn build_relation_graph(tags: &[ScannedTag], policy: &Policy) -> GraphReport
     let mut verifies_with_note: HashMap<String, usize> = HashMap::new();
 
     for edge in &edges {
-        let mut admissible = false;
-        if let Some(source_kinds) = id_kinds.get(&edge.from) {
-            for target in &edge.to {
-                if let Some(target_kinds) = id_kinds.get(target) {
-                    for source_kind in source_kinds {
-                        for target_kind in target_kinds {
-                            if admissible_edge(*source_kind, edge.kind, *target_kind) {
-                                admissible = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let admissible = match id_kinds.get(&edge.from) {
+            Some(source_kinds) => edge.to.iter().any(|target| {
+                id_kinds.get(target).is_some_and(|target_kinds| {
+                    source_kinds.iter().any(|source_kind| {
+                        target_kinds.iter().any(|target_kind| {
+                            admissible_edge(*source_kind, edge.kind, *target_kind)
+                        })
+                    })
+                })
+            }),
+            None => false,
+        };
         if !admissible {
             violations.push(CoverageViolation {
                 rule_id: "COV-TYPE".to_string(),

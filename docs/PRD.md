@@ -155,3 +155,58 @@ Sumber: `ASEP_Adaptive_Architecture_v0.2.md` §3, §5, §6, §8 (P0–P5). Uruta
 <!-- @req:FR-REACT-01:MUST `Action` and `Observation` structs shall represent a tool invocation and its result, linked to `trace_id` and `seq`. -->
 <!-- @req:FR-REACT-02:MUST An `ActionContract::validate` shall reject actions missing required fields or lacking capability coverage, returning a structured error. -->
 <!-- @req:FR-REACT-03:MUST An `Observation` shall be convertible to a `TraceEvent` reusing the existing collector, without introducing a new store. -->
+
+## Static engineering audit remediation (snapshot 4355dbc8)
+
+Sumber: `ASEP_dev_audit_4355dbc.md`. Prioritas mengikuti audit: P0 (build + proof integrity), P1 (correctness/reliability), P2 (contract/config/integrity), P3 (bounded formatting). Setiap requirement memiliki satu `@impl` dan satu `@test` agar aturan COV-06 terpenuhi. Tidak ada engine, store, dependency, atau abstraksi baru tanpa bukti kebutuhan.
+
+### P0 — build blocker dan evidence integrity
+
+<!-- @req:FR-AUD-01:MUST A clean checkout of the approved commit shall build without E0583: the `context` module implementation and its test file shall be tracked in git (not merely present in the working tree), and no stub implementation shall be used to satisfy the build. -->
+<!-- @req:FR-AUD-02:MUST `accept-scoped` shall bind evidence to an immutable source snapshot of the approved commit: a dirty working tree, a different HEAD, or a changed snapshot digest shall fail closed and shall not emit ACCEPTED evidence for a commit that was not tested; emitted evidence shall record snapshot digest, gate results, changed-path digest, toolchain, and policy digest. -->
+
+### P1 — correctness dan reliability
+
+<!-- @req:FR-AUD-03:MUST Scoped acceptance shall compute coverage per requirement: a requirement outside the changed-path scope, unmapped, or without an actually executed test shall receive UNPROVEN, and an empty selected-test list shall never yield ACCEPTED. Mechanical gate results shall be reported separately from semantic acceptance. -->
+<!-- @req:FR-AUD-04:MUST Evidence records shall carry a schema version and revision/input digests and shall distinguish MISSING, STALE, REJECTED, and PASS; evidence from commit A reused on tree B shall be STALE/UNPROVEN rather than PASS, and a REJECTED verdict shall remain explicitly recorded. -->
+<!-- @req:FR-AUD-05:MUST Scoped test selection shall emit a structured execution plan with selected, executed, failed, and skipped counts, shall use qualified Rust test identifiers and explicit `-p` package selection, and shall fail when zero tests were executed or a target was discarded. -->
+<!-- @req:FR-AUD-06:MUST The relation graph shall validate edges against admissible `(source_kind, edge_kind, target_kind)` combinations from policy, reject whitespace-only notes, and keep same textual IDs of different node kinds distinct; an inadmissible edge shall not close COV-06. -->
+<!-- @req:FR-AUD-07:MUST Impact traversal shall use the typed adjacency of FR-AUD-06: dangling references shall be reported as invalid/unproven instead of synthesized nodes, and provenance shall contain only policy-admissible typed edges. -->
+<!-- @req:FR-AUD-08:MUST The scanner shall distinguish non-text files, permission/IO errors, and a missing root, shall report scan completeness, and shall fail hard on an invalid root or an unreadable required file instead of returning an empty graph that appears closed. -->
+<!-- @req:FR-AUD-09:MUST Formal gate results shall use explicit PASS/FAIL/SKIPPED/UNPROVEN states: a required solver that is absent shall not produce PASS, a gate with every check skipped shall not report `skipped: false`, and required-versus-optional solvers shall be policy-driven. -->
+<!-- @req:FR-AUD-10:MUST The process-memory harness shall return an error whenever the child exits nonzero, regardless of measured peak RSS, and shall distinguish execution errors from budget violations. -->
+<!-- @req:FR-AUD-11:MUST The process harness shall concurrently drain child stdout/stderr with a bounded limit and a process deadline so that a successful program emitting 1 MiB of text completes; output limits and cleanup shall be explicit. -->
+<!-- @req:FR-AUD-12:MUST Process memory measurement shall account for the child process tree using a recorded method, shall mark unsupported platforms as UNAVAILABLE rather than a valid 0-byte measurement, and shall record method and completeness alongside the metric. -->
+<!-- @req:FR-AUD-13:MUST A scoped in-process timeout shall either enforce a wall-clock bound or be explicitly labeled cooperative; a 500 ms workload with a 20 ms timeout shall not silently wait to completion under a hard-timeout contract. -->
+<!-- @req:FR-AUD-15:MUST `Action`, `Observation`, and the resulting trace event shall carry a non-empty `task_id`; two tasks sharing a trace shall not be merged into an empty identity bucket, and an invalid identity shall be rejected. -->
+<!-- @req:FR-AUD-16:MUST Trace lookup and rotated-segment selection shall match trace IDs exactly using an opaque safe key; traces `run1` and `run10` shall be reported separately and a segment of another trace shall not be purged by prefix. -->
+<!-- @req:FR-AUD-17:MUST The default telemetry allowlist shall include the minimum evidence schema fields (`schema_version`, `trace_id`, `task_id`, `event`, `seq`, approved detail), while sensitive raw payloads stay opt-in. -->
+<!-- @req:FR-AUD-18:MUST Trace reports shall use typed events and correct denominators: one gate pass plus one gate fail plus eight unrelated events yields a gate pass rate of 0.5, a token event of 500 yields 500 tokens, unknown cost/duration yields None, failed observations appear in failures, and CLI and MCP use one canonical report builder. -->
+<!-- @req:FR-AUD-19:MUST Trace rotation shall use a unique monotonic segment ordinal with non-overwriting atomic creation and a cap based on actual serialized bytes; multiple rotations in the same second shall retain every segment. -->
+<!-- @req:FR-AUD-20:MUST Trace persistence shall set a safe file mode at creation, use committed event IDs/dedup and recovery tail so an interrupted/retried write does not duplicate committed events, and sweep retention across active, idle, and rotated traces. -->
+<!-- @req:FR-AUD-21:MUST Capability validation shall fail closed: malformed or unreadable configuration shall not enable all capabilities, unknown capability names shall not count as satisfied, and required capabilities shall be derived from a trusted tool registry. -->
+<!-- @req:FR-AUD-23:MUST MessageStore publish and ack shall be atomic and serialized: unique `create_new` temporary files, a transactional publish, and CAS/serialized ack shall prevent partial accepted state and lost updates under 100 parallel sends and parallel acks of one message. -->
+<!-- @req:FR-AUD-26:MUST The srcdump Rust comment stripper shall verify the `/*` prefix before scanning so that `let a = 1; /* comment */ let b = 2;` preserves both statements; nested comments, strings, Unicode, unterminated comments, and token adjacency shall be covered. -->
+<!-- @req:FR-AUD-28:MUST srcdump shall report `original_tokens` and `emitted_tokens` separately, emit skipped counts and reasons rather than silently dropping files, and the context compiler shall budget against emitted bytes rather than original content. -->
+<!-- @req:FR-AUD-30:MUST srcdump shall default to not following symlinks, check canonical containment on traversal and per file, refuse external targets and special files, and recognize a valid symlink using `symlink_metadata`. -->
+
+### P2 — kontrak, konfigurasi, dan integritas
+
+<!-- @req:FR-AUD-14:MUST Complexity measurement shall use one finite nonnegative metric domain per series, reject NaN/nonfinite/inconsistent metrics and an invalid step count, and record warmup, repetitions, and baseline noise. -->
+<!-- @req:FR-AUD-22:MUST `BudgetTracker::record_cost` shall reject negative, NaN, and infinite values; a strict cap shall reserve budget before an action and reconcile actual usage so an exhausted budget cannot authorize the next action. -->
+<!-- @req:FR-AUD-24:MUST The envelope directory validator shall reject duplicate IDs, enforce ID grammar equal to the file stem, validate references/reply-to before publish, and report unreadable entries. -->
+<!-- @req:FR-AUD-25:MUST The traceability tag lexer shall enforce tag delimiters, emit an explicit parse error for an unknown priority, and not treat quoted examples as declarations when policy forbids it. -->
+<!-- @req:FR-AUD-27:MUST srcdump shall honor its declared output format: JSON mode produces one parseable document, text mode is not NDJSON, NDJSON lines are individually valid, and an unsupported format yields an explicit error rather than a silent fallback. -->
+<!-- @req:FR-AUD-29:MUST srcdump option precedence shall be explicit: signatures mode emits signatures, TOML custom mode survives CLI defaults, `jobs=1` uses one worker, summary threshold is honored, and no-op flags are either implemented or removed. -->
+<!-- @req:FR-AUD-31:MUST srcwalk shall define and honor `respect_gitignore` by setting all git-related ignore flags explicitly, propagate ignore parse errors, and behave consistently in repositories with and without `.git`. -->
+<!-- @req:FR-AUD-32:MUST srcwalk shall apply one consistent symlink-follow contract, enforce containment, and use canonical dedup when promised so aliases do not duplicate logical files. -->
+<!-- @req:FR-AUD-34:MUST The MCP JSON-RPC layer shall validate protocol version and ID type, separate parse/schema/method/params errors, honor defined notifications, propagate stdin I/O errors, and use tool-result errors for tool failures per protocol contract. -->
+<!-- @req:FR-AUD-35:MUST The shared library shall compile on both Unix and Windows: Unix-only facilities (for example `std::os::unix::fs::PermissionsExt`) shall be `cfg`-gated, a Windows implementation shall provide equivalent access restriction rather than silently skipping it, and no unguarded platform-specific import shall break a supported target. -->
+
+### P3 — bounded formatting
+
+<!-- @req:FR-AUD-33:MUST srcdump line truncation shall respect the configured `max_len` including the ellipsis for every Unicode length and limit in 0..N, and shall preserve UTF-8 validity and the trailing-newline contract. -->
+
+### Optimization discipline
+
+<!-- @req:FR-OPT-00:MUST An optimization from the audit backlog shall be adopted only with a committed benchmark report using the same commit and fixtures before and after, reporting latency distribution, allocations, RSS, and unchanged correctness output; without such evidence the candidate remains documented but unimplemented. -->

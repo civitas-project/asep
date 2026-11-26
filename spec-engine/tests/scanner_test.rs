@@ -1,6 +1,10 @@
-use asep::scanner::{scan_project_tags, TagKind};
+use asep::scanner::{scan_project_tags, scan_project_tags_detailed, TagKind};
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 // @test:FR-CLI-SCAN-01
 #[test]
@@ -45,4 +49,76 @@ fn test_scan_project_tags_respects_gitignore() {
     assert!(!tags
         .iter()
         .any(|t| matches!(&t.kind, TagKind::Impl { id } if id == "FR-IGNORED-01")));
+}
+
+// @test:FR-AUD-08
+#[test]
+fn scan_detailed_rejects_missing_root() {
+    let result = scan_project_tags_detailed(Path::new("/nonexistent/asep-scan"));
+    assert!(result.is_err());
+}
+
+#[test]
+fn scan_detailed_reports_unreadable_file() {
+    #[cfg(unix)]
+    {
+        let dir = tempdir().expect("tempdir created");
+        let root = dir.path();
+        let file = root.join("unreadable.rs");
+        fs::write(&file, "// @impl:FR-AUD-08-TEST\n").expect("write file");
+        fs::set_permissions(&file, PermissionsExt::from_mode(0o000)).expect("set permissions");
+
+        let result = scan_project_tags_detailed(root).expect("detailed scan returns ok");
+        assert!(
+            !result.completeness.errors.is_empty(),
+            "errors should be non-empty"
+        );
+        assert!(
+            result
+                .completeness
+                .errors
+                .iter()
+                .any(|error| error.contains("unreadable.rs")),
+            "errors should mention the filename"
+        );
+
+        fs::set_permissions(&file, PermissionsExt::from_mode(0o644)).expect("restore permissions");
+    }
+    #[cfg(not(unix))]
+    {
+        eprintln!("skip scan_detailed_reports_unreadable_file on non-unix");
+    }
+}
+
+#[test]
+fn scan_detailed_skips_binary_file() {
+    let dir = tempdir().expect("tempdir created");
+    let root = dir.path();
+    let mut content = b"// @req:FR-BINARY-01\nprefix\n".to_vec();
+    content.push(0);
+    content.extend_from_slice(b"suffix\n");
+    fs::write(root.join("binary.bin"), &content).expect("write binary file");
+
+    let result = scan_project_tags_detailed(root).expect("detailed scan succeeds");
+    assert!(result.completeness.skipped_binary >= 1);
+    assert!(
+        !result
+            .tags
+            .iter()
+            .any(|t| matches!(&t.kind, TagKind::Req { id, .. } if id == "FR-BINARY-01")),
+        "no tag from binary file"
+    );
+}
+
+#[test]
+fn scan_detailed_counts_files() {
+    let dir = tempdir().expect("tempdir created");
+    let root = dir.path();
+    fs::write(root.join("a.rs"), "// @req:FR-AUD-08-A\n").expect("write a.rs");
+    fs::write(root.join("b.rs"), "// @impl:FR-AUD-08-B\n").expect("write b.rs");
+
+    let result = scan_project_tags_detailed(root).expect("detailed scan succeeds");
+    assert!(result.completeness.files_seen >= 2);
+    assert!(result.completeness.files_read >= 2);
+    assert!(result.completeness.errors.is_empty());
 }

@@ -8,6 +8,7 @@
 // @test:FR-MCP-IMPACT-01 // @test:FR-MCP-IMPACT-02
 // @test:FR-CTX-01 // @test:FR-CTX-02 // @test:FR-CTX-03
 // @test:FR-ADRCOV-01 // @test:FR-ADRCOV-02 // @test:FR-ADRCOV-03
+// @test:FR-AUD-01 // @test:FR-AUD-02 // @test:FR-AUD-03 // @test:FR-AUD-05 // @test:FR-AUD-06 // @test:FR-AUD-07 // @test:FR-AUD-08
 // @test:FR-CAP-01 // @test:FR-CAP-02 // @test:FR-CAP-03 // @test:FR-CAP-04 // @test:FR-CAP-05 // @test:FR-CAP-06 // @test:FR-CAP-07 // @test:FR-CAP-08 // @test:FR-AMB-01 // @test:FR-AMB-02 // @test:FR-AMB-03 // @test:FR-AMB-04 // @test:FR-AMB-05 // @test:FR-AMB-06
 //! Unit tests for the 13 MUST requirements in docs/PRD.md.
 //! Each test carries one test-marker comment and asserts real behavior
