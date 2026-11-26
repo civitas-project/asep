@@ -307,6 +307,51 @@ pub fn trace_key(trace_id: &str) -> String {
     trace_id.bytes().map(|byte| format!("{byte:02x}")).collect()
 }
 
+// @impl:FR-TRACE-READ-01
+pub fn read_trace_events(dir: &Path, trace_id: &str) -> Result<Vec<TraceEvent>, String> {
+    let key = trace_key(trace_id);
+    let prefix = format!("{key}.");
+    let mut paths: Vec<PathBuf> = Vec::new();
+    match fs::read_dir(dir) {
+        Ok(read_dir) => {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(&prefix) && name.ends_with(".ndjson") {
+                    paths.push(entry.path());
+                }
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("failed to read trace dir {}: {e}", dir.display())),
+    }
+    paths.sort();
+
+    let mut events: Vec<TraceEvent> = Vec::new();
+    for path in &paths {
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+        for line in content.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let event: TraceEvent = match serde_json::from_str(line) {
+                Ok(event) => event,
+                Err(_) => continue,
+            };
+            if event.trace_id == trace_id {
+                events.push(event);
+            }
+        }
+    }
+
+    events.sort_by(|a, b| a.seq.cmp(&b.seq).then_with(|| a.ts_wall.cmp(&b.ts_wall)));
+    let mut seen: HashSet<u64> = HashSet::new();
+    events.retain(|event| seen.insert(event.seq));
+    Ok(events)
+}
+
 // @impl:IN-01-COLLECT
 pub struct TraceCollector {
     target_dir: PathBuf,
@@ -1633,5 +1678,70 @@ mod tests {
             .join(format!("{}.ndjson", trace_key("trace-secure")));
         let metadata = fs::metadata(&path).unwrap();
         assert_eq!(PermissionsExt::mode(&metadata.permissions()) & 0o777, 0o600);
+    }
+
+    // @test:FR-TRACE-READ-01
+    #[test]
+    fn fr_trace_read_01_exact_trace_id_isolates_segments_and_filters_foreign_events() {
+        let dir = tempdir().unwrap();
+        let run1_key = trace_key("run1");
+        let run10_key = trace_key("run10");
+
+        let make_event = |trace_id: &str, seq: u64, ts_wall: &str| TraceEvent {
+            schema_version: 1,
+            trace_id: trace_id.to_string(),
+            parent_id: None,
+            task_id: "task-a".to_string(),
+            seq,
+            ts_wall: ts_wall.to_string(),
+            event: "run".to_string(),
+            duration_ms: Some(5),
+            cost: None,
+            missing: Vec::new(),
+            detail: None,
+        };
+
+        fs::write(
+            dir.path().join(format!("{run1_key}.ndjson")),
+            [
+                serde_json::to_string(&make_event("run1", 1, "2026-11-24T00:00:01Z")).unwrap(),
+                serde_json::to_string(&make_event("run1", 2, "2026-11-24T00:00:02Z")).unwrap(),
+                "{broken json".to_string(),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(format!("{run1_key}.1.ndjson")),
+            [
+                serde_json::to_string(&make_event("intruder", 99, "2026-11-24T00:00:99Z")).unwrap(),
+                serde_json::to_string(&make_event("run1", 1, "2026-11-24T00:00:01Z")).unwrap(),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(format!("{run10_key}.ndjson")),
+            [
+                serde_json::to_string(&make_event("run10", 1, "2026-11-24T00:00:01Z")).unwrap(),
+                serde_json::to_string(&make_event("run10", 2, "2026-11-24T00:00:02Z")).unwrap(),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let run1 = read_trace_events(dir.path(), "run1").unwrap();
+        assert_eq!(run1.len(), 2);
+        assert_eq!(run1.iter().map(|event| event.seq).collect::<Vec<u64>>(), vec![1, 2]);
+        assert!(run1.iter().all(|event| event.trace_id == "run1"));
+        assert!(!run1.iter().any(|event| event.trace_id == "intruder"));
+
+        let run10 = read_trace_events(dir.path(), "run10").unwrap();
+        assert_eq!(run10.len(), 2);
+        assert!(run10.iter().all(|event| event.trace_id == "run10"));
+
+        let missing_dir = dir.path().join("nope");
+        let missing = read_trace_events(&missing_dir, "run1").unwrap();
+        assert!(missing.is_empty());
     }
 }

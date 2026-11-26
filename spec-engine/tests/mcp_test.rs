@@ -1,6 +1,7 @@
 // @test:FR-CAP-02
 use asep::agent_protocol::Envelope;
 use asep::mcp::server::process_jsonrpc_request;
+use asep::observability::trace_key;
 use asep::mcp::tools::{execute_tool, get_tools_list};
 use serde_json::json;
 use std::fs;
@@ -629,9 +630,9 @@ fn test_trace_report_success_returns_summary() {
 
     let trace_id = "trace.alpha-1";
     fs::write(
-        trace_dir.join(format!("{trace_id}.ndjson")),
-        r#"{"task_id":"task-alpha","event":"run"}
-{"task_id":"task-alpha","event":"finish"}
+        trace_dir.join(format!("{}.ndjson", trace_key(trace_id))),
+        r#"{"schema_version":1,"trace_id":"trace.alpha-1","parent_id":null,"task_id":"task-alpha","seq":0,"ts_wall":"2026-11-24T00:00:00Z","event":"run","duration_ms":null,"cost":null,"missing":[],"detail":null}
+{"schema_version":1,"trace_id":"trace.alpha-1","parent_id":null,"task_id":"task-alpha","seq":1,"ts_wall":"2026-11-24T00:00:01Z","event":"finish","duration_ms":null,"cost":null,"missing":[],"detail":null}
 "#,
     )
     .unwrap();

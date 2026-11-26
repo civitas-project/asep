@@ -8,7 +8,7 @@ use crate::graph::builder::{build_relation_graph, build_trace_graph};
 use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
-use crate::observability::TraceCollector;
+use crate::observability::{read_trace_events, trace_key, TraceCollector};
 use crate::pack::installer::{run_pack_installer, PackOptions};
 use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, Severity, TierId};
@@ -2279,49 +2279,30 @@ fn trace_segment_count(dir: &Path) -> usize {
 }
 
 fn run_trace_report(root: &Path, dir: &Path, trace_id: &str) -> Result<(), String> {
-    let mut segments: Vec<PathBuf> = Vec::new();
-    match fs::read_dir(dir) {
-        Ok(read_dir) => {
-            for entry in read_dir.flatten() {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with(trace_id) && name.ends_with(".ndjson") {
-                    segments.push(entry.path());
-                }
+    let events = read_trace_events(dir, trace_id)?;
+
+    let key = trace_key(trace_id);
+    let prefix = format!("{key}.");
+    let mut segments = 0usize;
+    if let Ok(read_dir) = fs::read_dir(dir) {
+        for entry in read_dir.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&prefix) && name.ends_with(".ndjson") {
+                segments += 1;
             }
         }
-        Err(_) => {}
     }
-    segments.sort();
 
     let mut counts: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
     let mut total = 0usize;
-    for path in &segments {
-        let content = fs::read_to_string(&path)
-            .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-        for line in content.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let event: serde_json::Value = serde_json::from_str(line)
-                .map_err(|e| format!("invalid JSON in {}: {e}", path.display()))?;
-            let task_id = event
-                .get("task_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("<unknown>")
-                .to_string();
-            let event_name = event
-                .get("event")
-                .and_then(|v| v.as_str())
-                .unwrap_or("<unknown>")
-                .to_string();
-            let counter = counts.entry(task_id).or_default();
-            *counter.entry(event_name).or_insert(0) += 1;
-            total += 1;
-        }
+    for event in &events {
+        let counter = counts.entry(event.task_id.clone()).or_default();
+        *counter.entry(event.event.clone()).or_insert(0) += 1;
+        total += 1;
     }
 
     println!("trace: {trace_id}");
-    println!("segments: {}", segments.len());
+    println!("segments: {segments}");
     println!("events: {total}");
     match counts.is_empty() {
         true => println!("  (none)"),

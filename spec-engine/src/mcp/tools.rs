@@ -11,7 +11,7 @@ use crate::config::settings::load_config;
 use crate::context::compile_context;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
-use crate::observability::TraceCollector;
+use crate::observability::read_trace_events;
 use crate::runtime::budget::ResourceBudget;
 use crate::scanner::scan_project_tags;
 use serde_json::json;
@@ -1107,59 +1107,26 @@ fn is_scoped_commit(commit: &str) -> bool {
 // adds reconciliation status from .spec-engine/verification.json.
 fn build_trace_summary(dir: &Path, trace_id: &str) -> Result<serde_json::Value, String> {
     let config = load_config(dir);
-    let _collector = TraceCollector::new(dir, &config.telemetry);
     let trace_dir = dir.join(&config.telemetry.dir);
+    let events = read_trace_events(&trace_dir, trace_id)?;
 
-    let mut events: Vec<serde_json::Value> = Vec::new();
-    let mut trace_found = false;
-
-    let entries: Vec<std::fs::DirEntry> = match trace_dir.exists() {
-        true => fs::read_dir(&trace_dir)
-            .map_err(|e| format!("Failed to read trace dir: {e}"))?
-            .filter_map(|entry| entry.ok())
-            .collect(),
-        false => Vec::new(),
-    };
-    for entry in entries {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with(trace_id) || !name.ends_with(".ndjson") {
-            continue;
-        }
-        trace_found = true;
-        let content = fs::read_to_string(entry.path())
-            .map_err(|e| format!("Failed to read trace file '{name}': {e}"))?;
-        for line in content.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            let value: serde_json::Value = serde_json::from_str(line)
-                .map_err(|e| format!("Failed to parse trace line in '{name}': {e}"))?;
-            events.push(value);
-        }
-    }
-
+    let mut events_values: Vec<serde_json::Value> = Vec::new();
     let mut by_task: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
     for event in &events {
-        let task_id = event
-            .get("task_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("<unknown>")
-            .to_string();
-        let event_name = event
-            .get("event")
-            .and_then(|v| v.as_str())
-            .unwrap_or("<unknown>")
-            .to_string();
+        events_values
+            .push(serde_json::to_value(event).map_err(|e| e.to_string())?);
         let group = by_task
-            .entry(task_id)
+            .entry(event.task_id.clone())
             .or_insert_with(|| serde_json::json!({}));
         let counts = group.as_object_mut().expect("by_task group is object");
         let count = counts
-            .get(&event_name)
+            .get(&event.event)
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
-        counts.insert(event_name, json!(count + 1));
+        counts.insert(event.event.clone(), json!(count + 1));
     }
+
+    let trace_found = !events.is_empty();
 
     let verification_path = dir.join(".spec-engine").join("verification.json");
     let reconciliation = fs::read_to_string(&verification_path)
@@ -1176,7 +1143,7 @@ fn build_trace_summary(dir: &Path, trace_id: &str) -> Result<serde_json::Value, 
     Ok(serde_json::json!({
         "trace_id": trace_id,
         "trace_found": trace_found,
-        "events": events,
+        "events": events_values,
         "by_task": by_task,
         "reconciliation": reconciliation,
     }))

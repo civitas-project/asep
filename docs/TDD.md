@@ -624,3 +624,52 @@ Untuk setiap wave, jalankan `asep affected <changed-paths>` dan pakai keluaran s
 3. **FR-AUD-16 — tidak ada pembaca segmen di `observability.rs`.** Validasi `trace_id` pada event yang dibaca dari rotated segment tidak memiliki titik aplikasi di modul ini; exact-key lookup sudah diterapkan pada jalur penulisan, flush, purge, dan retention. Untuk menutup: bila pembaca segmen ditambahkan kelak, validasi `event.trace_id == trace` wajib disertakan.
 4. **Item di luar cakupan audit masih deferred** sesuai keputusan sebelumnya: AD-D05 (workload quality-distinguishing), AD-D06 (failure reproducibility), AD-D07 (lifecycle hook), AD-D11 (backend visual), AD-D12 (migrasi), dan P3.3 (graph export). Ini tidak termasuk 35 temuan `ASEP_dev_audit_4355dbc.md` dan tidak dibuka oleh perbaikan ini.
 
+## Audit backlog execution — desain dan rencana
+
+Keputusan user: jalankan **semua** O01–O10 dan tutup butir 3 (pembaca trace). Tidak ada engine/dependency/`unsafe` baru. Benchmark memakai `criterion 0.5` yang sudah ada di `spec-engine/benches/engine_benchmarks.rs`; dijalankan dengan `cargo bench -p spec-engine --bench engine_benchmarks -- <filter>`. Setiap kandidat dicatat di `docs/OPTIMIZATION_BENCHMARKS.md` dengan before/after pada commit dan fixture sama; adopsi hanya bila median/p95 membaik dan output identik. Karena `cargo bench` tidak mengukur alokasi/RSS secara native, angka alokasi/RSS diambil dari `harness/e2e` bila tersedia atau dinyatakan `not measured` secara eksplisit — tidak boleh diklaim terukur.
+
+<!-- @design:FR-PERF-01 -->
+<!-- @design:FR-PERF-02 -->
+<!-- @design:FR-PERF-03 -->
+<!-- @design:FR-PERF-04 -->
+<!-- @design:FR-PERF-05 -->
+<!-- @design:FR-PERF-06 -->
+<!-- @design:FR-PERF-07 -->
+<!-- @design:FR-PERF-08 -->
+<!-- @design:FR-PERF-09 -->
+<!-- @design:FR-PERF-10 -->
+<!-- @design:FR-TRACE-READ-01 -->
+
+### Keputusan arsitektur
+
+- **Graph (O01–O03):** satu `TypedIndex { by_key: HashMap<NodeKey, NodeId>, outgoing/incoming: HashMap<NodeKey, Vec<EdgeRef>>, path_to_ids }` dibangun sekali di `affected()`; provenance disimpan sebagai predecessor per node dan direkonstruksi saat emit; line index per file dan manifest per crate di-cache per command.
+- **Observability (O04–O05):** `pending_count: usize` dipertahankan inkremental; batch di-`take()` dengan recovery owner; `BufWriter` untuk write; hashing streaming dengan buffer tetap dan identitas konten berbasis hash penuh.
+- **Parser (O06):** `ParserRegistry` dengan pool worker terikat; query/tokenizer lazy; parse sekali per file per request.
+- **Walker (O07):** satu kontrak filter dipakai srcwalk dan srcdump; direktori exclude dipangkas sebelum descent; sniff biner + baca teks digabung.
+- **MCP (O08):** pembatas ukuran/jumlah respons dengan cursor dan counts; NDJSON streaming ke writer; tanpa silent truncation.
+- **Acceptance (O09):** `ScratchGuard` RAII dengan `create_dir` unik dan `Drop` cleanup; cache compiler tepercaya dipisah dari state build.
+- **Build (O10):** ukur dulu `cargo tree -e features`, timing, dan ukuran target; feature-gate hanya dengan bukti.
+- **Trace reader (#3):** `read_trace_events(root, trace_id)` di `observability.rs` memakai `trace_key`, membaca file aktif + segmen terurut, memfilter event dengan `event.trace_id != trace_id`, dipakai ulang oleh `runner.rs` dan `mcp/tools.rs`.
+
+### Ordered implementation plan
+
+| Order | Requirement | File & symbol | Acceptance criteria | Verification command |
+|---|---|---|---|---|
+| 1 | FR-TRACE-READ-01 | `observability.rs::read_trace_events`, `runner.rs`, `mcp/tools.rs::build_trace_summary` | Event trace beda dengan prefix sama tidak muncul; CLI/MCP parity. | `cargo test -p asep --lib observability --offline --locked` + `cargo test -p asep --test trace_cli_test --offline --locked` |
+| 2 | FR-PERF-01 | `affected/mod.rs::TypedIndex` | Traversal O(V+E), impacted IDs identik pada 4 fixture. | `cargo test -p asep --test affected_test --offline --locked` + `cargo bench -p spec-engine --bench engine_benchmarks -- affected` |
+| 3 | FR-PERF-02 | `affected/mod.rs` provenance reconstruction | Chain identik, alokasi turun. | `cargo test -p asep --test affected_test --offline --locked` |
+| 4 | FR-PERF-03 | `graph/builder.rs`, `affected/mod.rs::line_index` | Output/diagnostik identik, lookup terinduksi. | `cargo test -p asep --test graph_test --offline --locked` |
+| 5 | FR-PERF-04 | `observability.rs::pending_count`, `flush` | Redaction/durability test lulus; O(1) count. | `cargo test -p asep --lib observability --offline --locked` |
+| 6 | FR-PERF-05 | `observability.rs::hash_file`, `agent_protocol/mod.rs` | Hash byte-identik, buffer tetap. | `cargo test -p asep --lib observability --offline --locked` |
+| 7 | FR-PERF-06 | `srcidx/src/parser/mod.rs::ParserRegistry` | Symbols identik, pool terikat. | `cargo test -p srcidx --offline --locked` |
+| 8 | FR-PERF-07 | `srcwalk/src/lib.rs`, `srcdump/src/walker.rs` | File emitted identik, prune sebelum descent. | `cargo test -p srcwalk --offline --locked` + `cargo test -p srcdump --offline --locked` |
+| 9 | FR-PERF-08 | `mcp/tools.rs`, `mcp/server.rs` | Response terikat, cursor eksplisit, NDJSON streaming. | `cargo test -p asep --test mcp_test --offline --locked -- --test-threads=1` |
+| 10 | FR-PERF-09 | `acceptance_scoped.rs::ScratchGuard` | Scratch dihapus saat error; cache key lengkap. | `cargo test -p asep --test acceptance_scoped_test --offline --locked` |
+| 11 | FR-PERF-10 | `spec-engine/Cargo.toml`, `Cargo.toml`, `docs/OPTIMIZATION_BENCHMARKS.md` | Laporan `cargo tree`/timing/target-size di-commit; tidak ada `unsafe`/allocator swap. | `cargo tree --workspace -e features --offline --locked` + `cargo check --workspace --all-targets --offline --locked` |
+
+### Aturan verifikasi tambahan
+
+- Setiap langkah 2–11 menghasilkan satu baris benchmark di `docs/OPTIMIZATION_BENCHMARKS.md` sebelum adopsi; bila tidak ada perbaikan, baris tetap `documented, not adopted` dan kode tidak diubah.
+- Gate T1/T2 dijalankan setelah semua relasi `satisfies`/`verifies` untuk 11 requirement baru ditambahkan; `asep check` akan merah sampai tag `@impl`/`@test` dan relasi tersebut tersedia.
+- Executor dilarang `git checkout` tanpa pathspec, dilarang `cargo fmt --all` yang menyentuh file di luar scope, dan dilarang mengubah `docs/PRD.md`/`docs/TDD.md`.
+
