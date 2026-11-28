@@ -11,7 +11,7 @@ use crate::config::settings::{load_config, load_config_checked};
 use crate::context::compile_context;
 use crate::diagram::render_plantuml_diagrams;
 use crate::observability::read_trace_events;
-use crate::runtime::budget::ResourceBudget;
+use crate::config::budget::ResourceBudget;
 use crate::scanner::scan_project_tags;
 use serde_json::json;
 use srcdump::config::{Config as DumpConfig, OutputFormat, OutputMode};
@@ -420,6 +420,10 @@ pub fn get_tools_list() -> serde_json::Value {
                         "max_tokens": {
                             "type": "integer",
                             "description": "Maximum estimated tokens for excerpts"
+                        },
+                        "explicit": {
+                            "type": "boolean",
+                            "description": "Treat paths as explicit files; skip impact analysis"
                         }
                     },
                     "required": ["paths"]
@@ -1045,8 +1049,18 @@ pub fn execute_tool(
             };
 
             let path_bufs: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
-            let bundle = compile_context(&root, &path_bufs, budget)
-                .map_err(|e| format!("Failed to compile context: {e}"))?;
+            let explicit = arguments.get("explicit").and_then(|v| v.as_bool()).unwrap_or(false);
+            let bundle = match explicit {
+                true => crate::context::compile_context_files(
+                    &root,
+                    &path_bufs,
+                    format!("Explicit context for {} files", path_bufs.len()),
+                    budget,
+                    Vec::new(),
+                ),
+                false => compile_context(&root, &path_bufs, budget),
+            }
+            .map_err(|e| format!("Failed to compile context: {e}"))?;
             let value = serde_json::to_value(&bundle)
                 .map_err(|e| format!("Failed to serialize context bundle: {e}"))?;
             mcp_text(value)

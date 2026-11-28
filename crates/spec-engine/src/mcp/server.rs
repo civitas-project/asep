@@ -44,6 +44,7 @@ fn error_code(category: &str) -> i64 {
         "invalid_request" => -32600,
         "method_not_found" => -32601,
         "invalid_params" => -32602,
+        "tool_error" => -32000,
         _ => -32600,
     }
 }
@@ -103,13 +104,21 @@ fn handle_method(
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            if !tool_exposed(name) {
+            let known = get_tools_list()
+                .get("tools")
+                .and_then(|v| v.as_array())
+                .is_some_and(|tools| {
+                    tools
+                        .iter()
+                        .any(|tool| tool.get("name").and_then(|v| v.as_str()) == Some(name))
+                });
+            if !known || !tool_exposed(name) {
                 return Err("invalid_params");
             }
             let empty_obj = serde_json::json!({});
             let arguments = req.params.get("arguments").unwrap_or(&empty_obj);
 
-            execute_tool(name, arguments, default_dir).map_err(|_| "invalid_params")
+            execute_tool(name, arguments, default_dir).map_err(|_| "tool_error")
         }
         _ => Err("method_not_found"),
     }

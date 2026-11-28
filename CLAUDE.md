@@ -7,5 +7,5 @@ skills:
 - code-contracts
 - engineering-specs
 - repository-governance
-- design-tokens
+- design-system
 <!-- asep:end -->

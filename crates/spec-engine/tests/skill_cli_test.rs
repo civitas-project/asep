@@ -100,3 +100,20 @@ fn test_cli_skill_crud_and_restore_flow() {
 
     assert!(skills_dir.join("code-contracts").join("SKILL.md").exists());
 }
+
+#[test]
+// @test:N03
+fn install_skill_never_overwrites_unmanaged_skill_in_generated_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills_dir = dir.path().join(".agents").join("plugins").join("asep").join("skills");
+    let skill_dir = skills_dir.join("code-contracts");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(skill_dir.join("SKILL.md"), "# USER CONTENT").unwrap();
+
+    asep::skill::install::install_skill(&skills_dir, "code-contracts", false).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(skill_dir.join("SKILL.md")).unwrap(),
+        "# USER CONTENT",
+        "unmanaged artifact must be preserved even in a generated directory"
+    );
+}

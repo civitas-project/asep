@@ -134,7 +134,7 @@ message = 'Box-drawing decoration'
 [[antislop_rules]]
 id = 'AS-CODE-NESTING'
 domain = 'code'
-severity = 'Error'
+severity = 'Warning'
 pattern = ''
 max_nesting = 0
 message = 'Nested if forbidden; use early return (guard clause)'
@@ -149,6 +149,6 @@ message = 'AI buzzword in prose'
 [[antislop_rules]]
 id = 'AS-CODE-ELSE'
 domain = 'code'
-severity = 'Error'
+severity = 'Warning'
 pattern = '\belse\b'
 message = 'Else branch forbidden; use early return (guard clause)'

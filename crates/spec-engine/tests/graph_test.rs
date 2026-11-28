@@ -1,6 +1,5 @@
 use asep::graph::{
-    build_relation_graph, build_trace_graph, CoverageViolation, GraphReport, NodeKind, Priority,
-    TagKind,
+    build_relation_graph, CoverageViolation, GraphReport, NodeKind, Priority, TagKind,
 };
 use asep::policy::{load_policy, EdgeKind, Policy};
 use asep::scanner::ScannedTag;
@@ -10,111 +9,53 @@ use std::path::PathBuf;
 #[test]
 fn test_traceability_graph_closure() {
     let dummy_path = PathBuf::from("dummy.rs");
+    let req = |id: &str, priority: Priority| ScannedTag {
+        file_path: dummy_path.clone(),
+        kind: TagKind::Req { id: id.to_string(), priority },
+        line_number: 1,
+        raw_line: format!("@req:{id}"),
+    };
+    let tag = |kind: TagKind, line: usize| ScannedTag {
+        file_path: dummy_path.clone(),
+        kind,
+        line_number: line,
+        raw_line: String::new(),
+    };
 
-    // 1. Closed MUST requirement (has req, design, impl, test)
+    // Closed requirement: typed nodes exist and canonical closure holds.
     let closed_tags = vec![
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Req {
-                id: "FR-AUTH-01".to_string(),
-                priority: Priority::Must,
-            },
-            line_number: 1,
-            raw_line: "@req:FR-AUTH-01:MUST".to_string(),
-        },
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Design {
-                id: "FR-AUTH-01".to_string(),
-            },
-            line_number: 10,
-            raw_line: "@design:FR-AUTH-01".to_string(),
-        },
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Impl {
-                id: "FR-AUTH-01".to_string(),
-            },
-            line_number: 20,
-            raw_line: "// @impl:FR-AUTH-01".to_string(),
-        },
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Test {
-                id: "FR-AUTH-01".to_string(),
-            },
-            line_number: 30,
-            raw_line: "// @test:FR-AUTH-01".to_string(),
-        },
+        req("FR-AUTH-01", Priority::Must),
+        tag(TagKind::Design { id: "FR-AUTH-01".to_string() }, 10),
+        tag(TagKind::Impl { id: "FR-AUTH-01".to_string() }, 20),
+        tag(TagKind::Test { id: "FR-AUTH-01".to_string() }, 30),
+        tag(TagKind::Rel { kind: asep::policy::EdgeKind::Satisfies, from: "FR-AUTH-01".to_string(), to: vec!["FR-AUTH-01".to_string()], note: Some("ok".to_string()) }, 31),
+        tag(TagKind::Rel { kind: asep::policy::EdgeKind::Verifies, from: "FR-AUTH-01".to_string(), to: vec!["FR-AUTH-01".to_string()], note: Some("ok".to_string()) }, 32),
     ];
+    let closed = build_relation_graph(&closed_tags, &load_policy());
+    assert!(closed.is_closed, "closed graph: {closed:?}");
+    assert!(closed.violations.is_empty());
 
-    let report_closed = build_trace_graph(&closed_tags);
-    assert_eq!(report_closed.total_requirements, 1);
-    assert_eq!(report_closed.must_satisfied, 1);
-    assert!(report_closed.must_broken.is_empty());
-    assert!(report_closed.is_closed);
-
-    // 2. Broken MUST requirement (missing impl & test)
+    // Broken MUST: a required relation is missing, so closure fails.
     let broken_tags = vec![
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Req {
-                id: "FR-PAY-01".to_string(),
-                priority: Priority::Must,
-            },
-            line_number: 5,
-            raw_line: "@req:FR-PAY-01:MUST".to_string(),
-        },
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Design {
-                id: "FR-PAY-01".to_string(),
-            },
-            line_number: 15,
-            raw_line: "@design:FR-PAY-01".to_string(),
-        },
+        req("FR-PAY-01", Priority::Must),
+        tag(TagKind::Design { id: "FR-PAY-01".to_string() }, 15),
     ];
+    let broken = build_relation_graph(&broken_tags, &load_policy());
+    assert!(!broken.is_closed);
+    assert!(broken
+        .violations
+        .iter()
+        .any(|violation| violation.subject == "FR-PAY-01"));
 
-    let report_broken = build_trace_graph(&broken_tags);
-    assert_eq!(report_broken.total_requirements, 1);
-    assert_eq!(report_broken.must_satisfied, 0);
-    assert_eq!(report_broken.must_broken.len(), 1);
-    assert_eq!(report_broken.must_broken[0].id, "FR-PAY-01");
-    assert!(report_broken.must_broken[0].missing_impl);
-    assert!(report_broken.must_broken[0].missing_test);
-    assert!(!report_broken.is_closed);
-
-    // 3. Incomplete DRAFT requirement (Velocity Mode / RAD)
+    // DRAFT: still represented in the canonical graph, no legacy projection.
     let draft_tags = vec![
-        ScannedTag {
-            file_path: dummy_path.clone(),
-            kind: TagKind::Req {
-                id: "FR-RAD-01".to_string(),
-                priority: Priority::Draft,
-            },
-            line_number: 1,
-            raw_line: "@req:FR-RAD-01:DRAFT".to_string(),
-        },
-        ScannedTag {
-            file_path: dummy_path,
-            kind: TagKind::Impl {
-                id: "FR-RAD-01".to_string(),
-            },
-            line_number: 10,
-            raw_line: "// @impl:FR-RAD-01".to_string(),
-        },
+        req("FR-RAD-01", Priority::Draft),
+        tag(TagKind::Impl { id: "FR-RAD-01".to_string() }, 10),
     ];
-
-    let report_draft = build_trace_graph(&draft_tags);
-    assert_eq!(report_draft.total_requirements, 1);
-    assert_eq!(report_draft.draft_total, 1);
-    assert_eq!(report_draft.draft_pending.len(), 1);
-    assert_eq!(report_draft.draft_pending[0].id, "FR-RAD-01");
-    assert!(report_draft.draft_pending[0].missing_design);
-    assert!(report_draft.draft_pending[0].missing_test);
-    assert!(!report_draft.draft_pending[0].missing_impl);
-    assert!(report_draft.must_broken.is_empty());
-    assert!(report_draft.is_closed); // Drafts do not break closure
+    let draft = build_relation_graph(&draft_tags, &load_policy());
+    assert!(draft.nodes.iter().any(|node| {
+        node.kind == NodeKind::Req && node.id == "FR-RAD-01"
+    }));
 }
 
 fn policy() -> Policy {

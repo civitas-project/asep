@@ -51,27 +51,21 @@ fn test_init_generates_core_protocol_without_mandatory_router_or_bootstrap() {
         let content = fs::read_to_string(root.join(name)).expect("read entry file");
         assert!(content.contains("protocol: protocol/CORE.md"));
         for retired in ["using-asep", "workflow-router"] {
-            assert!(
-                !content.contains(&format!("- {retired}")),
-                "{name} must not activate retired skill {retired}"
-            );
+            assert!(!content.contains(&format!("- {retired}")));
         }
         for ambient in [
             "system-architecture",
             "code-contracts",
             "engineering-specs",
             "repository-governance",
-            "design-tokens",
+            "design-system",
         ] {
             assert!(content.contains(&format!("- {ambient}")));
         }
     }
 
     for retired in ["using-asep", "workflow-router"] {
-        assert!(
-            !root.join("skills").join(retired).join("SKILL.md").exists(),
-            "init must not install retired skill {retired} as ambient"
-        );
+        assert!(!root.join("skills").join(retired).exists());
     }
 }
 
@@ -83,7 +77,7 @@ fn test_init_upgrade_removes_stale_block_without_deleting_existing_skills() {
 
     let stale = "<!-- asep:start -->\nmode: ask\nskills:\n- using-asep\n- workflow-router\n<!-- asep:end -->\n";
     fs::write(root.join("AGENTS.md"), stale).expect("write stale entry file");
-    let legacy_skill = root.join("skills").join("using-asep").join("SKILL.md");
+    let legacy_skill = root.join("skills").join("custom-skill").join("SKILL.md");
     fs::create_dir_all(legacy_skill.parent().unwrap()).expect("create legacy skill dir");
     fs::write(&legacy_skill, "legacy content").expect("write legacy skill");
 

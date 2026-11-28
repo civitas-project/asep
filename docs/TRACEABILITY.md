@@ -153,7 +153,7 @@ Antrean, 4 job per proses: serial 14,858 dan 11,833 s; serentak 15,339 dan 11,57
 @rel:verifies:FR-CAP-08->FR-CAP-08 "config_test asserts media routing rejects unsupported media"
 @rel:verifies:FR-AMB-01->FR-AMB-01 "diagram_and_init_test asserts pointer block and flat skills scaffold idempotently"
 @rel:verifies:FR-AMB-02->FR-AMB-02 "pack_test asserts pack writes no skill files"
-@rel:verifies:FR-AMB-03->FR-AMB-03 "embedded_test asserts using-asep bootstrap skill is embedded and bounded"
+@rel:verifies:FR-AMB-03->FR-AMB-03 "embedded_test asserts canonical domain skills are embedded and bounded"
 @rel:verifies:FR-AMB-04->FR-AMB-04 "embedded_test asserts description-first and token budget"
 @rel:verifies:FR-AMB-05->FR-AMB-05 "skill_status_test asserts extract_skill_requires parses inline and dash lists"
 @rel:verifies:FR-AMB-06->FR-AMB-06 "integration_check_test asserts ambient governance gate reports violations"

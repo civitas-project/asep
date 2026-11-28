@@ -1,5 +1,5 @@
 ---
-name: design-tokens
+name: design-system
 description: Use when authoring or auditing KDL design tokens, OKLCH color math, sRGB fallbacks, WCAG contrast, interactive UI states, or ergonomic layout bounds
 ---
 

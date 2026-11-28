@@ -187,9 +187,9 @@ fn test_nesting_threshold_from_policy() {
     assert!(
         violations.iter().any(|v| {
             matches!(&v.kind, AntiSlopViolationKind::ExcessiveNesting { depth } if *depth == 2)
-                && v.severity == Severity::Error
+                && v.severity == Severity::Warning
         }),
-        "depth-2 nested if must be flagged as Error: {violations:?}"
+        "depth-2 nested if must be flagged as a non-blocking preference: {violations:?}"
     );
 }
 

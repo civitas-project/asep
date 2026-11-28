@@ -525,9 +525,12 @@ fn test_accept_scoped_success_writes_evidence() {
     )
     .expect("write PRD");
 
+    let test_dir = root_path.join("crates/spec-engine/tests");
+    fs::create_dir_all(&test_dir).expect("test dir");
+    fs::write(test_dir.join("mcp_test.rs"), "// fixture").expect("test fixture");
     git(
         root_path,
-        &["add", ".gitignore", "README.md", "docs/PRD.md"],
+        &["add", ".gitignore", "README.md", "docs/PRD.md", "crates"],
     );
     git(root_path, &["commit", "-q", "-m", "init"]);
 
@@ -578,7 +581,7 @@ fn test_accept_scoped_success_writes_evidence() {
     assert!(evidence.is_file(), "missing evidence for REQ-ALPHA");
     let content = fs::read_to_string(&evidence).unwrap();
     assert!(content.contains("reviewer: scoped-trusted-runner"));
-    assert!(content.contains("verdict: ACCEPTED"));
+    assert!(content.contains("verdict: ACCEPTED"), "evidence: {content}");
 }
 
 // @test:IN-01-REPORT
@@ -957,7 +960,7 @@ fn bwrap_shim() -> PathBuf {
 # that covers the PRD requirement; `sh -c` runs report one passing test.
 case "$*" in
     *affected*--json*)
-        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"test-alpha","function":"scoped_alpha_passes","file":"tests/scoped.rs","line":1}}],"provenance":{{"Test:test-alpha":[{{"node":"Test:test-alpha","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
+        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"test-alpha","function":"scoped_alpha_passes","file":"tests/mcp_test.rs","line":1}}],"provenance":{{"Test:test-alpha":[{{"node":"Test:test-alpha","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
         ;;
     *)
         echo "test scoped_alpha_passes ... ok"
@@ -1044,4 +1047,20 @@ fn default_exposure_is_minimal_without_legacy_mode() {
     assert!(names.contains(&"asep_check"));
     assert!(names.len() <= 4, "default exposure must be minimal: {names:?}");
     assert!(!names.contains(&"asep_agent_send"));
+}
+
+#[test]
+// @test:R12
+fn tool_execution_failure_is_distinct_from_invalid_params() {
+    let _guard = MCP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    expose_all_tools();
+    let bad_params = r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"does-not-exist-tool"}}"#;
+    let res = process_jsonrpc_request(bad_params, std::path::Path::new("")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(v["error"]["code"], -32602);
+
+    let tool_failure = r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"asep_context","arguments":{}}}"#;
+    let res = process_jsonrpc_request(tool_failure, std::path::Path::new("")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(v["error"]["code"], -32000, "tool failure must not look like bad params: {res}");
 }

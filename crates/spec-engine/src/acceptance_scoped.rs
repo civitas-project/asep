@@ -159,15 +159,22 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     let in_scope = in_scope_requirement_ids(&affected)?;
     let requirement_tests = requirement_test_map(&affected);
     let test_aliases = test_alias_map(&affected);
+    let test_targets_by_id = test_target_map(&affected);
     let mut total_executed: usize = 0;
-    let mut observed_passed: BTreeSet<String> = BTreeSet::new();
-    let mut observed_failed: BTreeSet<String> = BTreeSet::new();
+    let mut observed_passed: BTreeSet<TestIdentity> = BTreeSet::new();
+    let mut observed_failed: BTreeSet<TestIdentity> = BTreeSet::new();
     for cmd in &plan.commands {
         let stdout = run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
         total_executed += executed_test_count(&stdout);
+        let (package, target) = command_identity(cmd);
+        let filter = command_test_filter(cmd);
         let (passed, failed) = executed_test_names(&stdout);
-        observed_passed.extend(passed);
-        observed_failed.extend(failed);
+        for name in passed {
+            observed_passed.insert(TestIdentity { package: package.clone(), target: target.clone(), name, filter: filter.clone() });
+        }
+        for name in failed {
+            observed_failed.insert(TestIdentity { package: package.clone(), target: target.clone(), name, filter: filter.clone() });
+        }
     }
     if total_executed == 0 {
         return Err("scoped acceptance executed zero tests".to_string());
@@ -190,14 +197,10 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         )
     })?;
     let changed_list = policy.changed_paths.join(", ");
-    let test_package = "asep";
-    let test_targets: Vec<String> = plan
-        .commands
-        .iter()
-        .filter_map(|cmd| test_target(cmd).map(str::to_string))
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let observed: BTreeSet<&TestIdentity> = observed_passed.iter().chain(observed_failed.iter()).collect();
+    let test_packages: Vec<String> = observed.iter().map(|id| id.package.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+    let test_targets: Vec<String> = observed.iter().map(|id| id.target.clone()).collect::<BTreeSet<_>>().into_iter().collect();
+    let test_packages = test_packages.join(", ");
     let test_targets = test_targets.join(", ");
     for req_id in &req_ids {
         let associated = requirement_tests.get(req_id).cloned().unwrap_or_default();
@@ -209,9 +212,16 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
                     set.insert((*id).clone());
                     set
                 });
-                aliases
-                    .iter()
-                    .any(|alias| observed_passed.iter().any(|name| test_name_matches(name, alias)))
+                aliases.iter().any(|alias| {
+                    observed_passed.iter().any(|observed| {
+                        observed
+                            .filter
+                            .as_ref()
+                            .is_none_or(|filter| test_name_matches(filter, alias))
+                            && test_targets_by_id.get(*id).is_none_or(|target| target == &observed.target)
+                            && test_name_matches(&observed.name, alias)
+                    })
+                })
             })
             .cloned()
             .collect();
@@ -223,9 +233,16 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
                     set.insert((*id).clone());
                     set
                 });
-                aliases
-                    .iter()
-                    .any(|alias| observed_failed.iter().any(|name| test_name_matches(name, alias)))
+                aliases.iter().any(|alias| {
+                    observed_failed.iter().any(|observed| {
+                        observed
+                            .filter
+                            .as_ref()
+                            .is_none_or(|filter| test_name_matches(filter, alias))
+                            && test_targets_by_id.get(*id).is_none_or(|target| target == &observed.target)
+                            && test_name_matches(&observed.name, alias)
+                    })
+                })
             })
             .cloned()
             .collect();
@@ -244,7 +261,7 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         };
         let selected_for_req = associated.iter().cloned().collect::<Vec<_>>().join(", ");
         let passed_for_req = matched_passed.iter().cloned().collect::<Vec<_>>().join(", ");
-        let passed_names: Vec<String> = matched_passed
+        let aliases_for: BTreeSet<String> = matched_passed
             .iter()
             .flat_map(|id| {
                 test_aliases.get(id).cloned().unwrap_or_else(|| {
@@ -253,34 +270,43 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
                     set
                 })
             })
+            .collect();
+        let matched_identities: Vec<&TestIdentity> = observed_passed
+            .iter()
+            .filter(|observed| {
+                aliases_for.iter().any(|alias| {
+                    observed
+                        .filter
+                        .as_ref()
+                        .is_none_or(|filter| test_name_matches(filter, alias))
+                        && test_name_matches(&observed.name, alias)
+                })
+            })
+            .collect();
+        let qualified_for_req = matched_identities
+            .iter()
+            .map(|id| id.qualified())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let passed_names: Vec<String> = matched_identities
+            .iter()
+            .map(|id| id.name.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let qualified_for_req = passed_names
-            .iter()
-            .map(|name| {
-                match test_targets.split(", ").next() {
-                    Some(target) if !target.is_empty() => {
-                        format!("{test_package}::{target}::{name}")
-                    }
-                    _ => format!("{test_package}::{name}"),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
         let passed_for_req = if passed_names.is_empty() {
             passed_for_req
         } else {
             passed_names.join(", ")
         };
         let content = format!(
-            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntest_package: {test_package}\ntest_targets: {test_targets}\ntests_qualified_for_requirement: {qualified_for_req}\nevidence_state: {evidence_state}\ntests_selected: {}\ntests_executed: {total_executed}\ntests_selected_for_requirement: {selected_for_req}\ntests_passed_for_requirement: {passed_for_req}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
-            plan.selected,
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntest_packages: {test_packages}\ntest_targets: {test_targets}\ntests_qualified_for_requirement: {qualified_for_req}\nevidence_state: {evidence_state}\ntests_selected: {}\ntests_executed: {total_executed}\ntests_selected_for_requirement: {selected_for_req}\ntests_passed_for_requirement: {passed_for_req}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
             identity.revision,
             identity.tree_digest,
             identity.changed_paths_digest,
             identity.policy_digest,
             identity.toolchain,
+            plan.selected,
         );
         fs::write(semantic_dir.join(format!("{req_id}.md")), content)
             .map_err(|e| format!("failed to write evidence for {req_id}: {e}"))?;
@@ -513,6 +539,83 @@ fn test_alias_map(value: &serde_json::Value) -> HashMap<String, BTreeSet<String>
         if let Some(function) = test.get("function").and_then(|v| v.as_str()) {
             aliases.insert(function.to_string());
         }
+    }
+    result
+}
+
+/// A test actually observed in a command's output, attributed to the package
+/// and target of that command. Names alone are not identities: the same
+/// function name can exist in several packages or test targets.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct TestIdentity {
+    package: String,
+    target: String,
+    name: String,
+    filter: Option<String>,
+}
+
+impl TestIdentity {
+    fn qualified(&self) -> String {
+        format!("{}::{}::{}", self.package, self.target, self.name)
+    }
+}
+
+/// Extracts `-p <package>` and the test target from a planned Cargo command.
+/// Defaults are explicit Cargo semantics, not a hardcoded ASEP package.
+fn command_identity(command: &str) -> (String, String) {
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    let mut package = "cargo".to_string();
+    let mut target = "lib".to_string();
+    for (i, token) in tokens.iter().enumerate() {
+        if *token == "-p" || *token == "--package" {
+            if let Some(value) = tokens.get(i + 1) {
+                package = value.to_string();
+            }
+        }
+        if *token == "--test" {
+            if let Some(value) = tokens.get(i + 1) {
+                target = value.to_string();
+            }
+        }
+    }
+    (package, target)
+}
+
+/// Exact test-name filter of a planned command (`-- <name> --exact`), when
+/// present. A test identity must belong to the command that selected it.
+fn command_test_filter(command: &str) -> Option<String> {
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    for (i, token) in tokens.iter().enumerate() {
+        if *token == "--" {
+            let name = tokens.get(i + 1).copied()?;
+            if name.starts_with('-') {
+                continue;
+            }
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+/// Expected test target for a traced test id, derived from its source file.
+fn test_target_map(value: &serde_json::Value) -> HashMap<String, String> {
+    let mut result = HashMap::new();
+    let Some(tests) = value.get("tests").and_then(|v| v.as_array()) else {
+        return result;
+    };
+    for test in tests {
+        let (Some(id), Some(file)) = (
+            test.get("id").and_then(|v| v.as_str()),
+            test.get("file").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        let target = Path::new(file)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or(file)
+            .to_string();
+        result.insert(id.to_string(), target);
     }
     result
 }

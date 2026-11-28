@@ -40,7 +40,7 @@ fn scoped_acceptance_writes_accepted_evidence() {
         };
         assert!(
             content.contains(&format!("verdict: {verdict}")),
-            "{id} verdict"
+            "{id} verdict: {content}"
         );
         assert!(content.contains(&format!("scope: {scope}")), "{id} scope");
         assert!(
@@ -360,6 +360,11 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .expect("git commit");
 
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
+    let test_dir = root_path.join("crates/spec-engine/tests");
+    fs::create_dir_all(&test_dir).expect("test dir");
+    fs::write(test_dir.join("scoped_traceability.rs"), "// fixture").expect("test fixture");
+    run(root_path, &["git", "add", "crates"]);
+    run(root_path, &["git", "commit", "-q", "-m", "test target fixture"]);
     let commit = head_of(root_path);
     let policy = format!(
         r#"{{
@@ -629,6 +634,55 @@ fn failed_test_does_not_produce_acceptance_evidence() {
         !alpha.contains("tests_passed_for_requirement: scoped_alpha_passes"),
         "failed test must not be recorded as passed"
     );
+
+    std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
+}
+
+#[test]
+// @test:N01
+fn test_identity_is_package_target_qualified_and_isolated() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let root = scoped_acceptance_root();
+    let root_path = root.path();
+    let commit = head_of(root_path);
+
+    let test_dir = root_path.join("crates/spec-engine/tests");
+    fs::create_dir_all(&test_dir).unwrap();
+    fs::write(test_dir.join("target_a.rs"), "// fixture").unwrap();
+    fs::write(test_dir.join("target_b.rs"), "// fixture").unwrap();
+    run(root_path, &["git", "add", "crates"]);
+    run(root_path, &["git", "commit", "-q", "-m", "fixture targets"]);
+    let commit = head_of(root_path);
+    let policy = format!(
+        r#"{{"approved_commit": "{}", "changed_paths": ["docs/PRD.md"], "evidence_dir": "evidence"}}"#,
+        commit
+    );
+    fs::write(root_path.join(".spec-engine/acceptance.json"), policy).unwrap();
+    let affected = r#"{"requirements":[{"id":"REQ-ALPHA"},{"id":"REQ-BETA"}],"tests":[{"id":"test-alpha","function":"same_name","file":"target_a.rs","line":1},{"id":"test-beta","function":"same_name","file":"target_b.rs","line":1}],"provenance":{"Test:test-alpha":[{"node":"Test:test-alpha","edge":null},{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}],"Test:test-beta":[{"node":"Test:test-beta","edge":null},{"node":"Req:REQ-BETA","edge":"Satisfies:forward"}]},"commands":["cargo test -p pkg-a --test target_a -- same_name --exact","cargo test -p pkg-b --test target_b -- same_name --exact"]}"#;
+    let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-identity");
+    let mut shim = fs::File::create(&shim_path).unwrap();
+    writeln!(shim, "#!/bin/sh").unwrap();
+    writeln!(shim, "case \"$*\" in").unwrap();
+    writeln!(shim, "  *affected*) printf '%s\\n' '{}' 'cargo test -p pkg-a --test target_a' 'cargo test -p pkg-b --test target_b' ;;", affected).unwrap();
+    writeln!(shim, "  *target_a*) echo 'test same_name ... ok'; echo 'test unrelated_name ... ok' ;;").unwrap();
+    writeln!(shim, "  *target_b*) echo 'test same_name ... FAILED' ;;").unwrap();
+    writeln!(shim, "esac").unwrap();
+    writeln!(shim, "exit 0").unwrap();
+    drop(shim);
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&shim_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).unwrap();
+    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
+
+    let evidence = run_scoped_acceptance(root_path, &commit).expect("acceptance run succeeds");
+    let semantic = evidence.join("semantic");
+    let alpha = fs::read_to_string(semantic.join("REQ-ALPHA.md")).unwrap();
+    let beta = fs::read_to_string(semantic.join("REQ-BETA.md")).unwrap();
+    assert!(alpha.contains("verdict: ACCEPTED"), "alpha: {alpha}");
+    assert!(alpha.contains("pkg-a::target_a::same_name"), "actual package/target missing: {alpha}");
+    assert!(!alpha.contains("unrelated_name"), "unrelated test must not appear as proof: {alpha}");
+    assert!(beta.contains("verdict: UNPROVEN"), "same-name failure in other target must not prove beta: {beta}");
 
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
 }

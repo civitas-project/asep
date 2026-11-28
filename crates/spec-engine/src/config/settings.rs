@@ -3,7 +3,7 @@
 // @impl:FR-CAP-01 // @impl:FR-CAP-03 // @impl:FR-CAP-04 // @impl:FR-CAP-08
 // @impl:FR-LEVEL-02
 
-use crate::runtime::EngineerLevel;
+use crate::policy::EngineerLevel;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};

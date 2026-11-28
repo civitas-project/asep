@@ -60,7 +60,7 @@ fn test_policy_loads_antislop_rules_for_four_domains() {
         .iter()
         .find(|r| r.id == "AS-CODE-ELSE")
         .expect("AS-CODE-ELSE present in policy");
-    assert_eq!(else_rule.severity, Severity::Error);
+    assert_eq!(else_rule.severity, Severity::Warning);
 
     let mut domains: Vec<&str> = rules.iter().map(|r| r.domain.as_str()).collect();
     domains.sort_unstable();
@@ -83,7 +83,7 @@ fn test_policy_loads_antislop_rules_for_four_domains() {
         .iter()
         .find(|r| r.id == "AS-CODE-NESTING")
         .expect("AS-CODE-NESTING present in policy");
-    assert_eq!(nesting.severity, Severity::Error);
+    assert_eq!(nesting.severity, Severity::Warning);
     assert_eq!(nesting.max_nesting, Some(0));
 
     let hype = rules

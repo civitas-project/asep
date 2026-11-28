@@ -1,6 +1,6 @@
 ---
-name: design-tokens
-description: Use when authoring or auditing design tokens, visual consistency, accessibility or interaction contracts.
+name: design-system
+description: Use when authoring or auditing design-system tokens, visual consistency, accessibility or interaction contracts.
 version: 2.2.0
 ---
 <!-- asep-managed-skill -->
@@ -19,7 +19,7 @@ Load only for token, color, layout or accessibility work. Semantic tokens and in
 Do not impose universal dimensions, palettes or layout grids. Treat format rules (KDL, OKLCH) as optional references unless the project adopts them.
 
 ## References
-Templates: `design-tokens/templates/`. Rename compatibility: this skill may be referenced as `design-system` where a project uses the newer name.
+Templates: `templates/design-system/`.
 
 ## Canonical Anti-Slop Rules
 Rule IDs live in `spec-engine/policy/asep-policy.toml`. Skills reference IDs and do not restate patterns: AS-COPY-HYPE, AS-DOCS-PLACEHOLDER.

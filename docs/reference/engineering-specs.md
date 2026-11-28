@@ -62,7 +62,7 @@ Specifications must not rely on prose alone; bind `@design\:FR-*` tags into comp
 - **Web-Native Macro Flows (Mermaid in Markdown):** Use for high-level architecture overviews and sequence lifelines inside Markdown files.
 
 #### Standardized PlantUML OKLCH / sRGB Palette (WCAG AAA Text Contrast)
-All PlantUML diagrams must declare explicit `skinparam` blocks mapped from `asep:design-tokens` against the dark canvas (`#1E1E2E`):
+All PlantUML diagrams must declare explicit `skinparam` blocks mapped from `asep:design-system` against the dark canvas (`#1E1E2E`):
 
 | Token Name | Semantic Role | OKLCH $(L, C, H)$ | `fallbackHex` | Contrast vs `#1E1E2E` |
 | :--- | :--- | :--- | :--- | :--- |

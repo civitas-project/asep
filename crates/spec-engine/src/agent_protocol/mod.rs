@@ -6,7 +6,9 @@
 // @impl:FR-CAP-05
 // @impl:FR-LEVEL-03
 
-use crate::runtime::EngineerLevel;
+pub mod react;
+pub use react::{Action, ActionContract, Observation};
+use crate::policy::EngineerLevel;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -627,7 +629,7 @@ fn civil_from_days(mut z: i64) -> (i64, u32, u32) {
 mod tests {
     // @test:FR-LEVEL-03
     use super::*;
-    use crate::runtime::EngineerLevel;
+    use crate::policy::EngineerLevel;
     use serde_json::json;
     use std::sync::Arc;
 

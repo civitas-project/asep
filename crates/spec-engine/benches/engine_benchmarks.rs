@@ -1,6 +1,6 @@
 use asep::affected::affected;
 use asep::auditor::doc_contracts::audit_doc_contracts;
-use asep::graph::builder::build_trace_graph;
+use asep::graph::builder::build_relation_graph;
 use asep::scanner::lexer::{parse_tags_from_line, Priority, TagKind};
 use asep::scanner::ScannedTag;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
@@ -77,7 +77,7 @@ fn bench_traceability_graph_resolution(c: &mut Criterion) {
 
     c.bench_function("traceability_graph_500_relations", |b| {
         b.iter(|| {
-            let report = build_trace_graph(black_box(&tags));
+            let report = build_relation_graph(black_box(&tags), &asep::policy::load_policy());
             black_box(report.is_closed);
         });
     });

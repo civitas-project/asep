@@ -17,23 +17,19 @@ const SKILL_CODE_CONTRACTS: &str = include_str!("../../../../skills/code-contrac
 const SKILL_ENGINEERING_SPECS: &str = include_str!("../../../../skills/engineering-specs/SKILL.md");
 const SKILL_REPOSITORY_GOVERNANCE: &str =
     include_str!("../../../../skills/repository-governance/SKILL.md");
-const SKILL_DESIGN_TOKENS: &str = include_str!("../../../../skills/design-tokens/SKILL.md");
-const SKILL_WORKFLOW_ROUTER: &str = include_str!("../../../../skills/workflow-router/SKILL.md");
-const SKILL_USING_ASEP: &str = include_str!("../../../../skills/using-asep/SKILL.md");
+const SKILL_DESIGN_SYSTEM: &str = include_str!("../../../../skills/design-system/SKILL.md");
 
 /// Canonical core protocol. Native entry points and generated instructions are
 /// derived from this single source; managed copies are marked by `<!-- asep:start -->`.
 pub const CORE_PROTOCOL: &str = include_str!("../../../../protocol/CORE.md");
 
-/// Skills installed and listed as ambient by project initialization. The two
-/// retired compatibility skills remain in `EMBEDDED_SKILLS` for CLI/skill-manager
-/// compatibility but are no longer activated by default.
+/// Skills installed and listed as ambient by project initialization.
 pub const AMBIENT_SKILL_IDS: [&str; 5] = [
     "system-architecture",
     "code-contracts",
     "engineering-specs",
     "repository-governance",
-    "design-tokens",
+    "design-system",
 ];
 
 const DEFAULT_PLUGIN_JSON: &str = r#"{
@@ -51,16 +47,6 @@ const DEFAULT_MCP_CONFIG_JSON: &str = r#"{
 }"#;
 
 static EMBEDDED_SKILLS: &[EmbeddedSkill] = &[
-    EmbeddedSkill {
-        id: "using-asep",
-        directory: "using-asep",
-        content: SKILL_USING_ASEP,
-    },
-    EmbeddedSkill {
-        id: "workflow-router",
-        directory: "workflow-router",
-        content: SKILL_WORKFLOW_ROUTER,
-    },
     EmbeddedSkill {
         id: "system-architecture",
         directory: "system-architecture",
@@ -82,9 +68,9 @@ static EMBEDDED_SKILLS: &[EmbeddedSkill] = &[
         content: SKILL_REPOSITORY_GOVERNANCE,
     },
     EmbeddedSkill {
-        id: "design-tokens",
-        directory: "design-tokens",
-        content: SKILL_DESIGN_TOKENS,
+        id: "design-system",
+        directory: "design-system",
+        content: SKILL_DESIGN_SYSTEM,
     },
 ];
 

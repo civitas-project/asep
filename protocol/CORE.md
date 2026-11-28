@@ -39,8 +39,7 @@ against unchanged inputs; invalidate evidence when its relevant inputs or contra
 
 Domain skills live in `skills/` and are discovered through native metadata. Load a skill
 only when its scope matches the task; native execution without any domain skill is valid.
-No bootstrap or router is required to start. The retired `using-asep` and `workflow-router`
-skills are optional compatibility references, not activation layers.
+No bootstrap or router is required to start; only the five domain skills are installed.
 
 Canonical rule IDs (`COV-01`..`COV-06`, `Tier T0`..`Tier T4`, exit codes `0`/`1`/`2`/`3`
 and `AS-*` anti-slop rules) live in `crates/spec-engine/policy/asep-policy.toml`. Skills reference

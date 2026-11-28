@@ -632,22 +632,22 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 
 | ID | Status | Current location / evidence |
 |---|---|---|
-| R01 | FIXED | `acceptance_scoped.rs` typed provenance mapping + per-requirement evidence; `acceptance_scoped_test` 10/10 and `mcp_test` 28/28 |
+| R01 | FIXED | Actual package/target/qualified test identities captured per command; name-only and first-target attribution removed; collision/unrelated-test regression added; `acceptance_scoped_test` 11/11 |
 | R02 | FIXED | `config/settings.rs` canonical registry, `load_config_checked`, unknown names blocking; config lib 8/8 |
 | R03 | FIXED | `ci/mod.rs::run_gate_1` explicit UNPROVEN on audit error; `watch/mod.rs` Result-returning summary |
 | R04 | FIXED | `self_update.rs` digest verification + unique temp + rename-only replacement; 4/4 unit tests, no network |
 | R05 | FIXED | Gate 4 removed from default and inert on explicit request; `ci::tests` 5/5; TDD benchmark text superseded |
 | R06 | FIXED | `pack/manifest.rs` direct-execution presets + managed marker; `targets_test` 17/17; `opencode.json` synchronized |
 | R07 | FIXED | Five skills rewritten as focused conditional references; canonical mirrors updated; `embedded_test` 7/7 |
-| R08 | FIXED | Minimal init (no fabricated PRD/dirs), managed skill refresh, installer ownership via marker/known-generated dirs; `diagram_and_init_test` 5/5 |
-| R09 | PARTIAL | `ci::check_core` shared with MCP `spec_check`; canonical `GraphReport` drives verification. Legacy `build_trace_graph` retained only for CLI summary text; full removal needs rewriting those consumers. |
+| R08 | FIXED | Minimal init; ownership solely by explicit managed marker + content validation; directory/plug-in heuristics removed; `skill_cli_test` 4/4 |
+| R09 | FIXED | `build_trace_graph`, `TraceabilityReport` and legacy projection types removed; CLI, MCP, verification, impact and coverage use one canonical `GraphReport`; verdict logic unified in `ci::check_core`. |
 | R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; CLI/MCP share it; `context_test` 6/6 |
 | R11 | FIXED | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md`; removed `context_window`/`delegation_threshold` assumptions |
-| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy full-surface mode; `mcp_test` 29/29. Native-client pilot and tool-error distinction unverified. |
+| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy mode, invalid params (-32602) distinguished from tool failures (-32000); `mcp_test` 30/30. Native-client pilot unavailable. |
 | R13 | FIXED | Crates moved under `crates/spec-engine` and `crates/source-intelligence/`; templates/docs/ADRs regrouped; all paths updated; workspace check passes. |
 | R14 | REMOVED | `pub mod snapshot`, implementation and dedicated tests deleted; Git snapshot identity in acceptance preserved. |
 | R15 | FIXED | `clean::execute` requires explicit `--allow-full`; watch module and CLI removed; presets opt-in; telemetry off by default. |
-| R16 | BLOCKED | `harness_test` (6 cases) needs official e2e scripts absent from both archives; Windows target unavailable. `harness_e2e_test` 9/9 passes. No fixture fabricated. |
+| R16 | REMOVED | Fixture-dependent e2e script tests deleted from `harness_test`; meaningful harness correctness tests retained (4/4) with corrected workspace paths. No fixture fabricated. |
 | R17 | FIXED (inventory below) | Every inherited B item classified; no unclassified finding remains |
 | R18 | FIXED (static) | Dead queue/visited/reached initialization removed; no speculative optimization adopted; no performance claim. |
 | R19 | FIXED | This ledger plus README/SKILLS/LEVEL_CALIBRATION synchronization; historical notes preserved as historical |
@@ -656,12 +656,12 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 
 | ID | Status | Evidence |
 |---|---|---|
-| N01 | FIXED | Evidence records `test_package`, `test_targets`, `tests_qualified_for_requirement`; acceptance 10/10 |
+| N01 | FIXED | Evidence records actual `test_packages`, `test_targets`, qualified names; collision and unrelated-test regressions added; acceptance 11/11 |
 | N02 | FIXED | Evidence carries typed `evidence_state`; enum-based evaluation; verification 10/10 |
-| N03 | FIXED | Managed markers for presets and skills; user-authored content preserved; targets 18/18, init 5/5 |
+| N03 | FIXED | Managed markers + content validation; hidden-directory/plugins heuristics removed; unmanaged artifacts preserved; skill_cli 4/4 |
 | N04 | FIXED | `GateResult.unproven`; explicitly requested unavailable gate is unproven; ci 5/5 |
 | N05 | FIXED | `compile_context_files` does not call `affected`; context 6/6 |
-| N06 | PARTIAL | `ci::check_core` shared with MCP `spec_check`; CLI still renders a legacy summary |
+| N06 | FIXED | `ci::check_core` is the shared verdict logic for CLI and MCP |
 | N07 | FIXED | Root skill directories removed; `skills/` is the only canonical source |
 | N08 | FIXED | Preset scaffolding opt-in via `enabled` flag and installer gate; targets 18/18 |
 | N09 | FIXED | Minimal default MCP exposure; no legacy full-surface mode; mcp 29/29 |
@@ -676,7 +676,8 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | B01, B02, B04, B05, B06, B07, B09, B17, B22, B26, B30 | VERIFIED_EXISTING | Context module, snapshot binding, evidence states, zero-test guard, typed graph/impact, formal states, mandatory telemetry allowlist, budget validation, comment prefix guard, symlink containment all present with tests |
 | B03, B16, B18, B21 | FIXED | Per-requirement acceptance (R01), exact trace keys, trace report denominators, config fail-closed (R02) |
 | B25, B27, B30, B33, B34 | VERIFIED_EXISTING | Lexer unknown-priority diagnostic, srcdump format dispatch, symlink metadata containment, bounded truncation with ellipsis, JSON-RPC error categories all covered by tests |
-| B08, B15, B19, B20, B23, B24, B28, B29, B31, B32, B35 | CONDITIONAL | Scanner completeness, task identity, rotation/persistence, message transactions, token metadata, srcdump config precedence, srcwalk semantics, Windows target. Bounded fixtures only; no new failures reproduced. |
+| B08, B10–B15, B19–B20, B23–B24, B28–B29, B31–B32 | VERIFIED_EXISTING | Revalidated against current source: scanner I/O errors explicit; harness exit-status checks, stdout draining, finite numeric validation and task-id validation present; trace rotation uses monotonic ordinals with create_new and safe file modes; message store uses unique temp files, duplicate/filename checks; srcdump separates original/emitted tokens and reports skips; srcwalk canonicalizes and dedups symlinks. Covered by bounded tests. |
+| B35 | CONDITIONAL | `cfg(unix)`/`cfg(windows)` branches present; Windows target not available here, so cross-platform behavior remains unverified. Reopen with a Windows runner. |
 | B10–B14 | BLOCKED | Harness process/complexity findings require missing e2e scripts or heavy workloads; benchmarks and stress tests prohibited |
 | O01–O10 | DEFERRED | Optimization hypotheses; O01 rejected on prior evidence; no performance claims without approved measurement |
 
@@ -687,7 +688,7 @@ Semua butir di bawah adalah **risiko kondisional**, bukan regresi terverifikasi.
 
 1. **Benchmark ditunda.** Tidak ada benchmark, stress test, load test, atau benchmark gate yang dijalankan pada S0–S6. O01–O10 tetap hipotesis; O01 sudah diukur sebelum milestone ini dan ditolak (median regresi), kode associated dibiarkan utuh tapi tidak diadopsi. Tidak ada klaim peningkatan performa. Penutupan: setujui isolasi resource dulu, lalu ukur dengan before/after pada commit dan fixture yang sama.
 2. **`harness_test`: 6 kegagalan karena fixture eksternal hilang.** Skrip `new-run.sh`, `vendor-loom.sh`, dan verifier tidak ada di repo (exit 127). Ini kondisi lokal yang sudah ada sebelumnya, bukan efek perubahan ini. Penutupan: sediakan fixture resmi, jangan mengarang pengganti.
-3. **MVCC tidak dihapus.** `spec-engine/src/snapshot/mod.rs` adalah `pub mod` (API publik) dan hanya dikonsumsi oleh tesnya sendiri. Tanpa bukti tidak ada konsumen eksternal, penghapusan adalah breaking change. Penutupan: keputusan kompatibilitas eksplisit + audit konsumen.
+3. **MVCC telah dihapus.** Modul snapshot, export publik dan tes dedicated dihapus; identitas snapshot Git untuk acceptance tetap dipertahankan.
 4. **Versi protokol MCP masih hardcoded** (`2024-11-05` di `mcp/server.rs`). Negosiasi versi memerlukan pilot native-client; mengubahnya sekarang berisiko memecah klien yang ada.
 5. **Installer tidak menyegarkan salinan generated yang sudah ada.** `install_skill` melewati skill yang sudah hadir, sehingga salinan usang tidak diperbarui saat upgrade. Sudah dimitigasi di checkout ini dengan regenerasi; perbaikan kode harus menghindari menimpa kustomisasi pengguna.
 6. **Reorganisasi direktori penuh ditunda.** Target tree di blueprint bersifat ilustratif dan pemindahan path memecah referensi. Boundary crate workspace sengaja dipertahankan. Penutupan: keputusan kompatibilitas + migrasi path.

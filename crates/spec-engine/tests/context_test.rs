@@ -1,6 +1,6 @@
 use asep::affected::AffectedReport;
 use asep::context::{compile_context, compile_context_files, ContextBundle};
-use asep::runtime::budget::ResourceBudget;
+use asep::config::budget::ResourceBudget;
 use serde_json::to_string as to_json;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -165,4 +165,28 @@ fn context_rejects_paths_outside_root() {
         Vec::new(),
     );
     assert!(result.is_err(), "path escape must be rejected");
+}
+
+#[test]
+// @test:N05
+fn cli_explicit_context_does_not_invoke_impact_analysis() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/a.rs"), "fn a() {}
+").unwrap();
+    // No policy or git repo: affected analysis would fail here.
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_asep"))
+        .arg("context")
+        .arg("src/a.rs")
+        .arg("--explicit")
+        .arg("--root")
+        .arg(root)
+        .arg("--json")
+        .output()
+        .expect("run asep context");
+    assert!(out.status.success(), "explicit context failed: {}", String::from_utf8_lossy(&out.stderr));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(json["excerpts"].as_array().unwrap().len() >= 1);
+    assert!(json["objective"].as_str().unwrap().contains("Explicit context"));
 }

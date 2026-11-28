@@ -32,6 +32,8 @@ Level is a **scope classification**, not model size, seniority, or permission. A
 
 ## 2. Engineering Rigor — depth of process
 
+Rule classes: **correctness constraints** (traceability closure, evidence identity, security boundaries) are hard and cannot be relaxed by preference. **Project policies** are hard only when the project adopts them (for example `--deny-drafts`). **Style preferences** such as guard-clause formatting (`AS-CODE-ELSE`, `AS-CODE-NESTING`) are Warning by default, reported without blocking, and promoted only under `--strict` or an explicit project contract.
+
 Canonical mapping: Lightweight -> `Tier T1`, Structured -> `Tier T2`, High Assurance -> `Tier T4`. Explicit `Tier T0`..`T4` values remain valid and override this mapping. The mapping never weakens a requirement: a level name resolves to the tier that preserves its evidence obligations.
 
 Rigor is **independent of level**. A single-line change in auth can be High Assurance.

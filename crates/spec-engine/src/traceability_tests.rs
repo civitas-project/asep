@@ -392,7 +392,7 @@ fn test_policy_declares_else_and_nesting_rules() {
         .iter()
         .find(|r| r.id == "AS-CODE-ELSE")
         .expect("policy must declare rule AS-CODE-ELSE");
-    assert_eq!(else_rule.severity, Severity::Error);
+    assert_eq!(else_rule.severity, Severity::Warning);
 
     let nesting_rule = policy
         .antislop_rules()
@@ -503,7 +503,7 @@ fn test_audit_doc_has_required_sections() {
 // @test:FR-LEVEL-02
 #[test]
 fn test_engineer_level_default_in_profile() {
-    use crate::runtime::EngineerLevel;
+    use crate::policy::EngineerLevel;
     let profile = crate::config::settings::CapabilityProfile::default();
     assert_eq!(profile.engineer_level, EngineerLevel::L1);
 }

@@ -22,8 +22,6 @@ pub use doc_contracts::{
 ///     `<!-- asep:start -->` and `<!-- asep:end -->`;
 ///   * every `skills/<id>/SKILL.md` frontmatter `description` starts with
 ///     `Use when`;
-///   * `skills/using-asep/SKILL.md` body (frontmatter excluded) is at most
-///     200 words, if present.
 ///
 /// Returns one descriptive string per violation.
 pub fn audit_ambient_skills(root: &Path) -> Vec<String> {
@@ -56,11 +54,18 @@ pub fn audit_ambient_skills(root: &Path) -> Vec<String> {
         }
     }
 
-    // 3. `skills/using-asep/SKILL.md` body must be <= 200 words, if present.
-    let using_asep = skills_dir.join("using-asep").join("SKILL.md");
-    check_using_asep_body(&mut violations, &using_asep);
 
     violations
+}
+
+/// Reads the `description` value from a SKILL.md YAML frontmatter block.
+fn frontmatter_description(content: &str) -> Option<&str> {
+    let front = content.strip_prefix("---\n")?.split_once("\n---\n")?.0;
+    front.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("description:")
+            .map(|value| value.trim())
+    })
 }
 
 /// Audits one `skills/<id>/SKILL.md` entry: skipped when not a file or
@@ -85,54 +90,3 @@ fn audit_ambient_skill_entry(violations: &mut Vec<String>, entry: fs::DirEntry) 
     }
 }
 
-/// Checks `skills/using-asep/SKILL.md` body word budget when the file
-/// exists and is readable; skips silently when absent or unreadable.
-fn check_using_asep_body(violations: &mut Vec<String>, using_asep: &Path) {
-    if !using_asep.is_file() {
-        return;
-    }
-    let content = match fs::read_to_string(using_asep) {
-        Ok(content) => content,
-        Err(_) => return,
-    };
-    let body = strip_frontmatter(&content);
-    let word_count = body.split_whitespace().count();
-    if word_count > 200 {
-        violations.push(format!(
-            "ambient skills: {} body has {word_count} words (max 200)",
-            using_asep.display()
-        ));
-    }
-}
-
-/// Returns the frontmatter `description` value, or `None` when no frontmatter
-/// or no `description:` field is present. ponytail: single-line YAML only;
-/// upgrade path is a proper YAML parser when multi-line values are needed.
-fn frontmatter_description(content: &str) -> Option<String> {
-    let block = content.strip_prefix("---\n")?;
-    let end = block.find("\n---\n")?;
-    let fm = &block[..end];
-    fm.lines()
-        .find_map(|line| line.trim_start().strip_prefix("description:"))
-        .map(|value| {
-            value
-                .trim()
-                .trim_matches('"')
-                .trim_matches('\'')
-                .trim()
-                .to_string()
-        })
-}
-
-/// Returns file content with YAML frontmatter stripped, or the content
-/// unchanged when no frontmatter block is present.
-fn strip_frontmatter(content: &str) -> &str {
-    if !content.starts_with("---\n") {
-        return content;
-    }
-    let rest = &content[4..];
-    match rest.find("\n---\n") {
-        Some(end) => &rest[end + 5..],
-        None => content,
-    }
-}

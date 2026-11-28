@@ -39,6 +39,23 @@ pub fn resolve_dependencies(skill_id: &str) -> Vec<String> {
     resolved
 }
 
+/// Ownership is explicit: the file carries the managed marker, has valid
+/// frontmatter and declares the embedded skill's identity. Location, hidden
+/// directories and "plugins" path segments are never used as proof of
+/// ownership.
+fn managed_skill_content(content: &str, canonical: &crate::pack::embedded::EmbeddedSkill) -> bool {
+    if !content.contains("<!-- asep-managed-skill -->") {
+        return false;
+    }
+    let frontmatter = content
+        .strip_prefix("---\n")
+        .and_then(|rest| rest.split_once("\n---\n"))
+        .map(|(front, _)| front)
+        .unwrap_or("");
+    frontmatter.contains(&format!("name: {}", canonical.id))
+        && frontmatter.contains("description:")
+}
+
 /// Installs a skill and optionally its transitive dependencies into the skills directory.
 pub fn install_skill(
     skills_dir: &Path,
@@ -56,14 +73,6 @@ pub fn install_skill(
     let mut installed_paths = Vec::new();
     let local_entries = inspect_skills(skills_dir);
 
-    // Files under a generated plugin/skills directory are managed artifacts;
-    // older versions had no ownership marker, so location establishes
-    // ownership during upgrade.
-    let generated_dir = skills_dir
-        .components()
-        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
-        || skills_dir.to_string_lossy().contains("plugins");
-
     for id in to_install {
         let orig = embedded
             .iter()
@@ -75,15 +84,15 @@ pub fn install_skill(
         let skill_file = skill_folder.join("SKILL.md");
 
         let existing = fs::read_to_string(&skill_file).ok();
-        let managed = existing
+        let owned = existing
             .as_deref()
-            .is_some_and(|text| text.contains("<!-- asep-managed-skill -->"));
+            .is_some_and(|text| managed_skill_content(text, orig));
         let present = local_entries
             .iter()
             .any(|e| e.id == id && e.status != crate::skill::model::SkillStatus::Missing);
 
-        if present && !managed && !generated_dir {
-            // User-authored or customized copy: never overwrite.
+        if present && !owned {
+            // No reliable ownership proof: user-authored or customized copy.
             continue;
         }
         if existing.as_deref() == Some(orig.content) {

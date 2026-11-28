@@ -4,7 +4,9 @@ use crate::auditor::{audit_ambient_skills, audit_project_anti_slop, audit_projec
 use crate::cli::{AdrCommands, Cli, Commands, HarnessCommands, SkillCommands, TraceAction};
 use crate::config::EngineConfig;
 use crate::diagram::render_plantuml_diagrams;
-use crate::graph::builder::{build_relation_graph, build_trace_graph};
+use crate::graph::builder::build_relation_graph;
+use crate::graph::model::NodeKind;
+use crate::scanner::lexer::{Priority, TagKind};
 use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
@@ -37,7 +39,6 @@ struct CheckJsonReport {
     draft_total: usize,
     draft_pending: usize,
     doc_contract_violations: usize,
-    traceability: crate::graph::model::TraceabilityReport,
     violations: Vec<crate::auditor::DocContractViolation>,
     anti_slop_violations: usize,
     anti_slop_warnings: usize,
@@ -142,7 +143,25 @@ pub fn run() -> ExitCode {
 
             let policy = load_policy();
             let graph = build_relation_graph(&tags, &policy);
-            let report = build_trace_graph(&tags);
+            let total_requirements = graph
+                .nodes
+                .iter()
+                .filter(|node| node.kind == NodeKind::Req)
+                .count();
+            let must_broken: Vec<&crate::graph::model::CoverageViolation> = graph
+                .violations
+                .iter()
+                .filter(|violation| violation.rule_id == "COV-01")
+                .collect();
+            let should_pending: Vec<&crate::graph::model::CoverageViolation> = graph
+                .violations
+                .iter()
+                .filter(|violation| violation.rule_id == "COV-02")
+                .collect();
+            let draft_total = tags
+                .iter()
+                .filter(|tag| matches!(&tag.kind, TagKind::Req { priority, .. } if *priority == Priority::Draft))
+                .count();
 
             let evidence_dir = evidence_dir
                 .or_else(|| config.evidence_dir.as_deref().map(|d| target_path.join(d)))
@@ -216,10 +235,10 @@ pub fn run() -> ExitCode {
                 .collect();
             let has_skill_drift = !skill_drifts.is_empty();
 
-            let has_must_failure = !report.is_closed;
+            let has_must_failure = !graph.is_closed;
             let has_doc_contract_failure = tier != TierId::T0 && !violations.is_empty();
-            let has_strict_failure = strict && !report.should_pending.is_empty();
-            let has_deny_drafts_failure = deny_drafts && report.draft_total > 0;
+            let has_strict_failure = strict && !should_pending.is_empty();
+            let has_deny_drafts_failure = deny_drafts && draft_total > 0;
             let mut passed = !has_must_failure
                 && !has_doc_contract_failure
                 && !has_ambient_failure
@@ -248,16 +267,15 @@ pub fn run() -> ExitCode {
                     let json_output = CheckJsonReport {
                         passed,
                         rigor: tier.as_str().to_string(),
-                        total_requirements: report.total_requirements,
-                        must_satisfied: report.must_satisfied,
-                        must_broken: report.must_broken.len(),
-                        should_pending: report.should_pending.len(),
-                        draft_total: report.draft_total,
-                        draft_pending: report.draft_pending.len(),
+                        total_requirements,
+                        must_satisfied: total_requirements.saturating_sub(must_broken.len()),
+                        must_broken: must_broken.len(),
+                        should_pending: should_pending.len(),
+                        draft_total,
+                        draft_pending: draft_total,
                         doc_contract_violations: violations.len(),
                         anti_slop_violations: anti_slop_violations.len(),
                         anti_slop_warnings: anti_warnings.len(),
-                        traceability: report,
                         violations,
                     };
 
@@ -289,90 +307,25 @@ pub fn run() -> ExitCode {
                             .cyan()
                     );
 
-                    #[allow(clippy::match_bool)]
-                    // `match bool` replaces `if/else` so the file keeps zero `else` tokens (AS-CODE-ELSE).
-                    match report.total_requirements == 0 {
-                        true => {
-                            println!(
-                                "{}",
-                                "No @req tags discovered in target repository.".yellow()
-                            );
-                        }
-                        false => {
-                            println!(
-                                "Discovered {} requirements across workspace.",
-                                report.total_requirements.to_string().bold()
-                            );
-                        }
+                    match total_requirements == 0 {
+                        true => println!("{}", "No @req tags discovered in target repository.".yellow()),
+                        false => println!(
+                            "Discovered {} requirements across workspace.",
+                            total_requirements.to_string().bold()
+                        ),
                     }
 
-                    if !report.must_broken.is_empty() {
-                        println!("\n{}", "❌ Broken MUST Traceability Gates:".red().bold());
-                        for broken in &report.must_broken {
-                            let missing = [
-                                (broken.missing_design, "@design"),
-                                (broken.missing_impl, "@impl"),
-                                (broken.missing_test, "@test"),
-                            ]
-                            .into_iter()
-                            .filter_map(|(cond, label)| cond.then_some(label))
-                            .collect::<Vec<_>>();
+                    if !graph.violations.is_empty() {
+                        println!("\n{}", "❌ Canonical Relation Violations:".red().bold());
+                        for violation in &graph.violations {
                             println!(
-                                "   - {} ({}:{}) lacks: {}",
-                                broken.id.bold().red(),
-                                broken.file_path.display(),
-                                broken.line_number,
-                                missing.join(", ").yellow()
+                                "   - {} {} (found {}, required {})",
+                                violation.rule_id.red(),
+                                violation.subject,
+                                violation.found,
+                                violation.required
                             );
                         }
-                    }
-
-                    if !report.should_pending.is_empty() {
-                        println!("\n{}", "⚠️ Pending SHOULD Requirements:".yellow().bold());
-                        for pending in &report.should_pending {
-                            println!(
-                                "   - {} ({}:{})",
-                                pending.id.bold().yellow(),
-                                pending.file_path.display(),
-                                pending.line_number
-                            );
-                        }
-                    }
-
-                    if report.draft_total > 0 {
-                        println!(
-                            "\n{}",
-                            "📝 Active DRAFT Requirements (T0 Mode):".cyan().bold()
-                        );
-                        for draft in &report.draft_pending {
-                            let missing: Vec<&str> = [
-                                (draft.missing_design, "@design"),
-                                (draft.missing_impl, "@impl"),
-                                (draft.missing_test, "@test"),
-                            ]
-                            .into_iter()
-                            .filter_map(|(cond, label)| cond.then_some(label))
-                            .collect();
-                            #[allow(clippy::match_bool)]
-                            // guard-clause policy requires matching on a bool
-                            let missing_display = match missing.is_empty() {
-                                true => "none".to_string(),
-                                false => missing.join(", ").yellow().to_string(),
-                            };
-                            println!(
-                                "   - {} ({}:{}) in-progress (missing: {})",
-                                draft.id.bold().cyan(),
-                                draft.file_path.display(),
-                                draft.line_number,
-                                missing_display,
-                            );
-                        }
-                    }
-                    if report.draft_total > 0 && report.draft_pending.is_empty() {
-                        println!(
-                            "   All {} DRAFT requirements have full design, impl, and test scaffolds.",
-                            report.draft_total
-                        );
                     }
 
                     if has_deny_drafts_failure {
@@ -384,7 +337,7 @@ pub fn run() -> ExitCode {
                         );
                         println!(
                             "   Discovered {} active @req:*:DRAFT tag(s). Graduate all drafts to MUST before merging into main trunk.",
-                            report.draft_total
+                            draft_total
                         );
                     }
 
@@ -473,14 +426,14 @@ pub fn run() -> ExitCode {
                         }
                     }
                     if !anti_warnings.is_empty() && !strict {
-                        eprintln!(
+                        println!(
                             "{}",
-                            "⚠️ Anti-slop Warnings (reported, non-blocking):"
+                            "⚠️ Anti-slop Preferences (reported, non-blocking):"
                                 .yellow()
                                 .bold()
                         );
                         for v in &anti_warnings {
-                            eprintln!(
+                            println!(
                                 "   - {}:{}: {}",
                                 v.file_path.display(),
                                 v.line_number,
@@ -551,10 +504,10 @@ pub fn run() -> ExitCode {
                     println!(
                         "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations | {} ambient skills violations",
                         tier.as_str().cyan().bold(),
-                        report.must_satisfied.to_string().green().bold(),
-                        report.must_broken.len().to_string().red().bold(),
-                        report.should_pending.len().to_string().yellow().bold(),
-                        report.draft_total.to_string().cyan().bold(),
+                        total_requirements.saturating_sub(must_broken.len()).to_string().green().bold(),
+                        must_broken.len().to_string().red().bold(),
+                        should_pending.len().to_string().yellow().bold(),
+                        draft_total.to_string().cyan().bold(),
                         violations.len().to_string().red().bold(),
                         ambient_violations.len().to_string().red().bold(),
                     );
@@ -728,15 +681,26 @@ pub fn run() -> ExitCode {
             paths,
             root,
             max_tokens,
+            explicit,
         }) => {
             let root_path = root.unwrap_or_else(|| PathBuf::from("."));
 
-            let budget = crate::runtime::budget::ResourceBudget {
+            let budget = crate::config::budget::ResourceBudget {
                 max_tokens,
                 ..Default::default()
             };
 
-            let bundle = match crate::context::compile_context(&root_path, &paths, budget) {
+            let bundle = match explicit {
+                true => crate::context::compile_context_files(
+                    &root_path,
+                    &paths,
+                    format!("Explicit context for {} files", paths.len()),
+                    budget,
+                    Vec::new(),
+                ),
+                false => crate::context::compile_context(&root_path, &paths, budget),
+            };
+            let bundle = match bundle {
                 Ok(b) => b,
                 Err(e) => {
                     eprintln!("{} {}", "✖".red(), e);

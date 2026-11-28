@@ -4,7 +4,7 @@
 // @impl:FR-CTX-02
 
 use crate::affected::{affected, AffectedReport};
-use crate::runtime::budget::{BudgetTracker, ResourceBudget};
+use crate::config::budget::{BudgetTracker, ResourceBudget};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use srcdump::config::{Config, OutputFormat, OutputMode};

@@ -98,7 +98,7 @@ One Core Protocol (`protocol/CORE.md`) defines activation and mandatory constrai
 | Engineering Specs | `skills/engineering-specs/SKILL.md` | Requirements, designs, ADRs, diagrams |
 | Code Contracts | `skills/code-contracts/SKILL.md` | Contracts, pre/postconditions, error semantics |
 | Repository Governance | `skills/repository-governance/SKILL.md` | Repository docs and organization |
-| Design Tokens | `skills/design-tokens/SKILL.md` | Semantic tokens, accessibility, interaction contracts |
+| Design Tokens | `skills/design-system/SKILL.md` | Semantic tokens, accessibility, interaction contracts |
 | Engine | `crates/spec-engine/` | CLI, MCP, validators, shared core |
 | Source Intelligence | `crates/source-intelligence/` | `srcidx`, `srcdump`, `srcwalk` |
 

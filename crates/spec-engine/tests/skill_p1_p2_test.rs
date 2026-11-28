@@ -107,9 +107,9 @@ fn test_skill_fork() {
 
 #[test]
 fn test_dependency_resolution() {
-    // Retired router has no orchestration dependencies (decision 07.1).
-    let deps = resolve_dependencies("workflow-router");
-    assert!(deps.is_empty(), "retired router must not pull in domain skills");
+    // A domain skill has no implicit orchestration dependencies.
+    let deps = resolve_dependencies("design-system");
+    assert!(deps.is_empty(), "domain skills must not pull implicit dependencies");
 }
 
 #[test]

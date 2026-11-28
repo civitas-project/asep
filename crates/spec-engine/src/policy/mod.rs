@@ -5,6 +5,8 @@
 //! kinds, coverage rules COV-01..COV-06, rigor tiers T0..T4, and exit codes
 //! are defined.
 
+pub mod level;
+pub use level::EngineerLevel;
 use serde::{Deserialize, Serialize};
 
 /// Typed traceability edge kind.

@@ -13,21 +13,10 @@ source in its domain folder; the `SKILL.md` under `skills/<id>/` is the native-d
 | Skill | Canonical path | Version | Purpose (from frontmatter `description`) |
 |-------|----------------|---------|------------------------------------------|
 | code-contracts | `skills/code-contracts/SKILL.md` | 2.1.0 | Use when authoring or auditing function docstrings, enforcing strict conditionality, eliminating comment parroting, or documenting memory ownership and lock hierarchies |
-| design-tokens | `skills/design-tokens/SKILL.md` | 2.1.0 | Use when authoring or auditing KDL design tokens, OKLCH color math, sRGB fallbacks, WCAG contrast, interactive UI states, or ergonomic layout bounds |
+| design-system | `skills/design-system/SKILL.md` | 2.1.0 | Use when authoring or auditing KDL design tokens, OKLCH color math, sRGB fallbacks, WCAG contrast, interactive UI states, or ergonomic layout bounds |
 | engineering-specs | `skills/engineering-specs/SKILL.md` | 2.1.0 | Use when authoring or auditing PRD/TDD specifications, ISO 29148 requirements grammar, Architecture-as-Code contracts, vector SVG diagrams, or cloud benchmark reports |
 | repository-governance | `skills/repository-governance/SKILL.md` | 2.1.0 | Use when authoring or auditing root governance files (README.md, ARCHITECTURE.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md) or human-centric manuals (MANUAL.md via Diátaxis) |
 | system-architecture | `skills/system-architecture/SKILL.md` | 2.1.0 | Use when orchestrating Phase 1 Spikes, Phase 2 Vertical-Slice TDD, Systematic Debugging, Rich ADRs, Alloy/TLA+ formal proofs, or running the 5-Gate CI verification pipeline |
-
-## Retired compatibility skills
-
-`workflow-router` and `using-asep` are retained in the embedded set for CLI and
-skill-manager compatibility, but are no longer ambient or mandatory. See decisions
-07.1 and 07.2. Their content is now a thin pointer to `protocol/CORE.md`.
-
-| Skill | Compatibility path | Status |
-|-------|--------------------|--------|
-| workflow-router | `skills/workflow-router/SKILL.md` | Retired as mandatory router; optional reference |
-| using-asep | `skills/using-asep/SKILL.md` | Retired as mandatory bootstrap; optional reference |
 
 ## Generated copies (do not edit)
 

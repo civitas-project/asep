@@ -234,6 +234,10 @@ pub enum Commands {
         /// Maximum token budget for the context bundle
         #[arg(long)]
         max_tokens: Option<u64>,
+
+        /// Treat paths as explicit files; do not invoke impact analysis
+        #[arg(long)]
+        explicit: bool,
     },
 
     /// Measure or clean Rust target artifacts by size threshold

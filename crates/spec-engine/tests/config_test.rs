@@ -3,7 +3,7 @@
 use asep::config::settings::{
     load_config, save_config, CapabilityProfile, EditorPreference, EngineConfig,
 };
-use asep::runtime::EngineerLevel;
+use asep::policy::EngineerLevel;
 use std::fs;
 use tempfile::tempdir;
 

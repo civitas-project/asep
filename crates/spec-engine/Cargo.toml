@@ -30,7 +30,6 @@ toml = "1.1.8"
 sha2 = "0.10"
 similar = "2.7"
 semver = "1.0"
-notify = "6.1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 srcidx = { path = "../source-intelligence/srcidx" }
 srcdump = { path = "../source-intelligence/srcdump" }

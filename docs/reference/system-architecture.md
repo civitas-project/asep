@@ -21,7 +21,7 @@ System-Architecture governs the **Spec-Driven Extreme Programming (FXP)** lifecy
 - Formatting ISO 29148 requirement prose, PlantUML skinparams, or Kaggle/Typst benchmark scripts (delegate to `asep:engineering-specs`).
 - Formatting low-level function docstrings and conditional `# Errors` / `# Panics` blocks (delegate to `asep:code-contracts`).
 - Authoring `README.md`, `MANUAL.md`, `CONTRIBUTING.md`, or `SECURITY.md` (delegate to `asep:repository-governance`).
-- Defining KDL design tokens and OKLCH palettes (delegate to `asep:design-tokens`).
+- Defining KDL design tokens and OKLCH palettes (delegate to `asep:design-system`).
 
 ---
 
