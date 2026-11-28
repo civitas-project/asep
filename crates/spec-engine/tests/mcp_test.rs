@@ -38,7 +38,6 @@ fn test_mcp_tools_list() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
 
     assert!(names.contains(&"asep_check"));
-    assert!(names.contains(&"spec_check"));
     assert!(names.contains(&"adr_new"));
     assert!(names.contains(&"render_diagrams"));
 }
@@ -73,20 +72,6 @@ fn test_tool_descriptions_are_compact() {
 }
 
 // @test:FR-MCP-PROTO-03
-#[test]
-fn test_mcp_tools_call_spec_check() {
-    let req = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"spec_check","arguments":{"dir":"."}}}"#;
-    let repo_path = PathBuf::from(".");
-    let res = process_jsonrpc_request(req, &repo_path).expect("tools/call must succeed");
-
-    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
-    assert_eq!(val["id"], 3);
-    assert!(val["result"]["isError"].is_boolean());
-    let text = val["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("Traceability Gate:"));
-}
-
-// @test:FR-MCP-PROTO-04
 #[test]
 fn test_mcp_unknown_method_returns_error_frame() {
     let req = r#"{"jsonrpc":"2.0","id":99,"method":"unknown/method","params":{}}"#;
@@ -984,7 +969,7 @@ exit 0
 static MCP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn expose_all_tools() {
-    std::env::set_var("ASEP_MCP_TOOLS", "asep_check,spec_check,adr_new,render_diagrams,srcidx,srcdump,asep_accept_scoped,asep_trace_report,asep_agent_send,asep_agent_recv,asep_agent_read,asep_agent_ack,asep_affected,asep_context");
+    std::env::set_var("ASEP_MCP_TOOLS", "asep_check,adr_new,render_diagrams,srcidx,srcdump,asep_accept_scoped,asep_trace_report,asep_agent_send,asep_agent_recv,asep_agent_read,asep_agent_ack,asep_affected,asep_context");
 }
 
 #[test]

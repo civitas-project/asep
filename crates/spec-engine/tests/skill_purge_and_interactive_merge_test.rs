@@ -1,4 +1,4 @@
-use asep::pack::targets::{InstallScope, TargetAgent};
+use asep::skill::distribution::targets::{InstallScope, TargetAgent};
 use asep::skill::merge::resolve_conflict_chunks;
 use asep::skill::purge::purge_skill;
 use std::fs;

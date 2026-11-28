@@ -150,5 +150,16 @@ pub fn scan_project_tags_detailed(root: &Path) -> Result<ScanResult, AsepError> 
 ///
 /// # Errors: Returns `AsepError::Io` if `root` is invalid or traversal errors occur.
 pub fn scan_project_tags(root: &Path) -> Result<Vec<ScannedTag>, AsepError> {
-    scan_project_tags_detailed(root).map(|result| result.tags)
+    let result = scan_project_tags_detailed(root)?;
+    if result.completeness.errors.is_empty() {
+        return Ok(result.tags);
+    }
+    Err(AsepError::Io(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        format!(
+            "incomplete scan: {} error(s); first: {}",
+            result.completeness.errors.len(),
+            result.completeness.errors[0]
+        ),
+    )))
 }

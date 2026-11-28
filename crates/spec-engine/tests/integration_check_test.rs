@@ -407,7 +407,7 @@ fn test_check_antislop_warning_only_passes_without_strict() {
 
     // T1, no --strict: Warning does not block => pass, reported on stderr.
     let mut cmd_lenient = Command::cargo_bin("asep").expect("binary exists");
-    cmd_lenient.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd_lenient.arg("check").arg("--rigor").arg("T1").arg("--validator").arg("anti-slop").arg(root);
     cmd_lenient
         .assert()
         .success()
@@ -421,6 +421,8 @@ fn test_check_antislop_warning_only_passes_without_strict() {
         .arg("--rigor")
         .arg("T1")
         .arg("--strict")
+        .arg("--validator")
+        .arg("anti-slop")
         .arg(root);
     cmd_strict
         .assert()
@@ -441,7 +443,7 @@ fn test_check_antislop_error_banner_fails_at_t1() {
     fs::write(root.join("main.rs"), "// ==========\nfn main() {}\n").expect("write main.rs");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.arg("check").arg("--rigor").arg("T1").arg("--validator").arg("anti-slop").arg(root);
     cmd.assert()
         .failure()
         .code(1)
@@ -520,7 +522,7 @@ fn test_ambient_skills_violations_fail_outside_t0() {
     .expect("write SKILL.md");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.arg("check").arg("--rigor").arg("T1").arg("--validator").arg("ambient-skills").arg(root);
     cmd.assert()
         .failure()
         .code(1)
@@ -551,7 +553,7 @@ fn test_ambient_skills_valid_input_passes() {
     .expect("write SKILL.md");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.arg("check").arg("--rigor").arg("T1").arg("--validator").arg("ambient-skills").arg(root);
     cmd.assert().success().code(0);
 }
 

@@ -38,7 +38,7 @@ pub fn resolve_skills_dir(base_dir: &Path) -> PathBuf {
     }
 
     // Fall back to global user Antigravity plugin path if local workspace has no skills installed
-    let global_asep = crate::pack::targets::default_global_home()
+    let global_asep = crate::skill::distribution::targets::default_global_home()
         .join(".gemini")
         .join("config")
         .join("plugins")
@@ -48,7 +48,7 @@ pub fn resolve_skills_dir(base_dir: &Path) -> PathBuf {
         return global_asep;
     }
 
-    let global_antigravity = crate::pack::targets::default_global_home()
+    let global_antigravity = crate::skill::distribution::targets::default_global_home()
         .join(".gemini")
         .join("config")
         .join("plugins")

@@ -4,9 +4,9 @@
 
 use crate::config::settings::load_config_checked;
 use crate::error::AsepError;
-use crate::pack::embedded::{get_default_mcp_config_json, get_default_plugin_json};
-use crate::pack::manifest::{scaffold_opencode_agents, update_opencode_json};
-use crate::pack::targets::{default_global_home, resolve_target_paths, InstallScope, TargetAgent};
+use crate::skill::distribution::embedded::{get_default_mcp_config_json, get_default_plugin_json};
+use crate::skill::distribution::manifest::{scaffold_opencode_agents, update_opencode_json};
+use crate::skill::distribution::targets::{default_global_home, resolve_target_paths, InstallScope, TargetAgent};
 use colored::Colorize;
 use inquire::{Confirm, MultiSelect, Select};
 use std::fs;

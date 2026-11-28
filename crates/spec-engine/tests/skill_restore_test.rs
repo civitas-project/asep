@@ -1,4 +1,4 @@
-use asep::pack::embedded::get_embedded_skills;
+use asep::skill::distribution::embedded::get_embedded_skills;
 use asep::skill::inspector::inspect_skills;
 use asep::skill::model::SkillStatus;
 use asep::skill::restore::{restore_all_builtin_skills, restore_skills};

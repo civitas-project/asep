@@ -104,3 +104,13 @@ fn test_policy_loads_antislop_rules_for_four_domains() {
         }
     }
 }
+
+#[test]
+// @test:R11
+fn rigor_levels_map_to_canonical_tiers() {
+    use asep::policy::tier_for_rigor_level;
+    assert_eq!(tier_for_rigor_level("Lightweight"), Some(asep::policy::TierId::T1));
+    assert_eq!(tier_for_rigor_level("Structured"), Some(asep::policy::TierId::T2));
+    assert_eq!(tier_for_rigor_level("High Assurance"), Some(asep::policy::TierId::T4));
+    assert_eq!(tier_for_rigor_level("unknown"), None);
+}

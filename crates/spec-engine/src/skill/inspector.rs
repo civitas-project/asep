@@ -1,7 +1,7 @@
 //! Status inspector comparing local skills against binary embedded originals.
 // @impl:FR-AMB-05
 
-use crate::pack::embedded::{get_embedded_skills, EmbeddedSkill};
+use crate::skill::distribution::embedded::{get_embedded_skills, EmbeddedSkill};
 use crate::skill::model::{SkillEntry, SkillStatus};
 use std::collections::HashSet;
 use std::fs;

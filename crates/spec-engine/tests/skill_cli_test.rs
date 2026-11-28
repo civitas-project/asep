@@ -117,3 +117,43 @@ fn install_skill_never_overwrites_unmanaged_skill_in_generated_dir() {
         "unmanaged artifact must be preserved even in a generated directory"
     );
 }
+
+#[test]
+// @test:N03
+fn modified_managed_skill_is_preserved() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills_dir = dir.path().join("skills");
+    let s = asep::skill::distribution::embedded::get_embedded_skills()
+        .iter()
+        .find(|s| s.id == "code-contracts")
+        .unwrap();
+    assert!(asep::skill::install::refresh_managed_skill(&skills_dir, s).unwrap());
+
+    let file = skills_dir.join("code-contracts").join("SKILL.md");
+    std::fs::write(&file, format!("{}\n<!-- USER EDIT -->", s.content)).unwrap();
+    assert!(
+        !asep::skill::install::refresh_managed_skill(&skills_dir, s).unwrap(),
+        "modified managed skill must not be overwritten"
+    );
+    assert!(std::fs::read_to_string(&file).unwrap().contains("USER EDIT"));
+}
+
+#[test]
+// @test:N03
+fn marker_without_recorded_digest_is_unmanaged() {
+    let dir = tempfile::tempdir().unwrap();
+    let skills_dir = dir.path().join("skills");
+    let s = asep::skill::distribution::embedded::get_embedded_skills()
+        .iter()
+        .find(|s| s.id == "code-contracts")
+        .unwrap();
+    let folder = skills_dir.join("code-contracts");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("SKILL.md"),
+        "---\nname: code-contracts\ndescription: Use when custom\n---\n<!-- asep-managed-skill -->\nCUSTOM",
+    )
+    .unwrap();
+    assert!(!asep::skill::install::refresh_managed_skill(&skills_dir, s).unwrap());
+    assert!(std::fs::read_to_string(folder.join("SKILL.md")).unwrap().contains("CUSTOM"));
+}

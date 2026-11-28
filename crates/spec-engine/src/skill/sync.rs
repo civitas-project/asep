@@ -1,6 +1,6 @@
 //! Skill sync: propagate skills to all detected agentic AI tools.
 
-use crate::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
+use crate::skill::distribution::targets::{resolve_target_paths, InstallScope, TargetAgent};
 use crate::skill::inspector::inspect_skills;
 use std::fs;
 use std::path::Path;

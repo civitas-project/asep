@@ -6,7 +6,9 @@ use crate::formal::{
     FormalState,
 };
 use crate::graph::builder::build_relation_graph;
+use crate::graph::model::NodeKind;
 use crate::policy::{load_policy, Severity, TierId};
+use crate::scanner::lexer::{Priority, TagKind};
 use crate::scanner::scan_project_tags;
 use crate::verification::{evaluate, VerificationStatus};
 use serde::{Deserialize, Serialize};
@@ -67,48 +69,192 @@ fn ci_target_gates(opts: &CiOptions) -> Vec<u8> {
 
 /// Shared check core used by CLI and MCP. Computes canonical verification
 /// semantics once: structural graph, evidence evaluation and selected audits.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub enum Validator {
+    Traceability,
+    Verification,
+    DocContracts,
+    AmbientSkills,
+    AntiSlop,
+    SkillDrift,
+}
+
+impl std::str::FromStr for Validator {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "traceability" => Ok(Self::Traceability),
+            "verification" => Ok(Self::Verification),
+            "doc-contracts" => Ok(Self::DocContracts),
+            "ambient-skills" => Ok(Self::AmbientSkills),
+            "anti-slop" => Ok(Self::AntiSlop),
+            "skill-drift" => Ok(Self::SkillDrift),
+            _ => Err(format!("unknown validator: {value}")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CheckOptions {
+    pub rigor: String,
+    pub strict: bool,
+    pub deny_drafts: bool,
+    pub validators: Vec<Validator>,
+    pub evidence_dir: Option<std::path::PathBuf>,
+    pub behavioral_report: Option<std::path::PathBuf>,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self {
+            rigor: "T1".to_string(),
+            strict: ci_strict(),
+            deny_drafts: false,
+            validators: vec![Validator::Traceability, Validator::Verification],
+            evidence_dir: None,
+            behavioral_report: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CheckOutcome {
     pub passed: bool,
     pub status: VerificationStatus,
     pub structural: bool,
+    pub total_requirements: usize,
     pub must_broken: usize,
     pub should_pending: usize,
     pub draft_total: usize,
     pub doc_contract_violations: usize,
     pub ambient_violations: usize,
+    pub anti_slop_errors: usize,
+    pub anti_slop_warnings: usize,
+    pub skill_drifts: usize,
+    pub denied_drafts: bool,
+    pub validators: Vec<String>,
     pub skipped: Vec<String>,
 }
 
-pub fn check_core(dir: &Path, rigor: &str, strict: bool) -> Result<CheckOutcome, String> {
+/// One canonical verification implementation shared by CLI and MCP. Only
+/// explicitly selected validators affect the verdict; unrelated audits are
+/// reported by their own commands, never bundled into traceability silently.
+pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, String> {
     let tags = scan_project_tags(dir).map_err(|e| e.to_string())?;
     let policy = load_policy();
     let graph = build_relation_graph(&tags, &policy);
-    let tier = rigor.parse::<TierId>().unwrap_or(TierId::T1);
-    let behavioral = dir.join(".spec-engine").join("behavioral.json");
-    let evidence_dir = dir.join("evidence");
+    let tier = opts.rigor.parse::<TierId>().unwrap_or(TierId::T1);
+    let behavioral = opts
+        .behavioral_report
+        .clone()
+        .unwrap_or_else(|| dir.join(".spec-engine").join("behavioral.json"));
+    let evidence_dir = opts
+        .evidence_dir
+        .clone()
+        .unwrap_or_else(|| dir.join("evidence"));
     let report = evaluate(&graph, &evidence_dir, tier, &behavioral);
-    let doc_violations = audit_project_docstrings(dir).map_err(|e| e.to_string())?;
-    let ambient = if dir.join("skills").is_dir() {
-        audit_ambient_skills(dir).len()
+    let has = |v: &Validator| opts.validators.contains(v);
+    let mut passed = true;
+
+    let total_requirements = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Req)
+        .count();
+    let must_broken = graph
+        .violations
+        .iter()
+        .filter(|v| v.rule_id == "COV-01")
+        .count();
+    let should_pending = graph
+        .violations
+        .iter()
+        .filter(|v| v.rule_id == "COV-02")
+        .count();
+    let draft_total = tags
+        .iter()
+        .filter(|tag| {
+            matches!(&tag.kind, TagKind::Req { priority, .. } if *priority == Priority::Draft)
+        })
+        .count();
+    if has(&Validator::Traceability) {
+        passed &= graph.is_closed && !(opts.strict && should_pending > 0);
+    }
+    if has(&Validator::Verification) {
+        passed &= report.status == VerificationStatus::Pass;
+    }
+    if opts.deny_drafts && draft_total > 0 {
+        passed = false;
+    }
+
+    let doc_contract_violations = if has(&Validator::DocContracts) {
+        let count = audit_project_docstrings(dir).map_err(|e| e.to_string())?.len();
+        passed &= tier == TierId::T0 || count == 0;
+        count
     } else {
         0
     };
-    let cov02 = graph.violations.iter().any(|v| v.rule_id == "COV-02");
-    let passed = report.status == VerificationStatus::Pass
-        && graph.is_closed
-        && (tier == TierId::T0 || doc_violations.is_empty())
-        && (tier == TierId::T0 || ambient == 0)
-        && !(strict && cov02);
+    let ambient_violations = if has(&Validator::AmbientSkills) && dir.join("skills").is_dir() {
+        let count = audit_ambient_skills(dir).len();
+        passed &= tier == TierId::T0 || count == 0;
+        count
+    } else {
+        0
+    };
+    let mut anti_slop_warnings = 0usize;
+    let anti_slop_errors = if has(&Validator::AntiSlop) {
+        match audit_project_anti_slop(dir) {
+            Ok(violations) => {
+                let errors = violations
+                    .iter()
+                    .filter(|v| v.severity == Severity::Error)
+                    .count();
+                let warnings = violations
+                    .iter()
+                    .filter(|v| v.severity == Severity::Warning)
+                    .count();
+                passed &= tier == TierId::T0 || errors == 0;
+                if opts.strict && warnings > 0 {
+                    passed = false;
+                }
+                anti_slop_warnings = warnings;
+                errors
+            }
+            Err(_) => {
+                passed = false;
+                usize::MAX
+            }
+        }
+    } else {
+        0
+    };
+    let skill_drifts = if has(&Validator::SkillDrift) {
+        let dirs = [
+            dir.join(".opencode").join("skills"),
+            dir.join(".agents").join("plugins").join("asep").join("skills"),
+        ];
+        let count = dirs.iter().flat_map(|d| crate::skill::inspector::detect_skill_drift(d)).count();
+        passed &= count == 0;
+        count
+    } else {
+        0
+    };
+
     Ok(CheckOutcome {
         passed,
         status: report.status,
         structural: graph.is_closed,
-        must_broken: graph.violations.iter().filter(|v| v.rule_id == "COV-01").count(),
-        should_pending: graph.violations.iter().filter(|v| v.rule_id == "COV-02").count(),
-        draft_total: 0,
-        doc_contract_violations: doc_violations.len(),
-        ambient_violations: ambient,
+        total_requirements,
+        must_broken,
+        should_pending,
+        draft_total,
+        doc_contract_violations,
+        ambient_violations,
+        anti_slop_errors,
+        anti_slop_warnings,
+        skill_drifts,
+        denied_drafts: opts.deny_drafts && draft_total > 0,
+        validators: opts.validators.iter().map(|v| format!("{v:?}")).collect(),
         skipped: report.skipped,
     })
 }

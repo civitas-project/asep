@@ -1,6 +1,6 @@
 //! Skill content validation (lint).
 
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::extract_skill_full_metadata;
 
 #[derive(Debug, Clone)]

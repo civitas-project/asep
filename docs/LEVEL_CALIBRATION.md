@@ -34,29 +34,24 @@ Level is a **scope classification**, not model size, seniority, or permission. A
 
 Rule classes: **correctness constraints** (traceability closure, evidence identity, security boundaries) are hard and cannot be relaxed by preference. **Project policies** are hard only when the project adopts them (for example `--deny-drafts`). **Style preferences** such as guard-clause formatting (`AS-CODE-ELSE`, `AS-CODE-NESTING`) are Warning by default, reported without blocking, and promoted only under `--strict` or an explicit project contract.
 
-Canonical mapping: Lightweight -> `Tier T1`, Structured -> `Tier T2`, High Assurance -> `Tier T4`. Explicit `Tier T0`..`T4` values remain valid and override this mapping. The mapping never weakens a requirement: a level name resolves to the tier that preserves its evidence obligations.
+One canonical rigor classification is `Tier T0`..`T4`, defined in `crates/spec-engine/policy/asep-policy.toml`. `policy::tier_for_rigor_level` maps the three descriptive aliases used in planning documents to that classification: Lightweight -> `T1`, Structured -> `T2`, High Assurance -> `T4`. Aliases never introduce separate mechanisms; they only select a tier. Explicit tiers always take precedence, and the mapping never weakens evidence obligations.
 
-Rigor is **independent of level**. A single-line change in auth can be High Assurance.
+| Tier | Evidence obligation | Typical mechanisms |
+|---|---|---|
+| `T0` | none | direct execution, relevant local checks |
+| `T1` | none | structural check, bounded tests |
+| `T2` | required | semantic evidence, regression tests |
+| `T3` | required | risk-specific validators, independent review when required |
+| `T4` | required | formal/invariant evidence for binding contracts |
 
-| Mechanism | Lightweight (default) | Structured | High Assurance |
-|---|---|---|---|
-| SDLC | Minimal | Relevant stages | Comprehensive |
-| Specification | Objective + acceptance criteria | Structured spec | Invariants + deep spec |
-| Contracts | If needed | Interface contracts | Explicit contracts by risk |
-| Formal methods | No (default) | Conditional | If property needs proof |
-| Delegation | Not required | Selective | As needed |
-| Verification | Relevant checks | Integration + regression | Risk-specific + independent review |
-| Documentation | Minimal | Relevant technical artifacts | Evidence + docs by need |
+Rigor is **independent of engineer level**. A single-line change in auth can be High Assurance (`T4`).
 
-### Rigor triggers (escalate when any applies)
-- **Impact:** touches auth, payment, data deletion, permission, or persistence boundary → at least Structured; security boundary → High Assurance.
-- **Uncertainty:** unknown root cause, unclear requirements, or novel approach → Structured.
-- **Recoverability:** hard to revert (migration, data loss risk) → High Assurance.
-- **Scope of change:** cross-subsystem or invariant change → at least Structured.
-- **External dependency:** new dependency or external service → Structured.
+### Escalation triggers
+- Security/permission/persistence boundary, hard-to-revert change, cross-subsystem invariant, uncertain root cause, or a new external dependency → escalate at least one tier.
+- Formal methods are selected only when a specific property or binding contract requires proof, never by tier name alone.
 
 ### De-escalation
-- Revert to Lightweight only when all triggers are absent and the change is reversible and well-understood.
+- Reduce tier only when all triggers are absent and the change is reversible and well understood; never reduce below an explicit project contract.
 
 ## 3. Combined decision table (examples)
 

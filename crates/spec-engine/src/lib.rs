@@ -17,7 +17,6 @@ pub mod harness;
 pub mod init;
 pub mod mcp;
 pub mod observability;
-pub mod pack;
 pub mod policy;
 pub mod runner;
 pub mod scanner;

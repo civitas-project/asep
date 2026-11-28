@@ -1,6 +1,6 @@
 //! Skill rollback: backup before edit, restore from backup or embedded original.
 
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::inspect_skills;
 use std::fs;
 use std::path::{Path, PathBuf};

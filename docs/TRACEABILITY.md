@@ -67,7 +67,7 @@
 @rel:verifies:FR-CLI-04->FR-CLI-04 "audit_doc_contracts reports parroting when docstring repeats fn name"
 @rel:verifies:FR-CONFIG-01->FR-CONFIG-01 "save/load config round-trip and CapabilityProfile::missing reports disabled capabilities"
 @rel:verifies:FR-MCP-01->FR-MCP-01 "JsonRpcRequest deserializes and malformed input yields -32700 parse error"
-@rel:verifies:FR-MCP-02->FR-MCP-02 "get_tools_list lists asep_check, spec_check, adr_new, render_diagrams, srcidx, srcdump"
+@rel:verifies:FR-MCP-02->FR-MCP-02 "get_tools_list lists asep_check, adr_new, render_diagrams, srcidx, srcdump"
 @rel:verifies:FR-PACK-01->FR-PACK-01 "generate_plugin_json emits the asep manifest and embedded skills carry real content"
 @rel:verifies:FR-PACK-02->FR-PACK-02 "TargetAgent::all has 11 agents; detection and resolve_target_paths behave as specified"
 @rel:verifies:FR-SKILL-01->FR-SKILL-01 "detect_skill_drift on an empty temp dir returns no drift records"

@@ -28,7 +28,7 @@ fn negotiated_version(req: &JsonRpcRequest) -> String {
 
 /// Minimal default capability exposure. There is no legacy full-surface
 /// mode: `ASEP_MCP_TOOLS` replaces the default with an explicit list.
-const DEFAULT_MCP_TOOLS: [&str; 4] = ["asep_check", "spec_check", "asep_context", "asep_affected"];
+const DEFAULT_MCP_TOOLS: [&str; 3] = ["asep_check", "asep_context", "asep_affected"];
 
 fn tool_exposed(name: &str) -> bool {
     match std::env::var("ASEP_MCP_TOOLS") {

@@ -31,9 +31,9 @@ use crate::init::init_asep_project;
 use crate::mcp::protocol::JsonRpcRequest;
 use crate::mcp::server::process_jsonrpc_request;
 use crate::mcp::tools::get_tools_list;
-use crate::pack::embedded::get_embedded_skills;
-use crate::pack::manifest::generate_plugin_json;
-use crate::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
+use crate::skill::distribution::embedded::get_embedded_skills;
+use crate::skill::distribution::manifest::generate_plugin_json;
+use crate::skill::distribution::targets::{resolve_target_paths, InstallScope, TargetAgent};
 use crate::policy::{load_policy, AntiSlopRule, Severity, TierId};
 use crate::scanner::{parse_tags_from_line, Priority, TagKind};
 use crate::skill::inspector::detect_skill_drift;
@@ -162,7 +162,6 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "asep_check",
-        "spec_check",
         "adr_new",
         "render_diagrams",
         "srcidx",
@@ -458,7 +457,7 @@ fn test_observability_addition_keeps_existing_contracts() {
     assert_eq!(config.evidence_dir, None);
     let tools = get_tools_list();
     let names = tools["tools"].as_array().expect("tools array");
-    for required in ["asep_check", "spec_check", "srcdump", "asep_accept_scoped"] {
+    for required in ["asep_check", "srcdump", "asep_accept_scoped"] {
         assert!(
             names.iter().any(|t| t["name"] == required),
             "legacy tool must remain: {required}"

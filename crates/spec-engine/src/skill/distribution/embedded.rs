@@ -12,16 +12,16 @@ pub struct EmbeddedSkill {
     pub content: &'static str,
 }
 
-const SKILL_SYSTEM_ARCHITECTURE: &str = include_str!("../../../../skills/system-architecture/SKILL.md");
-const SKILL_CODE_CONTRACTS: &str = include_str!("../../../../skills/code-contracts/SKILL.md");
-const SKILL_ENGINEERING_SPECS: &str = include_str!("../../../../skills/engineering-specs/SKILL.md");
+const SKILL_SYSTEM_ARCHITECTURE: &str = include_str!("../../../../../skills/system-architecture/SKILL.md");
+const SKILL_CODE_CONTRACTS: &str = include_str!("../../../../../skills/code-contracts/SKILL.md");
+const SKILL_ENGINEERING_SPECS: &str = include_str!("../../../../../skills/engineering-specs/SKILL.md");
 const SKILL_REPOSITORY_GOVERNANCE: &str =
-    include_str!("../../../../skills/repository-governance/SKILL.md");
-const SKILL_DESIGN_SYSTEM: &str = include_str!("../../../../skills/design-system/SKILL.md");
+    include_str!("../../../../../skills/repository-governance/SKILL.md");
+const SKILL_DESIGN_SYSTEM: &str = include_str!("../../../../../skills/design-system/SKILL.md");
 
 /// Canonical core protocol. Native entry points and generated instructions are
 /// derived from this single source; managed copies are marked by `<!-- asep:start -->`.
-pub const CORE_PROTOCOL: &str = include_str!("../../../../protocol/CORE.md");
+pub const CORE_PROTOCOL: &str = include_str!("../../../../../protocol/CORE.md");
 
 /// Skills installed and listed as ambient by project initialization.
 pub const AMBIENT_SKILL_IDS: [&str; 5] = [

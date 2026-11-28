@@ -11,8 +11,8 @@ use crate::harness::process::parse_size_bytes;
 use crate::init::init_asep_project;
 use crate::mcp::server::run_mcp_server;
 use crate::observability::{read_trace_events, trace_key, TraceCollector};
-use crate::pack::installer::{run_pack_installer, PackOptions};
-use crate::pack::targets::{default_global_home, InstallScope, TargetAgent};
+use crate::skill::distribution::installer::{run_pack_installer, PackOptions};
+use crate::skill::distribution::targets::{default_global_home, InstallScope, TargetAgent};
 use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::scan_project_tags;
 use crate::scanner::ScannedTag;
@@ -112,6 +112,7 @@ pub fn run() -> ExitCode {
             rigor,
             skills,
             evidence_dir,
+            validator,
         }) => {
             let target_path = path.or(dir).unwrap_or_else(|| PathBuf::from("."));
 
@@ -235,17 +236,36 @@ pub fn run() -> ExitCode {
                 .collect();
             let has_skill_drift = !skill_drifts.is_empty();
 
-            let has_must_failure = !graph.is_closed;
-            let has_doc_contract_failure = tier != TierId::T0 && !violations.is_empty();
-            let has_strict_failure = strict && !should_pending.is_empty();
-            let has_deny_drafts_failure = deny_drafts && draft_total > 0;
-            let mut passed = !has_must_failure
-                && !has_doc_contract_failure
-                && !has_ambient_failure
-                && !has_strict_failure
-                && !has_deny_drafts_failure
-                && !has_skill_drift
-                && !has_antislop_failure;
+            let mut options = crate::ci::CheckOptions {
+                rigor: tier.as_str().to_string(),
+                strict,
+                deny_drafts,
+                evidence_dir: Some(evidence_dir.clone()),
+                behavioral_report: Some(behavioral_path.clone()),
+                ..Default::default()
+            };
+            if !validator.is_empty() {
+                match validator
+                    .iter()
+                    .map(|name| name.parse::<crate::ci::Validator>())
+                    .collect::<Result<Vec<_>, _>>()
+                {
+                    Ok(parsed) => options.validators = parsed,
+                    Err(e) => {
+                        eprintln!("{} {e}", "✖".red());
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            let outcome = match crate::ci::check_core(&target_path, &options) {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    eprintln!("{} Failed to verify project: {e}", "✖".red());
+                    return ExitCode::from(2);
+                }
+            };
+            let mut passed = outcome.passed;
+            let has_deny_drafts_failure = outcome.denied_drafts;
 
             // --messages: validate agent message directory; errors fold into `passed`.
             if let Some(messages_dir) = &messages {
@@ -1110,8 +1130,8 @@ pub fn run() -> ExitCode {
                                 return ExitCode::SUCCESS;
                             }
                             let scope =
-                                crate::pack::targets::InstallScope::Local(target_dir.clone());
-                            let agents: Vec<_> = crate::pack::targets::TargetAgent::ALL
+                                crate::skill::distribution::targets::InstallScope::Local(target_dir.clone());
+                            let agents: Vec<_> = crate::skill::distribution::targets::TargetAgent::ALL
                                 .iter()
                                 .copied()
                                 .filter(|a| a.is_detected(&scope))
@@ -1119,7 +1139,7 @@ pub fn run() -> ExitCode {
                             #[allow(clippy::match_bool)]
                             // avoid `else` branch; keep fetched agents when non-empty
                             let agents = match agents.is_empty() {
-                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                true => vec![crate::skill::distribution::targets::TargetAgent::OpenCode],
                                 false => agents,
                             };
                             let report =
@@ -1380,59 +1400,59 @@ pub fn run() -> ExitCode {
                 Some(SkillCommands::Sync { agent, dir, path }) => {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
-                    let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
+                    let scope = crate::skill::distribution::targets::InstallScope::Local(target_dir.clone());
                     #[allow(clippy::match_bool)]
                     // avoid `else` branch; empty selection defaults to OpenCode
-                    let agents: Vec<crate::pack::targets::TargetAgent> = match agent {
+                    let agents: Vec<crate::skill::distribution::targets::TargetAgent> = match agent {
                         Some(a) => {
                             let mut v = Vec::new();
                             for item in a.split(',') {
                                 let t = item.trim().to_lowercase();
                                 match t.as_str() {
                                     "all" => {
-                                        for ag in crate::pack::targets::TargetAgent::ALL {
+                                        for ag in crate::skill::distribution::targets::TargetAgent::ALL {
                                             if !v.contains(&ag) {
                                                 v.push(ag);
                                             }
                                         }
                                     }
                                     "detected" => {
-                                        for ag in crate::pack::targets::TargetAgent::ALL {
+                                        for ag in crate::skill::distribution::targets::TargetAgent::ALL {
                                             if ag.is_detected(&scope) && !v.contains(&ag) {
                                                 v.push(ag);
                                             }
                                         }
                                     }
                                     "opencode" => {
-                                        v.push(crate::pack::targets::TargetAgent::OpenCode)
+                                        v.push(crate::skill::distribution::targets::TargetAgent::OpenCode)
                                     }
-                                    "cursor" => v.push(crate::pack::targets::TargetAgent::Cursor),
+                                    "cursor" => v.push(crate::skill::distribution::targets::TargetAgent::Cursor),
                                     "claude" | "claudecode" => {
-                                        v.push(crate::pack::targets::TargetAgent::ClaudeCode)
+                                        v.push(crate::skill::distribution::targets::TargetAgent::ClaudeCode)
                                     }
                                     "windsurf" => {
-                                        v.push(crate::pack::targets::TargetAgent::Windsurf)
+                                        v.push(crate::skill::distribution::targets::TargetAgent::Windsurf)
                                     }
                                     "antigravity" | "agy" => {
-                                        v.push(crate::pack::targets::TargetAgent::Antigravity)
+                                        v.push(crate::skill::distribution::targets::TargetAgent::Antigravity)
                                     }
-                                    "goose" => v.push(crate::pack::targets::TargetAgent::Goose),
+                                    "goose" => v.push(crate::skill::distribution::targets::TargetAgent::Goose),
                                     _ => {}
                                 }
                             }
                             match v.is_empty() {
-                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                true => vec![crate::skill::distribution::targets::TargetAgent::OpenCode],
                                 false => v,
                             }
                         }
                         None => {
-                            let detected: Vec<_> = crate::pack::targets::TargetAgent::ALL
+                            let detected: Vec<_> = crate::skill::distribution::targets::TargetAgent::ALL
                                 .iter()
                                 .copied()
                                 .filter(|a| a.is_detected(&scope))
                                 .collect();
                             match detected.is_empty() {
-                                true => vec![crate::pack::targets::TargetAgent::OpenCode],
+                                true => vec![crate::skill::distribution::targets::TargetAgent::OpenCode],
                                 false => detected,
                             }
                         }
@@ -1649,62 +1669,27 @@ pub fn run() -> ExitCode {
                     let target_dir = path.or(dir).unwrap_or(base_path.clone());
                     let skills_dir = crate::skill::menu::resolve_skills_dir(&target_dir);
 
-                    let source = crate::skill::remote::parse_skill_specifier(&id);
-                    match source {
-                        crate::skill::remote::SkillSource::Git { .. }
-                        | crate::skill::remote::SkillSource::Http { .. } => {
-                            match crate::skill::remote::fetch_remote_skill(&source, &skills_dir) {
-                                Ok(p) => {
-                                    println!(
-                                        "{} Fetched and installed remote skill at {}",
-                                        "✔".green(),
-                                        p.display()
-                                    );
-                                    ExitCode::SUCCESS
-                                }
-                                Err(e) => {
-                                    eprintln!("{} Failed to fetch remote skill: {e}", "✖".red());
-                                    ExitCode::from(1)
+                    // Remote registries and Git fetching duplicate native tooling;
+                    // only the embedded canonical catalog is a trusted source.
+                    match crate::skill::install::install_skill(&skills_dir, &id, !no_deps) {
+                        Ok(paths) => match paths.is_empty() {
+                            true => println!("Skill '{id}' already installed."),
+                            false => {
+                                println!("{} Installed {} skill(s):", "✔".green(), paths.len());
+                                for p in paths {
+                                    println!("   - {}", p.display());
                                 }
                             }
-                        }
-                        crate::skill::remote::SkillSource::Registry { id: ref reg_id, .. } => {
-                            match crate::skill::install::install_skill(
-                                &skills_dir,
-                                reg_id,
-                                !no_deps,
-                            ) {
-                                Ok(paths) => {
-                                    #[allow(clippy::match_bool)]
-                                    // avoid `else` branch; both paths fall through to success
-                                    match paths.is_empty() {
-                                        true => println!(
-                                            "Skill '{}' (and its dependencies) already installed.",
-                                            reg_id
-                                        ),
-                                        false => {
-                                            println!(
-                                                "{} Installed {} skill(s):",
-                                                "✔".green(),
-                                                paths.len()
-                                            );
-                                            for p in paths {
-                                                println!("   - {}", p.display());
-                                            }
-                                        }
-                                    }
-                                    ExitCode::SUCCESS
-                                }
-                                Err(e) => {
-                                    eprintln!("{} Failed to install skill: {e}", "✖".red());
-                                    ExitCode::from(1)
-                                }
-                            }
+                        },
+                        Err(e) => {
+                            eprintln!("{} Failed to install skill: {e}", "✖".red());
+                            return ExitCode::from(1);
                         }
                     }
+                    ExitCode::SUCCESS
                 }
 
-                Some(SkillCommands::Merge {
+            Some(SkillCommands::Merge {
                     id,
                     remote,
                     interactive,
@@ -1731,7 +1716,7 @@ pub fn run() -> ExitCode {
                     };
 
                     // Embedded original acts as base
-                    let embedded = crate::pack::embedded::get_embedded_skills();
+                    let embedded = crate::skill::distribution::embedded::get_embedded_skills();
                     let orig = embedded
                         .iter()
                         .find(|e| e.id == id.as_str() || e.directory == id.as_str());
@@ -1813,23 +1798,23 @@ pub fn run() -> ExitCode {
                         return ExitCode::SUCCESS;
                     }
 
-                    let scope = crate::pack::targets::InstallScope::Local(target_dir.clone());
-                    let parsed_agents: Option<Vec<crate::pack::targets::TargetAgent>> =
+                    let scope = crate::skill::distribution::targets::InstallScope::Local(target_dir.clone());
+                    let parsed_agents: Option<Vec<crate::skill::distribution::targets::TargetAgent>> =
                         agents.map(|a_str| {
                             a_str
                                 .split(',')
                                 .filter_map(|s| match s.trim().to_lowercase().as_str() {
-                                    "cursor" => Some(crate::pack::targets::TargetAgent::Cursor),
-                                    "opencode" => Some(crate::pack::targets::TargetAgent::OpenCode),
+                                    "cursor" => Some(crate::skill::distribution::targets::TargetAgent::Cursor),
+                                    "opencode" => Some(crate::skill::distribution::targets::TargetAgent::OpenCode),
                                     "antigravity" => {
-                                        Some(crate::pack::targets::TargetAgent::Antigravity)
+                                        Some(crate::skill::distribution::targets::TargetAgent::Antigravity)
                                     }
                                     "claude" | "claude-code" => {
-                                        Some(crate::pack::targets::TargetAgent::ClaudeCode)
+                                        Some(crate::skill::distribution::targets::TargetAgent::ClaudeCode)
                                     }
-                                    "windsurf" => Some(crate::pack::targets::TargetAgent::Windsurf),
-                                    "zed" => Some(crate::pack::targets::TargetAgent::Zed),
-                                    "aider" => Some(crate::pack::targets::TargetAgent::Aider),
+                                    "windsurf" => Some(crate::skill::distribution::targets::TargetAgent::Windsurf),
+                                    "zed" => Some(crate::skill::distribution::targets::TargetAgent::Zed),
+                                    "aider" => Some(crate::skill::distribution::targets::TargetAgent::Aider),
                                     _ => None,
                                 })
                                 .collect()

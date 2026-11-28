@@ -204,52 +204,38 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     let test_targets = test_targets.join(", ");
     for req_id in &req_ids {
         let associated = requirement_tests.get(req_id).cloned().unwrap_or_default();
-        let matched_passed: BTreeSet<String> = associated
-            .iter()
-            .filter(|id| {
-                let aliases = test_aliases.get(*id).cloned().unwrap_or_else(|| {
-                    let mut set = BTreeSet::new();
-                    set.insert((*id).clone());
-                    set
-                });
-                aliases.iter().any(|alias| {
-                    observed_passed.iter().any(|observed| {
-                        observed
-                            .filter
-                            .as_ref()
-                            .is_none_or(|filter| test_name_matches(filter, alias))
-                            && test_targets_by_id.get(*id).is_none_or(|target| target == &observed.target)
-                            && test_name_matches(&observed.name, alias)
-                    })
-                })
-            })
-            .cloned()
-            .collect();
-        let matched_failed: BTreeSet<String> = associated
-            .iter()
-            .filter(|id| {
-                let aliases = test_aliases.get(*id).cloned().unwrap_or_else(|| {
-                    let mut set = BTreeSet::new();
-                    set.insert((*id).clone());
-                    set
-                });
-                aliases.iter().any(|alias| {
-                    observed_failed.iter().any(|observed| {
-                        observed
-                            .filter
-                            .as_ref()
-                            .is_none_or(|filter| test_name_matches(filter, alias))
-                            && test_targets_by_id.get(*id).is_none_or(|target| target == &observed.target)
-                            && test_name_matches(&observed.name, alias)
-                    })
-                })
-            })
-            .cloned()
-            .collect();
+        let mut resolved_passed: BTreeSet<TestIdentity> = BTreeSet::new();
+        let mut unresolved: Vec<String> = Vec::new();
+        for id in &associated {
+            let aliases = test_aliases.get(id).cloned().unwrap_or_else(|| {
+                let mut set = BTreeSet::new();
+                set.insert(id.clone());
+                set
+            });
+            match resolve_test_identity(
+                id,
+                &aliases,
+                test_targets_by_id.get(id),
+                &observed_passed,
+            ) {
+                Ok(identity) => {
+                    resolved_passed.insert(identity);
+                }
+                Err(_) => match resolve_test_identity(
+                    id,
+                    &aliases,
+                    test_targets_by_id.get(id),
+                    &observed_failed,
+                ) {
+                    Ok(_) => unresolved.push(format!("{id}: failed")),
+                    Err(reason) => unresolved.push(reason),
+                },
+            }
+        }
         let proven = in_scope.contains(req_id)
             && !associated.is_empty()
-            && matched_failed.is_empty()
-            && matched_passed.len() == associated.len();
+            && unresolved.is_empty()
+            && resolved_passed.len() == associated.len();
         let (verdict, evidence_state) = match proven {
             true => ("ACCEPTED", "PASS"),
             false => ("UNPROVEN", "UNPROVEN"),
@@ -260,47 +246,21 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
             "out_of_scope"
         };
         let selected_for_req = associated.iter().cloned().collect::<Vec<_>>().join(", ");
-        let passed_for_req = matched_passed.iter().cloned().collect::<Vec<_>>().join(", ");
-        let aliases_for: BTreeSet<String> = matched_passed
+        let qualified_for_req = resolved_passed
             .iter()
-            .flat_map(|id| {
-                test_aliases.get(id).cloned().unwrap_or_else(|| {
-                    let mut set = BTreeSet::new();
-                    set.insert(id.clone());
-                    set
-                })
-            })
-            .collect();
-        let matched_identities: Vec<&TestIdentity> = observed_passed
-            .iter()
-            .filter(|observed| {
-                aliases_for.iter().any(|alias| {
-                    observed
-                        .filter
-                        .as_ref()
-                        .is_none_or(|filter| test_name_matches(filter, alias))
-                        && test_name_matches(&observed.name, alias)
-                })
-            })
-            .collect();
-        let qualified_for_req = matched_identities
-            .iter()
-            .map(|id| id.qualified())
+            .map(|identity| identity.qualified())
             .collect::<Vec<_>>()
             .join(", ");
-        let passed_names: Vec<String> = matched_identities
+        let passed_names: Vec<String> = resolved_passed
             .iter()
-            .map(|id| id.name.clone())
+            .map(|identity| identity.name.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        let passed_for_req = if passed_names.is_empty() {
-            passed_for_req
-        } else {
-            passed_names.join(", ")
-        };
+        let passed_for_req = passed_names.join(", ");
+        let unresolved_for_req = unresolved.join(", ");
         let content = format!(
-            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntest_packages: {test_packages}\ntest_targets: {test_targets}\ntests_qualified_for_requirement: {qualified_for_req}\nevidence_state: {evidence_state}\ntests_selected: {}\ntests_executed: {total_executed}\ntests_selected_for_requirement: {selected_for_req}\ntests_passed_for_requirement: {passed_for_req}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntest_packages: {test_packages}\ntest_targets: {test_targets}\ntests_qualified_for_requirement: {qualified_for_req}\nevidence_state: {evidence_state}\ntests_selected: {}\ntests_executed: {total_executed}\ntests_selected_for_requirement: {selected_for_req}\ntests_passed_for_requirement: {passed_for_req}\nunresolved_test_identities: {unresolved_for_req}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
             identity.revision,
             identity.tree_digest,
             identity.changed_paths_digest,
@@ -618,6 +578,61 @@ fn test_target_map(value: &serde_json::Value) -> HashMap<String, String> {
         result.insert(id.to_string(), target);
     }
     result
+}
+
+/// Resolves a traced test id to exactly one observed test identity.
+///
+/// Matching is deliberately strict: the expected target (derived from the
+/// test's source file) and the command's `--exact` filter must agree, and the
+/// observed name must match an alias exactly. A unique module-suffix match is
+/// accepted only when there is exactly one candidate. Ambiguous or unknown
+/// identities are rejected, never credited to a requirement.
+fn resolve_test_identity(
+    id: &str,
+    aliases: &BTreeSet<String>,
+    expected_target: Option<&String>,
+    observed: &BTreeSet<TestIdentity>,
+) -> Result<TestIdentity, String> {
+    let mut candidates: Vec<&TestIdentity> = observed
+        .iter()
+        .filter(|candidate| {
+            expected_target.is_none_or(|target| target == &candidate.target)
+                && candidate
+                    .filter
+                    .as_ref()
+                    .is_none_or(|filter| aliases.iter().any(|alias| test_name_matches(filter, alias)))
+        })
+        .filter(|candidate| aliases.iter().any(|alias| alias == &candidate.name))
+        .collect();
+    if candidates.is_empty() {
+        candidates = observed
+            .iter()
+            .filter(|candidate| {
+                expected_target.is_none_or(|target| target == &candidate.target)
+                    && candidate
+                        .filter
+                        .as_ref()
+                        .is_none_or(|filter| aliases.iter().any(|alias| test_name_matches(filter, alias)))
+            })
+            .filter(|candidate| {
+                aliases
+                    .iter()
+                    .any(|alias| test_name_matches(&candidate.name, alias))
+            })
+            .collect();
+    }
+    match candidates.as_slice() {
+        [identity] => Ok((*identity).clone()),
+        [] => Err(format!("unknown test identity for {id}")),
+        _ => Err(format!(
+            "ambiguous test identity for {id}: {}",
+            candidates
+                .iter()
+                .map(|identity| identity.qualified())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
 }
 
 /// Names reported by `cargo test` as passed and failed, e.g.

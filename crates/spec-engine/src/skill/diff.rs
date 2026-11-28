@@ -1,6 +1,6 @@
 //! Skill diff: compare local skill against embedded original.
 
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::inspect_skills;
 use similar::{ChangeTag, TextDiff};
 use std::fs;

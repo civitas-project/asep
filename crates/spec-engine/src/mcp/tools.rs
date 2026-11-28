@@ -439,7 +439,7 @@ pub fn execute_tool(
     default_dir: &Path,
 ) -> Result<serde_json::Value, String> {
     match name {
-        "asep_check" | "spec_check" => {
+        "asep_check" => {
             let target = arguments
                 .get("dir")
                 .and_then(|v| v.as_str())
@@ -461,7 +461,28 @@ pub fn execute_tool(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let outcome = crate::ci::check_core(&target, &rigor, strict)
+            let validators = arguments
+                .get("validators")
+                .and_then(|v| v.as_array())
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(str::parse::<crate::ci::Validator>)
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .transpose()
+                .map_err(|e| format!("invalid validator: {e}"))?;
+            let mut options = crate::ci::CheckOptions {
+                rigor: rigor.to_string(),
+                strict,
+                deny_drafts,
+                ..Default::default()
+            };
+            if let Some(validators) = validators {
+                options.validators = validators;
+            }
+            let outcome = crate::ci::check_core(&target, &options)
                 .map_err(|e| format!("Failed to verify project: {e}"))?;
             let mut summary = String::new();
             let gate = match outcome.passed {

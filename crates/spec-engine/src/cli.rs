@@ -84,6 +84,12 @@ pub enum Commands {
             help = "Directory containing semantic evidence files (default: <target>/evidence)"
         )]
         evidence_dir: Option<PathBuf>,
+
+        #[arg(
+            long,
+            help = "Validator to include in the verdict (repeatable). Default: traceability, verification"
+        )]
+        validator: Vec<String>,
     },
 
     /// Manage Architecture Decision Records (ADRs)

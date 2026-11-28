@@ -1,7 +1,7 @@
 // @test:FR-CAP-06 // @test:FR-CAP-07
 use asep::config::settings::CapabilityProfile;
-use asep::pack::manifest::{generate_plugin_json, scaffold_opencode_agents, update_opencode_json};
-use asep::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
+use asep::skill::distribution::manifest::{generate_plugin_json, scaffold_opencode_agents, update_opencode_json};
+use asep::skill::distribution::targets::{resolve_target_paths, InstallScope, TargetAgent};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -139,10 +139,10 @@ fn test_agent_detection_logic() {
     // Global scope detection
     let global_root = tempdir().unwrap();
     let scope_global = InstallScope::Global(global_root.path().to_path_buf());
-    if !asep::pack::targets::is_binary_in_path("opencode") {
+    if !asep::skill::distribution::targets::is_binary_in_path("opencode") {
         assert!(!TargetAgent::OpenCode.is_detected(&scope_global));
     }
-    if !asep::pack::targets::is_binary_in_path("goose") {
+    if !asep::skill::distribution::targets::is_binary_in_path("goose") {
         assert!(!TargetAgent::Goose.is_detected(&scope_global));
         fs::create_dir_all(global_root.path().join(".config").join("goose")).unwrap();
         assert!(TargetAgent::Goose.is_detected(&scope_global));

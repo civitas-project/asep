@@ -41,7 +41,7 @@ fn test_init_generates_core_protocol_without_mandatory_router_or_bootstrap() {
         .expect("core protocol must be written on init");
     assert_eq!(
         protocol,
-        asep::pack::embedded::get_core_protocol(),
+        asep::skill::distribution::embedded::get_core_protocol(),
         "generated protocol must reproduce the canonical source"
     );
     assert!(protocol.contains("Activation contract"));
@@ -151,7 +151,11 @@ fn test_init_refreshes_managed_skill_but_preserves_customization() {
 
     fs::write(&skill, "<!-- asep-managed-skill -->\nOLD MANAGED CONTENT").unwrap();
     init_asep_project(root).unwrap();
-    assert_eq!(fs::read_to_string(&skill).unwrap(), original);
+    assert_eq!(
+        fs::read_to_string(&skill).unwrap(),
+        "<!-- asep-managed-skill -->\nOLD MANAGED CONTENT",
+        "modified managed content must be preserved"
+    );
 
     fs::write(&skill, "# MY CUSTOM SKILL\nno marker").unwrap();
     init_asep_project(root).unwrap();

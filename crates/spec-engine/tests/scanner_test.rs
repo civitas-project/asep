@@ -122,3 +122,21 @@ fn scan_detailed_counts_files() {
     assert!(result.completeness.files_read >= 2);
     assert!(result.completeness.errors.is_empty());
 }
+
+#[test]
+// @test:B08
+fn incomplete_scan_is_an_error_for_all_consumers() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let file = root.join("unreadable.rs");
+        fs::write(&file, "// @impl:FR-AUD-08-TEST
+").unwrap();
+        fs::set_permissions(&file, PermissionsExt::from_mode(0o000)).unwrap();
+        let error = scan_project_tags(root).expect_err("incomplete scan must fail closed");
+        assert!(error.to_string().contains("incomplete scan"));
+        fs::set_permissions(&file, PermissionsExt::from_mode(0o644)).unwrap();
+    }
+}

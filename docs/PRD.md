@@ -6,7 +6,7 @@
 <!-- @req:FR-CLI-04:MUST The auditor shall detect docstring contract violations and anti-slop patterns. -->
 <!-- @req:FR-CONFIG-01:MUST The engine shall persist and load editor preference, rigor and capability configuration. -->
 <!-- @req:FR-MCP-01:MUST The MCP server shall process JSON-RPC requests using typed protocol structures. -->
-<!-- @req:FR-MCP-02:MUST The MCP server shall expose check, spec_check, srcdump and srcidx tools with validated schemas. -->
+<!-- @req:FR-MCP-02:MUST The MCP server shall expose check, srcdump and srcidx tools with validated schemas. -->
 <!-- @req:FR-PACK-01:MUST The pack module shall generate agent presets and embed canonical skill text. -->
 <!-- @req:FR-PACK-02:MUST The installer shall detect target agents and install plugin artifacts for them. -->
 <!-- @req:FR-SKILL-01:MUST The skill subsystem shall inspect installed skills and detect drift from embedded originals. -->

@@ -1,6 +1,6 @@
 // @test:FR-AMB-02
-use asep::pack::installer::{run_pack_installer, PackOptions};
-use asep::pack::targets::{InstallScope, TargetAgent};
+use asep::skill::distribution::installer::{run_pack_installer, PackOptions};
+use asep::skill::distribution::targets::{InstallScope, TargetAgent};
 use std::fs;
 use tempfile::tempdir;
 

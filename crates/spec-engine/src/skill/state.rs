@@ -1,6 +1,6 @@
 //! Skill state tracking: records installed skills across agents.
 
-use crate::pack::targets::TargetAgent;
+use crate::skill::distribution::targets::TargetAgent;
 use crate::skill::inspector::inspect_skills;
 use crate::skill::lock::sha256_file;
 use serde::{Deserialize, Serialize};

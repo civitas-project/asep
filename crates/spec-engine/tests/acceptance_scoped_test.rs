@@ -686,3 +686,87 @@ fn test_identity_is_package_target_qualified_and_isolated() {
 
     std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
 }
+
+fn run_acceptance_with_shim(
+    name: &str,
+    affected: &str,
+    commands: &[&str],
+    outputs: &[(&str, &str)],
+) -> String {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let root = scoped_acceptance_root();
+    let root_path = root.path();
+    let test_dir = root_path.join("crates/spec-engine/tests");
+    fs::create_dir_all(&test_dir).unwrap();
+    for command in commands {
+        if let Some(target) = command.split_whitespace().skip_while(|t| *t != "--test").nth(1) {
+            fs::write(test_dir.join(format!("{target}.rs")), "// fixture").unwrap();
+        }
+    }
+    run(root_path, &["git", "add", "crates"]);
+    run(root_path, &["git", "commit", "-q", "-m", "fixture"]);
+    let commit = head_of(root_path);
+    fs::write(
+        root_path.join(".spec-engine/acceptance.json"),
+        format!(
+            r#"{{"approved_commit":"{commit}","changed_paths":["docs/PRD.md"],"evidence_dir":"evidence"}}"#
+        ),
+    )
+    .unwrap();
+    let shim_path = std::env::temp_dir().join(format!("asep-acceptance-collision-{name}"));
+    let mut shim = fs::File::create(&shim_path).unwrap();
+    writeln!(shim, "#!/bin/sh").unwrap();
+    writeln!(shim, "case \"$*\" in").unwrap();
+    writeln!(shim, "  *affected*) printf '%s\\n' '{}' {} ;;", affected, commands.iter().map(|c| format!("'{c}'")).collect::<Vec<_>>().join(" ")).unwrap();
+    for (needle, output) in outputs {
+        writeln!(shim, "  *{needle}*) printf '%s\\n' {} ;;", output.lines().map(|line| format!("'{line}'")).collect::<Vec<_>>().join(" ")).unwrap();
+    }
+    writeln!(shim, "esac").unwrap();
+    writeln!(shim, "exit 0").unwrap();
+    drop(shim);
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&shim_path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).unwrap();
+    std::env::set_var("ASEP_BWRAP", shim_path.to_str().unwrap());
+    let evidence = run_scoped_acceptance(root_path, &commit).expect("acceptance run succeeds");
+    let content = fs::read_to_string(evidence.join("semantic").join("REQ-ALPHA.md")).unwrap();
+    std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
+    content
+}
+
+#[test]
+// @test:N01
+fn collisions_and_unknown_identities_are_rejected() {
+    let affected = |file: &str| format!(
+        r#"{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"t","function":"same","file":"{file}","line":1}}],"provenance":{{"Test:t":[{{"node":"Test:t","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p pkg-a --test alpha -- same --exact","cargo test -p pkg-b --test alpha -- same --exact"]}}"#
+    );
+    let cross_package = run_acceptance_with_shim(
+        "package",
+        &affected("tests/alpha.rs"),
+        &[
+            "cargo test -p pkg-a --test alpha -- same --exact",
+            "cargo test -p pkg-b --test alpha -- same --exact",
+        ],
+        &[
+            ("pkg-a", "test same ... ok
+test result: ok. 1 passed"),
+            ("pkg-b", "test same ... ok
+test result: ok. 1 passed"),
+        ],
+    );
+    assert!(cross_package.contains("verdict: UNPROVEN"), "cross-package collision: {cross_package}");
+    assert!(cross_package.contains("unresolved_test_identities:"), "reason missing: {cross_package}");
+
+    let cross_module = run_acceptance_with_shim(
+        "module",
+        &affected("tests/alpha.rs"),
+        &["cargo test -p pkg-a --test alpha -- same --exact"],
+        &[("pkg-a", "test mod1::same ... ok
+test mod2::same ... ok
+test result: ok. 2 passed")],
+    );
+    assert!(cross_module.contains("verdict: UNPROVEN"), "cross-module collision: {cross_module}");
+
+
+}

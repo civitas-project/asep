@@ -1,6 +1,6 @@
 //! Dependency resolution and skill installation.
 
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::{extract_skill_full_metadata, inspect_skills};
 use std::collections::{HashSet, VecDeque};
 use std::fs;
@@ -39,21 +39,53 @@ pub fn resolve_dependencies(skill_id: &str) -> Vec<String> {
     resolved
 }
 
-/// Ownership is explicit: the file carries the managed marker, has valid
-/// frontmatter and declares the embedded skill's identity. Location, hidden
-/// directories and "plugins" path segments are never used as proof of
-/// ownership.
-fn managed_skill_content(content: &str, canonical: &crate::pack::embedded::EmbeddedSkill) -> bool {
-    if !content.contains("<!-- asep-managed-skill -->") {
-        return false;
+use sha2::{Digest, Sha256};
+
+/// Stable location of recorded install digests.
+fn managed_state_path(skills_dir: &Path, id: &str) -> PathBuf {
+    skills_dir.join(".asep-managed").join(format!("{id}.json"))
+}
+
+fn digest(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
+}
+
+/// Refreshes a skill only when the file still matches the digest recorded at
+/// the last ASEP install. A managed marker is not proof of ownership: user
+/// edits, missing state, unreadable files and conflicts are preserved.
+pub fn refresh_managed_skill(
+    skills_dir: &Path,
+    skill: &crate::skill::distribution::embedded::EmbeddedSkill,
+) -> Result<bool, String> {
+    let skill_file = skills_dir.join(skill.directory).join("SKILL.md");
+    let existing = match fs::read_to_string(&skill_file) {
+        Ok(content) => content,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(skill_file.parent().ok_or("invalid skill path")?)
+                .map_err(|e| e.to_string())?;
+            fs::write(&skill_file, skill.content).map_err(|e| e.to_string())?;
+            let state = managed_state_path(skills_dir, skill.id);
+            fs::create_dir_all(state.parent().ok_or("invalid state path")?)
+                .map_err(|e| e.to_string())?;
+            fs::write(state, digest(skill.content)).map_err(|e| e.to_string())?;
+            return Ok(true);
+        }
+        Err(e) => return Err(format!("unreadable skill {}: {e}", skill_file.display())),
+    };
+
+    let state = managed_state_path(skills_dir, skill.id);
+    let recorded = fs::read_to_string(&state).ok();
+    let marker = existing.contains("<!-- asep-managed-skill -->");
+    let unchanged = recorded.as_deref() == Some(digest(&existing).as_str());
+    if !marker || !unchanged {
+        return Ok(false);
     }
-    let frontmatter = content
-        .strip_prefix("---\n")
-        .and_then(|rest| rest.split_once("\n---\n"))
-        .map(|(front, _)| front)
-        .unwrap_or("");
-    frontmatter.contains(&format!("name: {}", canonical.id))
-        && frontmatter.contains("description:")
+    if existing == skill.content {
+        return Ok(false);
+    }
+    fs::write(&skill_file, skill.content).map_err(|e| e.to_string())?;
+    fs::write(state, digest(skill.content)).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Installs a skill and optionally its transitive dependencies into the skills directory.
@@ -78,28 +110,9 @@ pub fn install_skill(
             .iter()
             .find(|e| e.id == id || e.directory == id)
             .ok_or_else(|| format!("skill '{}' not found in embedded catalog", id))?;
-
-        let skill_folder = skills_dir.join(orig.directory);
-        fs::create_dir_all(&skill_folder).map_err(|e| e.to_string())?;
-        let skill_file = skill_folder.join("SKILL.md");
-
-        let existing = fs::read_to_string(&skill_file).ok();
-        let owned = existing
-            .as_deref()
-            .is_some_and(|text| managed_skill_content(text, orig));
-        let present = local_entries
-            .iter()
-            .any(|e| e.id == id && e.status != crate::skill::model::SkillStatus::Missing);
-
-        if present && !owned {
-            // No reliable ownership proof: user-authored or customized copy.
-            continue;
+        if refresh_managed_skill(skills_dir, orig)? {
+            installed_paths.push(skills_dir.join(orig.directory).join("SKILL.md"));
         }
-        if existing.as_deref() == Some(orig.content) {
-            continue;
-        }
-        fs::write(&skill_file, orig.content).map_err(|e| e.to_string())?;
-        installed_paths.push(skill_file);
     }
 
     Ok(installed_paths)

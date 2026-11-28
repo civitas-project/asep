@@ -1,4 +1,4 @@
-use asep::pack::targets::TargetAgent;
+use asep::skill::distribution::targets::TargetAgent;
 use asep::skill::fork::fork_skill;
 use asep::skill::install::resolve_dependencies;
 use asep::skill::merge::three_way_merge;

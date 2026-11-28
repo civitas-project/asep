@@ -1,6 +1,6 @@
 //! Gate 0: Formal specifications validator (Alloy, TLA+, Spectral, DBML).
 
-use crate::pack::targets::is_binary_in_path;
+use crate::skill::distribution::targets::is_binary_in_path;
 use ignore::WalkBuilder;
 use serde::{Deserialize, Serialize};
 use std::path::Path;

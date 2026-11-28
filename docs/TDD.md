@@ -26,7 +26,7 @@
 
 <!-- @design:FR-MCP-02 -->
 ## FR-MCP-02 MCP tools
-`spec-engine/src/mcp/tools.rs::get_tools_list` publishes six tools with JSON Schema inputSchemas: `asep_check`, `spec_check` (legacy alias), `adr_new`, `render_diagrams`, `srcidx`, `srcdump`. `execute_tool` dispatches by name, validates required arguments (e.g. `title` for `adr_new`), maps string parameters to strongly typed config (`OutputMode`, `OutputFormat`), and returns MCP `content`/`isError` envelopes or an `Unknown tool` error.
+`spec-engine/src/mcp/tools.rs::get_tools_list` publishes six tools with JSON Schema inputSchemas: `asep_check`, `adr_new`, `render_diagrams`, `srcidx`, `srcdump`. `execute_tool` dispatches by name, validates required arguments (e.g. `title` for `adr_new`), maps string parameters to strongly typed config (`OutputMode`, `OutputFormat`), and returns MCP `content`/`isError` envelopes or an `Unknown tool` error.
 
 <!-- @design:FR-PACK-01 -->
 ## FR-PACK-01 Agent presets and embedded skills
@@ -640,10 +640,10 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | R06 | FIXED | `pack/manifest.rs` direct-execution presets + managed marker; `targets_test` 17/17; `opencode.json` synchronized |
 | R07 | FIXED | Five skills rewritten as focused conditional references; canonical mirrors updated; `embedded_test` 7/7 |
 | R08 | FIXED | Minimal init; ownership solely by explicit managed marker + content validation; directory/plug-in heuristics removed; `skill_cli_test` 4/4 |
-| R09 | FIXED | `build_trace_graph`, `TraceabilityReport` and legacy projection types removed; CLI, MCP, verification, impact and coverage use one canonical `GraphReport`; verdict logic unified in `ci::check_core`. |
+| R09 | FIXED | Legacy graph/projection removed; `ci::check_core` is the single verdict implementation consumed by CLI and MCP; validators independently selectable; unrelated audits not bundled. |
 | R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; CLI/MCP share it; `context_test` 6/6 |
 | R11 | FIXED | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md`; removed `context_window`/`delegation_threshold` assumptions |
-| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy mode, invalid params (-32602) distinguished from tool failures (-32000); `mcp_test` 30/30. Native-client pilot unavailable. |
+| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy mode, invalid params (-32602) vs tool failures (-32000); native OpenCode handshake verified (`asep connected`), but cached tool list was stale, so tool-level parity remains unverified. `spec_check` removed. |
 | R13 | FIXED | Crates moved under `crates/spec-engine` and `crates/source-intelligence/`; templates/docs/ADRs regrouped; all paths updated; workspace check passes. |
 | R14 | REMOVED | `pub mod snapshot`, implementation and dedicated tests deleted; Git snapshot identity in acceptance preserved. |
 | R15 | FIXED | `clean::execute` requires explicit `--allow-full`; watch module and CLI removed; presets opt-in; telemetry off by default. |
@@ -652,13 +652,21 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | R18 | FIXED (static) | Dead queue/visited/reached initialization removed; no speculative optimization adopted; no performance claim. |
 | R19 | FIXED | This ledger plus README/SKILLS/LEVEL_CALIBRATION synchronization; historical notes preserved as historical |
 
+### Final handoff closure (P0/P1/P2)
+
+- Skill distribution consolidated: `skill/distribution` is the single packaging module; remote registry/Git fetch and semver resolution removed (redundant with native tooling); unused `notify`/`semver` dependencies removed.
+- Rigor is one canonical classification `T0`..`T4`; descriptive aliases map through `policy::tier_for_rigor_level` only.
+- B08 scanner failures are fail-closed for all consumers (`scan_project_tags` rejects incomplete scans).
+- Native OpenCode MCP handshake verified; cached native tool catalogue was stale, so full native tool-level parity remains CONDITIONAL.
+- B12/B13 remain CONDITIONAL (measurement/runtime contracts); B35 remains CONDITIONAL (no Windows runner). Empirical optimization remains DEFERRED.
+
 ### Additional findings (N01–N10)
 
 | ID | Status | Evidence |
 |---|---|---|
-| N01 | FIXED | Evidence records actual `test_packages`, `test_targets`, qualified names; collision and unrelated-test regressions added; acceptance 11/11 |
+| N01 | FIXED | Strict package/target/qualified identity resolution; ambiguous and unknown identities rejected; same matching for verdict and evidence; cross-package/cross-module regressions; acceptance 12/12 |
 | N02 | FIXED | Evidence carries typed `evidence_state`; enum-based evaluation; verification 10/10 |
-| N03 | FIXED | Managed markers + content validation; hidden-directory/plugins heuristics removed; unmanaged artifacts preserved; skill_cli 4/4 |
+| N03 | FIXED | Recorded digest + marker validation; hidden-directory/plugins heuristics removed; modified managed skills preserved; skill_cli 6/6 |
 | N04 | FIXED | `GateResult.unproven`; explicitly requested unavailable gate is unproven; ci 5/5 |
 | N05 | FIXED | `compile_context_files` does not call `affected`; context 6/6 |
 | N06 | FIXED | `ci::check_core` is the shared verdict logic for CLI and MCP |
@@ -676,9 +684,11 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | B01, B02, B04, B05, B06, B07, B09, B17, B22, B26, B30 | VERIFIED_EXISTING | Context module, snapshot binding, evidence states, zero-test guard, typed graph/impact, formal states, mandatory telemetry allowlist, budget validation, comment prefix guard, symlink containment all present with tests |
 | B03, B16, B18, B21 | FIXED | Per-requirement acceptance (R01), exact trace keys, trace report denominators, config fail-closed (R02) |
 | B25, B27, B30, B33, B34 | VERIFIED_EXISTING | Lexer unknown-priority diagnostic, srcdump format dispatch, symlink metadata containment, bounded truncation with ellipsis, JSON-RPC error categories all covered by tests |
-| B08, B10–B15, B19–B20, B23–B24, B28–B29, B31–B32 | VERIFIED_EXISTING | Revalidated against current source: scanner I/O errors explicit; harness exit-status checks, stdout draining, finite numeric validation and task-id validation present; trace rotation uses monotonic ordinals with create_new and safe file modes; message store uses unique temp files, duplicate/filename checks; srcdump separates original/emitted tokens and reports skips; srcwalk canonicalizes and dedups symlinks. Covered by bounded tests. |
+| B08, B10, B11, B15, B19–B20, B23–B24, B28–B29, B31–B32 | VERIFIED_EXISTING | Revalidated against current source: scanner I/O errors are fail-closed; harness checks child exit status and drains stdout; task-id validation present; trace rotation uses monotonic ordinals with create_new and safe modes; message store uses unique temp files and duplicate checks; srcdump separates original/emitted tokens; srcwalk canonicalizes and dedups symlinks. Bounded tests cover each. |
+| B14 (numeric contract) | VERIFIED_EXISTING | `steps_from_output` rejects missing/invalid steps and `max_slope` is checked finite/non-negative; bounded complexity tests exist. Empirical complexity claims remain DEFERRED. |
 | B35 | CONDITIONAL | `cfg(unix)`/`cfg(windows)` branches present; Windows target not available here, so cross-platform behavior remains unverified. Reopen with a Windows runner. |
-| B10–B14 | BLOCKED | Harness process/complexity findings require missing e2e scripts or heavy workloads; benchmarks and stress tests prohibited |
+| B12, B13 | CONDITIONAL | Process-tree peak accounting and hard thread timeout are measurement/runtime contracts not fully reproducible with bounded local fixtures; heavy workloads prohibited. Reopen with an isolated process-tree fixture or supported platform runner. |
+| R16 e2e script cases | REMOVED | Fixture-dependent script tests deleted; no fabricated fixtures. |
 | O01–O10 | DEFERRED | Optimization hypotheses; O01 rejected on prior evidence; no performance claims without approved measurement |
 
 ### Known consequences — simplification & consolidation (S0–S6)

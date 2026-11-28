@@ -1,6 +1,6 @@
 //! Skill purge and cascade uninstallation across agent directories.
 
-use crate::pack::targets::{resolve_target_paths, InstallScope, TargetAgent};
+use crate::skill::distribution::targets::{resolve_target_paths, InstallScope, TargetAgent};
 use crate::skill::state::{load_state, save_state};
 use std::fs;
 use std::path::Path;

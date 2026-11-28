@@ -1,6 +1,6 @@
 // @impl:FR-AMB-01
 use crate::error::AsepError;
-use crate::pack::embedded::{get_core_protocol, get_embedded_skills, AMBIENT_SKILL_IDS};
+use crate::skill::distribution::embedded::{get_core_protocol, get_embedded_skills, AMBIENT_SKILL_IDS};
 use std::fs;
 use std::path::Path;
 
@@ -53,29 +53,14 @@ fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
         if let Some(parent) = skill_md.parent() {
             fs::create_dir_all(parent)?;
         }
-        let managed = skill
-            .content
-            .contains("<!-- asep-managed-skill -->");
-        match fs::read_to_string(&skill_md) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::write(&skill_md, skill.content)?,
-            Err(e) => return Err(AsepError::Io(e)),
-            Ok(existing) if existing.contains("<!-- asep-managed-skill -->") && managed => {
-                // Refresh only ASEP-managed copies; never overwrite custom text.
-                fs::write(&skill_md, skill.content)?;
-            }
-            Ok(_) => {
-                eprintln!(
-                    "asep: preserved customized skill {}; managed update skipped",
-                    skill.id
-                );
-            }
-        }
+        crate::skill::install::refresh_managed_skill(&skills_dir, skill)
+            .map_err(AsepError::InvalidState)?;
     }
 
     Ok(())
 }
 
-fn build_asep_block(skills: &[&crate::pack::embedded::EmbeddedSkill]) -> String {
+fn build_asep_block(skills: &[&crate::skill::distribution::embedded::EmbeddedSkill]) -> String {
     let mut lines: Vec<String> = Vec::new();
     lines.push(ASEP_START.to_string());
     lines.push("mode: ask".to_string());

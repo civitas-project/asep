@@ -1,6 +1,6 @@
 //! Skill search and discovery.
 
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::inspect_skills;
 use crate::skill::model::SkillEntry;
 use std::collections::HashSet;

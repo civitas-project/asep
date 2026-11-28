@@ -1,5 +1,5 @@
 // @test:FR-AMB-03 // @test:FR-AMB-04
-use asep::pack::embedded::{
+use asep::skill::distribution::embedded::{
     get_default_mcp_config_json, get_default_plugin_json, get_embedded_skills,
 };
 

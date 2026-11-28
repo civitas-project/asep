@@ -1,4 +1,4 @@
-use crate::pack::embedded::get_embedded_skills;
+use crate::skill::distribution::embedded::get_embedded_skills;
 use std::fs;
 use std::io;
 use std::path::Path;

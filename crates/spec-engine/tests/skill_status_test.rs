@@ -1,5 +1,5 @@
 // @test:FR-AMB-05
-use asep::pack::embedded::get_embedded_skills;
+use asep::skill::distribution::embedded::get_embedded_skills;
 use asep::skill::inspector::{detect_skill_drift, extract_skill_requires, inspect_skills};
 use asep::skill::model::SkillStatus;
 use std::fs;
