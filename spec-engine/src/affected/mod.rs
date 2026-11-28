@@ -15,8 +15,8 @@ use crate::graph::builder::admissible_edge;
 use crate::graph::{build_relation_graph, NodeKind, TraceNode};
 use crate::policy::{load_policy, EdgeKind};
 use crate::scanner::scan_project_tags;
-use serde::Serialize;
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -26,7 +26,7 @@ static FN_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"fn\s+([A-Za-z_][A-Za-z0-9_]*)").expect("valid fn regex"));
 
 /// A traced implementation node (impl, design, requirement, ...).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AffectedNode {
     /// Traceability identifier.
     pub id: String,
@@ -37,7 +37,7 @@ pub struct AffectedNode {
 }
 
 /// A traced test node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AffectedTest {
     /// Traceability identifier.
     pub id: String,
@@ -50,7 +50,7 @@ pub struct AffectedTest {
 }
 
 /// One hop in an impact provenance chain.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProvenanceHop {
     /// Typed node identity, e.g. "Impl:impl-a".
     pub node: String,
@@ -59,7 +59,7 @@ pub struct ProvenanceHop {
 }
 
 /// Report of everything impacted by a set of changed files.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AffectedReport {
     /// Implementations impacted.
     pub impls: Vec<AffectedNode>,
@@ -81,6 +81,86 @@ pub struct AffectedReport {
     /// deduplicated. Reported, not traversed.
     #[serde(default)]
     pub invalid_references: Vec<String>,
+}
+
+// @impl:FR-PERF-01
+/// Adjacency index over a `GraphReport`, built once in O(V+E).
+/// Edge endpoints are keyed by string ID: `outgoing` groups edge indices by
+/// the kind and id of their source, `incoming` groups them by the kind and id
+/// of each target. `nodes_by_id` maps an id to the node kinds declaring it,
+/// replacing full `graph.nodes` rescans during traversal.
+struct TypedIndex {
+    outgoing: HashMap<(NodeKind, String), Vec<usize>>,
+    incoming: HashMap<(NodeKind, String), Vec<usize>>,
+    nodes_by_id: HashMap<String, Vec<NodeKind>>,
+}
+
+impl TypedIndex {
+    fn from_graph(graph: &crate::graph::GraphReport) -> Self {
+        let mut outgoing: HashMap<(NodeKind, String), Vec<usize>> = HashMap::new();
+        let mut incoming: HashMap<(NodeKind, String), Vec<usize>> = HashMap::new();
+        let mut nodes_by_id: HashMap<String, Vec<NodeKind>> = HashMap::new();
+
+        for node in &graph.nodes {
+            nodes_by_id
+                .entry(node.id.clone())
+                .or_default()
+                .push(node.kind);
+        }
+
+        for (idx, edge) in graph.edges.iter().enumerate() {
+            let sources: Vec<NodeKind> = nodes_by_id
+                .get(&edge.from)
+                .cloned()
+                .unwrap_or_default();
+            for kind in &sources {
+                outgoing
+                    .entry((*kind, edge.from.clone()))
+                    .or_default()
+                    .push(idx);
+            }
+            for target in &edge.to {
+                let targets: Vec<NodeKind> = nodes_by_id
+                    .get(target)
+                    .cloned()
+                    .unwrap_or_default();
+                for kind in &targets {
+                    incoming
+                        .entry((*kind, target.clone()))
+                        .or_default()
+                        .push(idx);
+                }
+            }
+        }
+
+        TypedIndex {
+            outgoing,
+            incoming,
+            nodes_by_id,
+        }
+    }
+
+    /// All `(kind, id)` nodes declaring `id`, in canonical kind order.
+    /// Mirrors `resolve_id` without rescanning `graph.nodes`.
+    fn resolve(&self, id: &str) -> Vec<(NodeKind, String)> {
+        let mut out = Vec::new();
+        for kind in [
+            NodeKind::Impl,
+            NodeKind::Req,
+            NodeKind::Test,
+            NodeKind::Adr,
+            NodeKind::Design,
+        ] {
+            if self
+                .nodes_by_id
+                .get(id)
+                .is_some_and(|kinds| kinds.contains(&kind))
+            {
+                out.push((kind, id.to_string()));
+            }
+        }
+        out
+    }
 }
 
 /// Computes the traceability impact of changed files.
@@ -141,6 +221,10 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
 
     // Terminal kinds: no traversal originates from them.
     let is_terminal = |kind: NodeKind| matches!(kind, NodeKind::Adr | NodeKind::Design);
+
+    // Adjacency index built once: O(V+E), replaces repeated full scans of
+    // graph.edges in the BFS below.
+    let index = TypedIndex::from_graph(&graph);
 
     // BFS over IDs, cycle-safe.
     let mut visited: HashSet<String> = HashSet::new();
@@ -216,16 +300,63 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
 
     while let Some((_tid, id, kind, is_start, chain)) = queue2.pop_front() {
         // Outgoing traversal: terminal kinds never traverse outgoing.
-        for edge in &graph.edges {
-            if is_terminal(kind) {
-                continue;
+        if !is_terminal(kind) {
+            for &idx in index
+                .outgoing
+                .get(&(kind, id.clone()))
+                .into_iter()
+                .flatten()
+            {
+                let edge = &graph.edges[idx];
+                for target in &edge.to {
+                    for (nk, nid) in index.resolve(target) {
+                        if !admissible_edge(kind, edge.kind, nk) {
+                            continue;
+                        }
+                        let ttid = typed(nk, &nid);
+                        if visited2.contains(&ttid) {
+                            continue;
+                        }
+                        visited2.insert(ttid.clone());
+                        let mut newchain = chain.clone();
+                        newchain.push(ProvenanceHop {
+                            node: ttid.clone(),
+                            edge: Some(format!("{:?}:forward", edge.kind)),
+                        });
+                        provenance.insert(ttid.clone(), newchain.clone());
+                        queue2.push_back((ttid.clone(), nid.to_string(), nk, false, newchain));
+                        match nk {
+                            NodeKind::Impl => {
+                                reached_impl.insert(nid.to_string());
+                            }
+                            NodeKind::Req => {
+                                reached_req.insert(nid.to_string());
+                            }
+                            NodeKind::Test => {
+                                reached_test.insert(nid.to_string());
+                            }
+                            NodeKind::Adr => {
+                                reached_adr.insert(nid.to_string());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
-            if edge.from != id {
-                continue;
-            }
-            for target in &edge.to {
-                for (nk, nid) in resolve_id(&graph, target) {
-                    if !admissible_edge(kind, edge.kind, nk) {
+        }
+        // Incoming traversal: terminal kinds (Design) never; ADR only if start.
+        let allow_incoming = !is_terminal(kind) || (kind == NodeKind::Adr && is_start);
+        if allow_incoming {
+            for &idx in index
+                .incoming
+                .get(&(kind, id.clone()))
+                .into_iter()
+                .flatten()
+            {
+                let edge = &graph.edges[idx];
+                let src = &edge.from;
+                for (nk, nid) in index.resolve(src) {
+                    if !admissible_edge(nk, edge.kind, kind) {
                         continue;
                     }
                     let ttid = typed(nk, &nid);
@@ -236,7 +367,7 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                     let mut newchain = chain.clone();
                     newchain.push(ProvenanceHop {
                         node: ttid.clone(),
-                        edge: Some(format!("{:?}:forward", edge.kind)),
+                        edge: Some(format!("{:?}:reverse", edge.kind)),
                     });
                     provenance.insert(ttid.clone(), newchain.clone());
                     queue2.push_back((ttid.clone(), nid.to_string(), nk, false, newchain));
@@ -255,49 +386,6 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
                         }
                         _ => {}
                     }
-                }
-            }
-        }
-        // Incoming traversal: terminal kinds (Design) never; ADR only if start.
-        let allow_incoming = !is_terminal(kind) || (kind == NodeKind::Adr && is_start);
-        if !allow_incoming {
-            continue;
-        }
-        for edge in &graph.edges {
-            if !edge.to.contains(&id) {
-                continue;
-            }
-            let src = &edge.from;
-            for (nk, nid) in resolve_id(&graph, src) {
-                if !admissible_edge(nk, edge.kind, kind) {
-                    continue;
-                }
-                let ttid = typed(nk, &nid);
-                if visited2.contains(&ttid) {
-                    continue;
-                }
-                visited2.insert(ttid.clone());
-                let mut newchain = chain.clone();
-                newchain.push(ProvenanceHop {
-                    node: ttid.clone(),
-                    edge: Some(format!("{:?}:reverse", edge.kind)),
-                });
-                provenance.insert(ttid.clone(), newchain.clone());
-                queue2.push_back((ttid.clone(), nid.to_string(), nk, false, newchain));
-                match nk {
-                    NodeKind::Impl => {
-                        reached_impl.insert(nid.to_string());
-                    }
-                    NodeKind::Req => {
-                        reached_req.insert(nid.to_string());
-                    }
-                    NodeKind::Test => {
-                        reached_test.insert(nid.to_string());
-                    }
-                    NodeKind::Adr => {
-                        reached_adr.insert(nid.to_string());
-                    }
-                    _ => {}
                 }
             }
         }
@@ -510,23 +598,6 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
         commands,
         invalid_references,
     })
-}
-
-fn resolve_id(graph: &crate::graph::GraphReport, id: &str) -> Vec<(NodeKind, String)> {
-    // Return all node kinds that have this id.
-    let mut out = Vec::new();
-    for kind in [
-        NodeKind::Impl,
-        NodeKind::Req,
-        NodeKind::Test,
-        NodeKind::Adr,
-        NodeKind::Design,
-    ] {
-        if graph.nodes.iter().any(|n| n.kind == kind && n.id == id) {
-            out.push((kind, id.to_string()));
-        }
-    }
-    out
 }
 
 fn kind_name(kind: NodeKind) -> &'static str {

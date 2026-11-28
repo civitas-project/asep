@@ -23,27 +23,10 @@ pub struct ContextExcerpt {
 pub struct ContextBundle {
     pub changed_paths: Vec<PathBuf>,
     pub objective: String,
-    #[serde(skip_deserializing, default = "default_impacted")]
     pub impacted: AffectedReport,
     pub excerpts: Vec<ContextExcerpt>,
     pub truncation: String,
     pub commands: Vec<String>,
-}
-
-/// Empty `AffectedReport` used as the serde default for `impacted`.
-/// `AffectedReport` (in crate::affected, out of scope for C1) derives only
-/// `Serialize`, so the field cannot be derived-deserialized directly.
-fn default_impacted() -> AffectedReport {
-    AffectedReport {
-        impls: Vec::new(),
-        requirements: Vec::new(),
-        tests: Vec::new(),
-        adrs: Vec::new(),
-        unmapped: Vec::new(),
-        provenance: Default::default(),
-        commands: Vec::new(),
-        invalid_references: Vec::new(),
-    }
 }
 
 /// Unique source files impacted by `changed`, sorted and deduplicated.
@@ -64,6 +47,20 @@ fn impacted_files(impacted: &AffectedReport) -> Vec<PathBuf> {
     files.sort();
     files.dedup();
     files
+}
+
+/// Conservative estimate for source text that has no tokenizer result.
+///
+/// This is a bounded heuristic (one token per four bytes, rounded up), not a
+/// tokenizer measurement. It exists so a fallback excerpt is still charged to
+/// the token budget; without it a fallback would report zero and let a bundle
+/// claim it fits a budget it may actually exceed.
+fn estimate_tokens_fallback(raw: &str) -> u64 {
+    if raw.is_empty() {
+        0
+    } else {
+        (raw.len() as u64).div_ceil(4)
+    }
 }
 
 /// Extract `(tokens_est, content)` for one file via `srcdump` NDJSON output.
@@ -108,7 +105,7 @@ fn excerpt_for_file(
     if !found {
         match std::fs::read_to_string(&full) {
             Ok(raw) => {
-                tokens_est = 0;
+                tokens_est = estimate_tokens_fallback(&raw);
                 content = raw;
             }
             Err(_) => {
@@ -175,4 +172,19 @@ pub fn compile_context(
         truncation,
         commands,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::estimate_tokens_fallback;
+
+    // @test:S3-CTX-FALLBACK-TOKENS
+    #[test]
+    fn fallback_estimate_is_nonzero_and_rounded_up() {
+        assert_eq!(estimate_tokens_fallback(""), 0);
+        assert_eq!(estimate_tokens_fallback("abcd"), 1);
+        assert_eq!(estimate_tokens_fallback("abcde"), 2);
+        let long = "x".repeat(4000);
+        assert_eq!(estimate_tokens_fallback(&long), 1000);
+    }
 }

@@ -2,6 +2,7 @@ use asep::agent_protocol::hash_file;
 use asep::config::settings::{load_config, TelemetryConfig};
 use asep::observability::{
     CostMetadata, CostSource, FileChangeTracker, TraceCollector, TraceEvent, TraceReport,
+    trace_key,
 };
 use serde_json::Value;
 use std::fs;
@@ -35,7 +36,7 @@ fn write_config_toml(root: &Path) {
     fs::create_dir_all(root.join(".spec-engine")).unwrap();
     fs::write(
         root.join(".spec-engine").join("config.toml"),
-        "[telemetry]\nenabled = true\nallowlist = [\"schema_version\", \"trace_id\", \"parent_id\", \"task_id\", \"seq\", \"ts_wall\", \"event\", \"duration_ms\", \"cost\", \"missing\"]\nredact_patterns = [\"SECRET\"]\nttl_secs = 86400\nmax_bytes = 10485760\ndir = \"trace\"\n",
+        "[telemetry]\nenabled = true\nallowlist = [\"schema_version\", \"trace_id\", \"parent_id\", \"task_id\", \"seq\", \"ts_wall\", \"event\", \"duration_ms\", \"cost\", \"missing\", \"detail\"]\nredact_patterns = [\"SECRET\"]\nttl_secs = 86400\nmax_bytes = 10485760\ndir = \"trace\"\n",
     )
     .unwrap();
 }
@@ -132,12 +133,12 @@ fn observability_writes_redacted_ndjson_and_report_from_events() {
         .unwrap();
     let mut secret = event("trace-int", 7, "SECRET-token", "leak", None, None);
     collector.record(secret).unwrap();
-    collector
-        .record(event("trace-int", 8, "task-4", "task fail", None, None))
-        .unwrap();
+    let mut failed = event("trace-int", 8, "task-4", "observation", None, None);
+    failed.detail = Some(serde_json::json!({"ok": false, "reason": "task fail"}));
+    collector.record(failed).unwrap();
     collector.flush("trace-int").unwrap();
 
-    let path = root.path().join("trace").join("trace-int.ndjson");
+    let path = root.path().join("trace").join(format!("{}.ndjson", trace_key("trace-int")));
     let content = fs::read_to_string(&path).unwrap();
     assert!(!content.contains("SECRET"));
     let lines: Vec<&str> = content.lines().collect();
@@ -157,7 +158,10 @@ fn observability_writes_redacted_ndjson_and_report_from_events() {
         .iter()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
-    let cost_count = parsed.iter().filter(|event| event.cost.is_some()).count();
+    let cost_count = parsed
+        .iter()
+        .filter(|event| event.cost.as_ref().is_some_and(|cost| cost.value.is_some()))
+        .count();
 
     let verification = serde_json::json!({
         "status": "partial",
@@ -185,7 +189,10 @@ fn observability_writes_redacted_ndjson_and_report_from_events() {
         ]
     );
     assert_eq!(report.skipped, vec!["slow".to_string()]);
-    assert_eq!(report.failures, vec!["task fail".to_string()]);
+    assert_eq!(
+        report.failures,
+        vec!["observation failed: task=task-4".to_string()]
+    );
     let cost_metric = report
         .metrics
         .iter()
@@ -241,7 +248,7 @@ fn file_change_evidence_is_exact_and_survives_sampling() {
     assert_eq!(count, 1);
     collector.flush("task-1").unwrap();
 
-    let path = root.path().join("trace").join("task-1.ndjson");
+    let path = root.path().join("trace").join(format!("{}.ndjson", trace_key("task-1")));
     let content = fs::read_to_string(&path).unwrap();
     let lines: Vec<Value> = content
         .lines()
@@ -295,7 +302,7 @@ fn intent_precedes_change_and_coverage_is_reported() {
         .unwrap();
     collector.flush("task-x").unwrap();
 
-    let path = root.path().join("trace").join("task-x.ndjson");
+    let path = root.path().join("trace").join(format!("{}.ndjson", trace_key("task-x")));
     let content = fs::read_to_string(&path).unwrap();
     let lines: Vec<Value> = content
         .lines()

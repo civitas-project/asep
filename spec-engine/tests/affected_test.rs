@@ -564,3 +564,28 @@ fn test_affected_deterministic() {
 
     assert_eq!(first, second);
 }
+
+// @test:FR-PERF-01
+#[test]
+fn test_affected_cycle_terminates_and_is_deterministic() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+
+    // Cycle: impl-a satisfies req-a; req-a constrains impl-b; impl-b satisfies req-a.
+    write_tag_file(
+        root,
+        "docs/spec.md",
+        "@req:req-a:MUST\n@rel:satisfies:impl-a->req-a\n@rel:constrains:req-a->impl-b\n@rel:satisfies:impl-b->req-a\n",
+    );
+    write_tag_file(root, "src/lib.rs", "// @impl:impl-a\n// @impl:impl-b\n");
+
+    let changed = vec![PathBuf::from("src/lib.rs")];
+    let first = affected(root, &changed).unwrap();
+    let second = affected(root, &changed).unwrap();
+    assert_eq!(first, second, "affected() must be deterministic on cyclic graphs");
+
+    let mut ids: Vec<String> = first.impls.iter().map(|n| n.id.clone()).collect();
+    ids.sort();
+    assert_eq!(ids, vec!["impl-a".to_string(), "impl-b".to_string()]);
+    assert!(first.requirements.iter().any(|n| n.id == "req-a"));
+}

@@ -1,8 +1,8 @@
 <!-- asep:start -->
 mode: ask
+protocol: protocol/CORE.md
+activation: Native tools first; load a domain skill only when its scope matches. Run ASEP checks, impact, audits or full CI only when the activation contract applies; never fabricate evidence or ACCEPTED.
 skills:
-- using-asep
-- workflow-router
 - system-architecture
 - code-contracts
 - engineering-specs

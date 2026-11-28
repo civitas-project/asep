@@ -32,6 +32,73 @@ fn test_init_and_diagram_render_flow() {
     assert_eq!(count, 1);
 }
 
+// @test:S2-CORE-PROTOCOL
+#[test]
+fn test_init_generates_core_protocol_without_mandatory_router_or_bootstrap() {
+    let dir = tempdir().expect("tempdir created");
+    let root = dir.path();
+
+    init_asep_project(root).expect("init succeeds");
+
+    let protocol = fs::read_to_string(root.join("protocol").join("CORE.md"))
+        .expect("core protocol must be written on init");
+    assert_eq!(
+        protocol,
+        asep::pack::embedded::get_core_protocol(),
+        "generated protocol must reproduce the canonical source"
+    );
+    assert!(protocol.contains("Activation contract"));
+    assert!(protocol.contains("Mandatory constraints"));
+
+    for name in ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] {
+        let content = fs::read_to_string(root.join(name)).expect("read entry file");
+        assert!(content.contains("protocol: protocol/CORE.md"));
+        for retired in ["using-asep", "workflow-router"] {
+            assert!(
+                !content.contains(&format!("- {retired}")),
+                "{name} must not activate retired skill {retired}"
+            );
+        }
+        for ambient in [
+            "system-architecture",
+            "code-contracts",
+            "engineering-specs",
+            "repository-governance",
+            "design-tokens",
+        ] {
+            assert!(content.contains(&format!("- {ambient}")));
+        }
+    }
+
+    for retired in ["using-asep", "workflow-router"] {
+        assert!(
+            !root.join("skills").join(retired).join("SKILL.md").exists(),
+            "init must not install retired skill {retired} as ambient"
+        );
+    }
+}
+
+// @test:S2-UPGRADE
+#[test]
+fn test_init_upgrade_removes_stale_block_without_deleting_existing_skills() {
+    let dir = tempdir().expect("tempdir created");
+    let root = dir.path();
+
+    let stale = "<!-- asep:start -->\nmode: ask\nskills:\n- using-asep\n- workflow-router\n<!-- asep:end -->\n";
+    fs::write(root.join("AGENTS.md"), stale).expect("write stale entry file");
+    let legacy_skill = root.join("skills").join("using-asep").join("SKILL.md");
+    fs::create_dir_all(legacy_skill.parent().unwrap()).expect("create legacy skill dir");
+    fs::write(&legacy_skill, "legacy content").expect("write legacy skill");
+
+    init_asep_project(root).expect("init succeeds");
+
+    let content = fs::read_to_string(root.join("AGENTS.md")).expect("read entry file");
+    assert!(!content.contains("- using-asep"));
+    assert!(!content.contains("- workflow-router"));
+    assert!(content.contains("protocol: protocol/CORE.md"));
+    assert!(legacy_skill.exists(), "upgrade must not delete existing files");
+}
+
 // @test:FR-CLI-INIT-02
 #[test]
 fn test_init_writes_ambient_skill_files_idempotently() {

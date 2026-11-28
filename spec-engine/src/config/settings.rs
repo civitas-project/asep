@@ -129,6 +129,25 @@ impl Default for CapabilityProfile {
 }
 
 impl CapabilityProfile {
+    /// Fail-closed profile used when a persistent config exists but cannot be
+    /// read or parsed. No capability is granted; callers must opt in explicitly
+    /// with a valid config.
+    pub fn restrictive() -> Self {
+        Self {
+            file_read: false,
+            file_write: false,
+            terminal: false,
+            mcp: false,
+            subagents: false,
+            web: false,
+            context_window: 0,
+            supported_media: Vec::new(),
+            tool_domains: Vec::new(),
+            delegation_threshold: usize::MAX,
+            engineer_level: EngineerLevel::default(),
+        }
+    }
+
     /// Returns the names from `required` that are disabled on this profile,
     /// preserving the order of `required`. Unknown names are ignored.
     pub fn missing(&self, required: &[&str]) -> Vec<String> {
@@ -206,16 +225,26 @@ pub fn get_config_path(target_dir: &Path) -> PathBuf {
     target_dir.join("config.toml")
 }
 
-/// Loads the persistent configuration from disk or returns defaults if missing/corrupt.
+/// Loads the persistent configuration from disk.
+///
+/// Missing config returns engine defaults (fresh-install behavior). A config
+/// that exists but is unreadable or malformed returns a fail-closed engine
+/// config with no capabilities granted, so invalid policy can never widen
+/// permissions. Use `validate_capabilities` to surface a parse error explicitly.
 pub fn load_config(target_dir: &Path) -> EngineConfig {
     let path = get_config_path(target_dir);
     if !path.exists() {
         return EngineConfig::default();
     }
 
+    let restricted = || EngineConfig {
+        capabilities: CapabilityProfile::restrictive(),
+        ..EngineConfig::default()
+    };
+
     match fs::read_to_string(&path) {
-        Ok(content) => toml::from_str(&content).unwrap_or_else(|_| EngineConfig::default()),
-        Err(_) => EngineConfig::default(),
+        Ok(content) => toml::from_str(&content).unwrap_or_else(|_| restricted()),
+        Err(_) => restricted(),
     }
 }
 
@@ -266,5 +295,33 @@ mod tests {
         let profile = validate_capabilities("file_read = false\ncontext_window = 100\n").unwrap();
         assert!(!profile.file_read);
         assert_eq!(profile.context_window, 100);
+    }
+
+    // Regression: a malformed persistent config must not widen permissions.
+    #[test]
+    fn malformed_config_file_does_not_grant_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = get_config_path(dir.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "[[unclosed\n").unwrap();
+        let config = load_config(dir.path());
+        assert!(
+            config.capabilities.covers(&["file_write", "web"], None).is_err(),
+            "malformed config silently granted permissions"
+        );
+    }
+
+    // Regression: an unreadable persistent config must not widen permissions.
+    #[test]
+    fn unreadable_config_file_does_not_grant_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = get_config_path(dir.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::create_dir(&path).unwrap();
+        let config = load_config(dir.path());
+        assert!(
+            config.capabilities.covers(&["file_write", "web"], None).is_err(),
+            "unreadable config silently granted permissions"
+        );
     }
 }

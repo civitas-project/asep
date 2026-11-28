@@ -185,7 +185,9 @@ fn test_telemetry_defaults() {
     assert_eq!(config.telemetry.ttl_secs, 86_400);
     assert_eq!(config.telemetry.max_bytes, 10_485_760);
     assert_eq!(config.telemetry.max_buffer_events, 1000);
-    assert!(config.telemetry.allowlist.is_empty());
+    for field in asep::config::settings::MANDATORY_EVIDENCE_FIELDS {
+        assert!(config.telemetry.allowlist.iter().any(|name| name == field));
+    }
     assert!(config.telemetry.redact_patterns.is_empty());
 }
 

@@ -1,9 +1,11 @@
+use asep::affected::affected;
 use asep::auditor::doc_contracts::audit_doc_contracts;
 use asep::graph::builder::build_trace_graph;
 use asep::scanner::lexer::{parse_tags_from_line, Priority, TagKind};
 use asep::scanner::ScannedTag;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::path::{Path, PathBuf};
+use tempfile::tempdir;
 
 // @gov:BENCH-LEXER
 fn bench_ast_tag_lexing(c: &mut Criterion) {
@@ -118,10 +120,106 @@ pub fn validate_batch_{i}(data: &[u8]) -> Result<u64, String> {{
     });
 }
 
+// @gov:BENCH-AFFECTED
+/// Baseline (O01, no optimization): `asep::affected::affected()` over generated
+/// graphs of size V with four relation variants:
+/// - sparse: chain (satisfies + verifies + constrains, ~3V edges)
+/// - dense: 8-way satisfies fanout (~8V edges)
+/// - cyclic: closed satisfies/constrains cycle (~2V edges, cycle-safe BFS)
+/// - same-ID: one id shared by Req/Impl/Test per file, legacy same-ID fallback (~3V edges).
+///
+/// Fixtures (V `.md` files with `@req/@impl/@test` tags plus one `.rel` file)
+/// are built once per (size, variant) outside `b.iter()`; one changed path
+/// (`nodes/0.md`) seeds the traversal. Each (size, variant) is its own
+/// criterion benchmark so slow cases do not prevent measuring fast ones.
+fn build_affected_fixture(root: &Path, size: usize, variant: &str) {
+    let mut rels = String::new();
+    for i in 0..size {
+        let (req_id, impl_id, test_id) = if variant == "same_id" {
+            (format!("SID-{i}"), format!("SID-{i}"), format!("SID-{i}"))
+        } else {
+            (format!("REQ-{i}"), format!("IMPL-{i}"), format!("TEST-{i}"))
+        };
+        let content = format!(
+            "<!-- @req:{req_id}:MUST -->\n// @impl:{impl_id}\n// @test:{test_id}\n",
+        );
+        let path = root.join(format!("nodes/{i}.md"));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&path, content).unwrap();
+
+        let next = (i + 1) % size;
+        if variant == "dense" {
+            for k in 1..=8usize {
+                let j = (i + k) % size;
+                rels.push_str(&format!("@rel:satisfies:IMPL-{i}->REQ-{j}\n"));
+            }
+        } else if i + 1 < size || variant == "cyclic" {
+            rels.push_str(&format!("@rel:satisfies:IMPL-{i}->REQ-{next}\n"));
+            rels.push_str(&format!("@rel:constrains:REQ-{i}->IMPL-{next}\n"));
+        }
+        if variant != "same_id" {
+            rels.push_str(&format!("@rel:verifies:TEST-{i}->REQ-{i}\n"));
+        } else {
+            rels.push_str(&format!("@rel:satisfies:SID-{i}->SID-{next}\n"));
+            rels.push_str(&format!("@rel:constrains:SID-{i}->SID-{i}\n"));
+            rels.push_str(&format!("@rel:verifies:SID-{i}->SID-{i}\n"));
+        }
+    }
+    std::fs::write(root.join("nodes/relations.rel"), rels).unwrap();
+}
+
+macro_rules! gen_affected_bench {
+    ($name:ident, $size:expr, $variant:expr) => {
+        fn $name(c: &mut Criterion) {
+            let size = $size;
+            let variant = $variant;
+            let root = tempdir().expect("temp dir for bench fixture");
+            build_affected_fixture(root.path(), size, variant);
+            let changed = vec![PathBuf::from("nodes/0.md")];
+            let name = format!("affected_{size}_{variant}");
+            c.bench_function(name.as_str(), |b| {
+                b.iter(|| {
+                    match black_box(affected(root.path(), &changed)) {
+                        Ok(report) => black_box(report),
+                        Err(error) => panic!("affected() failed: {error}"),
+                    }
+                });
+            });
+        }
+    };
+}
+
+gen_affected_bench!(bench_affected_100_sparse, 100usize, "sparse");
+gen_affected_bench!(bench_affected_100_dense, 100usize, "dense");
+gen_affected_bench!(bench_affected_100_cyclic, 100usize, "cyclic");
+gen_affected_bench!(bench_affected_100_same_id, 100usize, "same_id");
+gen_affected_bench!(bench_affected_1000_sparse, 1_000usize, "sparse");
+gen_affected_bench!(bench_affected_1000_dense, 1_000usize, "dense");
+gen_affected_bench!(bench_affected_1000_cyclic, 1_000usize, "cyclic");
+gen_affected_bench!(bench_affected_1000_same_id, 1_000usize, "same_id");
+gen_affected_bench!(bench_affected_10000_sparse, 10_000usize, "sparse");
+gen_affected_bench!(bench_affected_10000_dense, 10_000usize, "dense");
+gen_affected_bench!(bench_affected_10000_cyclic, 10_000usize, "cyclic");
+gen_affected_bench!(bench_affected_10000_same_id, 10_000usize, "same_id");
+
 criterion_group!(
     benches,
     bench_ast_tag_lexing,
     bench_traceability_graph_resolution,
-    bench_doc_contract_parsing
+    bench_doc_contract_parsing,
+    bench_affected_100_sparse,
+    bench_affected_100_dense,
+    bench_affected_100_cyclic,
+    bench_affected_100_same_id,
+    bench_affected_1000_sparse,
+    bench_affected_1000_dense,
+    bench_affected_1000_cyclic,
+    bench_affected_1000_same_id,
+    bench_affected_10000_sparse,
+    bench_affected_10000_dense,
+    bench_affected_10000_cyclic,
+    bench_affected_10000_same_id
 );
 criterion_main!(benches);

@@ -79,12 +79,12 @@ flowchart TD
 
 ### Canonical Protocol Modules & Skills
 
-The ASEP architecture comprises five self-contained domain skills orchestrated by the Master Dispatch Router:
+The ASEP architecture comprises five self-contained, optional domain skills. A single canonical Core Protocol ([`protocol/CORE.md`](protocol/CORE.md)) defines activation and mandatory constraints; no router or bootstrap is required to start a task. The retired router remains only as a compatibility reference:
 
 | Protocol Module | Scope & Responsibility | Canonical Specification | Autonomous AI Skill |
 | :--- | :--- | :--- | :--- |
 | **System-Architecture** | **Core Architecture & Systems Engine**<br>PRD/TDD lifecycle, two-phase SDLC, Rich ADRs, 1:1 traceability graph closure. | [`system-architecture/system-architecture.md`](system-architecture/system-architecture.md) | [`system-architecture`](system-architecture/skill/SKILL.md) |
-| **Workflow-Router** | **Master Agent Dispatch & Skill Orchestrator**<br>Self-contained dynamic routing across all internal ASEP protocols. | [`workflow-router/workflow-router.md`](workflow-router/workflow-router.md) | [`workflow-router`](workflow-router/skill/SKILL.md) |
+| **Workflow-Router** (retired, compatibility only) | **Optional reference**<br>Retired as a mandatory router by decision 07.1. Activation now lives in `protocol/CORE.md`; see README → Core Protocol → architecture overview → relevant skill. | [`workflow-router/workflow-router.md`](workflow-router/workflow-router.md) | [`workflow-router`](workflow-router/skill/SKILL.md) |
 | **Engineering-Specs** | **Technical Authoring & Specifications**<br>ISO/IEC/IEEE 29148:2018 requirements grammar, four canonical PlantUML diagrams. | [`engineering-specs/engineering-specs.md`](engineering-specs/engineering-specs.md) | [`engineering-specs`](engineering-specs/skill/SKILL.md) |
 | **Code-Contracts** | **Code-Level Operational Contracts**<br>Anti-parroting heuristics, strict conditionality, multi-language contract templates. | [`code-contracts/code-contracts.md`](code-contracts/code-contracts.md) | [`code-contracts`](code-contracts/skill/SKILL.md) |
 | **Repository-Governance** | **Repository Governance & Manuals**<br>README structure, directory topology, Diátaxis MANUAL.md, CVSS response SLAs. | [`repository-governance/repository-governance.md`](repository-governance/repository-governance.md) | [`repository-governance`](repository-governance/skill/SKILL.md) |
@@ -108,9 +108,11 @@ The ASEP architecture comprises five self-contained domain skills orchestrated b
 │   ├── adr/                 # Architecture Decision Records archive
 │   ├── diagrams/            # Formal PlantUML models and compiled SVG assets
 │   └── skill/SKILL.md       # AI agent guidance for system architecture
-├── workflow-router/         # [@gov:MOD-ROUTER] Master Agent Dispatch & single sovereign orchestrator
-│   ├── workflow-router.md   # Skill routing specification
-│   └── skill/SKILL.md       # AI agent guidance for workflow dispatch
+├── protocol/                # Canonical Core Protocol (activation + mandatory constraints)
+│   └── CORE.md              # Single source for generated AGENTS/CLAUDE/GEMINI blocks
+├── workflow-router/         # [@gov:MOD-ROUTER] Retired compatibility reference (not ambient)
+│   ├── workflow-router.md   # Migration pointer to protocol/CORE.md
+│   └── skill/SKILL.md       # Optional compatibility skill
 ├── engineering-specs/       # [@gov:MOD-SPECS] Technical Authoring, Brainstorming, & ISO 29148 Grammar
 │   ├── engineering-specs.md
 │   ├── skeletons/           # Adaptive document skeletons (PRD, TDD, ADR, Runbook, Alloy .als, TLA+ .tla)
@@ -139,7 +141,8 @@ The ASEP architecture comprises five self-contained domain skills orchestrated b
 | Software Configuration Item | Traceability Tag | Canonical Scope | Primary Artifacts |
 | :--- | :--- | :--- | :--- |
 | **System Architecture**<br>`system-architecture/` | `<!-- @gov:MOD-SYSTEM-ARCH -->`<br>`@gov:MOD-SYSTEM-ARCH` | Dual-Mode SDLC, Vertical TDD, Systematic Debugging, Worktrees | `system-architecture.md`<br>`adr/*.md`, `diagrams/*.puml` |
-| **Workflow Router**<br>`workflow-router/` | `<!-- @gov:MOD-ROUTER -->`<br>`@gov:MOD-ROUTER` | Master Dispatch, Single Sovereignty, Precedence Rules | `workflow-router.md`<br>`skill/SKILL.md` |
+| **Core Protocol**<br>`protocol/` | `<!-- @gov:MOD-CORE -->`<br>`@gov:MOD-CORE` | Activation contract, mandatory evidence constraints, skill discovery | `CORE.md` |
+| **Workflow Router** (retired)<br>`workflow-router/` | `<!-- @gov:MOD-ROUTER -->`<br>`@gov:MOD-ROUTER` | Optional compatibility reference; no mandatory dispatch | `workflow-router.md`<br>`skill/SKILL.md` |
 | **Engineering Specs**<br>`engineering-specs/` | `<!-- @gov:MOD-SPECS -->`<br>`@gov:MOD-SPECS` | ISO 29148 SRS Grammar, Pre-Spec Brainstorming, Vector SVG | `engineering-specs.md`<br>`skeletons/*`, `templates/*.puml` |
 | **Code Contracts**<br>`code-contracts/` | `<!-- @gov:MOD-CONTRACTS -->`<br>`@gov:MOD-CONTRACTS` | SWEBOK 4.4 DbC, Inline Comment Hygiene, Memory Bounds | `code-contracts.md`<br>`templates/*` |
 | **Repository Governance**<br>`repository-governance/` | `<!-- @gov:MOD-GOV -->`<br>`@gov:MOD-GOV` | SWEBOK v4 README, Diátaxis MANUAL (Parts I–V), CVD Security | `repository-governance.md`<br>`templates/*` |

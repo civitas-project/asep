@@ -47,11 +47,12 @@ fn test_run_cmd_complexity_quadratic_fails() {
 }
 
 #[test]
-fn test_run_cmd_complexity_no_placeholder_appends_n() {
+fn test_run_cmd_complexity_no_placeholder_is_rejected() {
     let sizes = [10, 20, 40];
     let cmd = "sh -c 'true'";
-    let slope = run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(60)).unwrap();
-    assert!(slope <= 1.2 + 0.25, "unexpected slope {slope}");
+    let err = run_cmd_complexity(cmd, &sizes, 1.2, Duration::from_secs(60))
+        .expect_err("missing steps count must be rejected, not fabricated");
+    assert!(err.contains("steps"), "unexpected error: {err}");
 }
 
 #[test]

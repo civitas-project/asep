@@ -1,8 +1,16 @@
 ---
 name: using-asep
-description: Use when the agent starts a session and must load the ASEP ambient skills listed in the pointer block, then apply capability routing to route each task to the correct skill.
+description: Use when a legacy project still references the ASEP bootstrap skill and the current activation rules must be located.
 ---
 
-# using-asep
+# using-asep (compatibility reference)
 
-Load the ASEP ambient skills named in the session pointer block at startup. Each listed skill becomes available for capability routing, which routes tasks to the skill whose scope matches the task. Do not invent skills outside the pointer block. Follow Tier T capability routing; unmatched intents exit 3. When routing, match the task intent to a skill id, then execute that skill's procedure. If no skill matches, surface the gap instead of forcing a fit. Keep routing decisions traceable by recording the pointer block entry and the chosen skill id for each task.
+This skill is retained for compatibility with projects that still list it. It is not
+required to start a session and is no longer installed as an ambient skill.
+
+Activation rules, mandatory constraints and skill discovery live in `protocol/CORE.md`.
+Native tools handle ordinary reads, search, edits, compilation and tests. An ASEP
+capability activates only when the activation contract applies.
+
+Canonical rules: `COV-01`..`COV-06`, `Tier T0`..`Tier T4`, exit `3` are defined in
+`spec-engine/policy/asep-policy.toml`; skills reference IDs and do not restate patterns.

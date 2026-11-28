@@ -19,7 +19,7 @@ All optimization candidates O01–O10 are **documented, not adopted**. No candid
 
 | ID | Candidate | Status | Before | After | Notes |
 |----|-----------|--------|--------|-------|-------|
-| O01 | | status = "documented, not adopted" | | | |
+| O01 | 100 sparse 15.26 ms / dense 19.02 ms / cyclic 13.55 ms / same-id 21.62 ms; 1000 sparse 1.2712 s (median, `cargo bench -p asep --bench engine_benchmarks -- affected`, commit 295f7a86) | status = "documented, not adopted" | | 100 sparse 17.873 ms / dense 24.756 ms (median, post-index, `cargo bench -p asep --bench engine_benchmarks -- affected_100`, same commit); cyclic/same-id and 1000/10000 variants not measured (criterion exceeded budget, run killed) | Output identical (20 affected_test + 141 lib tests pass); medians regressed on measured variants (sparse +17.1%, dense +30.0%), not adopted |
 | O02 | | status = "documented, not adopted" | | | |
 | O03 | | status = "documented, not adopted" | | | |
 | O04 | | status = "documented, not adopted" | | | |
@@ -34,7 +34,23 @@ All optimization candidates O01–O10 are **documented, not adopted**. No candid
 
 A row that claims adoption must fill Before and After with measured median/p95, allocations, and RSS on the same commit and fixtures. Current rows claim no adoption, so Before and After remain empty.
 
-## Commands
+## S6 status (simulation and consolidation milestone)
+
+Benchmark execution is explicitly deferred for this milestone. No benchmark suite,
+stress test, load test or benchmark gate was run during S0–S5. Consequently:
+
+- O01–O10 remain **optimization hypotheses**, not measured outcomes. No performance
+  improvement is claimed.
+- O01 was measured before this milestone and is documented above as rejected on the
+  available evidence (regressed medians); it is not adopted here. The pre-existing
+  working-tree changes that implement the rejected index are left intact and untouched.
+- Correctness was verified with bounded targeted tests only (see the S1–S5 reports):
+  409 `asep` tests passed across all integration suites except `harness_test`, plus
+  the 144-test lib suite and `cargo check --workspace --all-targets --offline --locked`.
+- Resource-isolation and safe measurement must be agreed before any benchmark is
+  reactivated. Do not silently run `cargo bench` through full CI.
+
+## Commands (deferred; do not run in this milestone)
 
 ```sh
 cargo bench

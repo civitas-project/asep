@@ -1,6 +1,6 @@
 // @impl:FR-AMB-01
 use crate::error::AsepError;
-use crate::pack::embedded::get_embedded_skills;
+use crate::pack::embedded::{get_core_protocol, get_embedded_skills, AMBIENT_SKILL_IDS};
 use std::fs;
 use std::path::Path;
 
@@ -37,11 +37,25 @@ Project initialized under ASEP SDLC framework.
     Ok(())
 }
 
-/// Writes idempotent ASEP ambient blocks into AGENTS.md / CLAUDE.md / GEMINI.md
-/// and installs embedded skills into flat `skills/<id>/SKILL.md` files.
+/// Writes the canonical core protocol, then idempotent ambient blocks into
+/// AGENTS.md / CLAUDE.md / GEMINI.md and installs only the ambient domain skills.
+/// Retired compatibility skills are not installed as ambient by default. Existing
+/// files are never deleted, so upgrades remain non-destructive; rewriting the block
+/// removes stale mandatory router/bootstrap references from the entry points.
 fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
-    let skills = get_embedded_skills();
-    let block = build_asep_block(skills);
+    let protocol_path = root.join("protocol").join("CORE.md");
+    if let Some(parent) = protocol_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if !protocol_path.exists() {
+        fs::write(&protocol_path, get_core_protocol())?;
+    }
+
+    let ambient: Vec<_> = get_embedded_skills()
+        .iter()
+        .filter(|skill| AMBIENT_SKILL_IDS.contains(&skill.id))
+        .collect();
+    let block = build_asep_block(&ambient);
 
     for name in AGENT_FILES {
         let path = root.join(name);
@@ -54,7 +68,7 @@ fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
 
     let skills_dir = root.join("skills");
     fs::create_dir_all(&skills_dir)?;
-    for skill in skills {
+    for skill in ambient {
         let skill_md = skills_dir.join(skill.id).join("SKILL.md");
         if let Some(parent) = skill_md.parent() {
             fs::create_dir_all(parent)?;
@@ -67,10 +81,17 @@ fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
     Ok(())
 }
 
-fn build_asep_block(skills: &[crate::pack::embedded::EmbeddedSkill]) -> String {
+fn build_asep_block(skills: &[&crate::pack::embedded::EmbeddedSkill]) -> String {
     let mut lines: Vec<String> = Vec::new();
     lines.push(ASEP_START.to_string());
     lines.push("mode: ask".to_string());
+    lines.push("protocol: protocol/CORE.md".to_string());
+    lines.push(
+        "activation: Native tools first; load a domain skill only when its scope matches. \
+         Run ASEP checks, impact, audits or full CI only when the activation contract applies; \
+         never fabricate evidence or ACCEPTED."
+            .to_string(),
+    );
     lines.push("skills:".to_string());
     for skill in skills {
         lines.push(format!("- {}", skill.id));

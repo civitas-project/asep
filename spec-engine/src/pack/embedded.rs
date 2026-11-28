@@ -19,15 +19,22 @@ const SKILL_REPOSITORY_GOVERNANCE: &str =
     include_str!("../../../repository-governance/skill/SKILL.md");
 const SKILL_DESIGN_TOKENS: &str = include_str!("../../../design-tokens/skill/SKILL.md");
 const SKILL_WORKFLOW_ROUTER: &str = include_str!("../../../workflow-router/skill/SKILL.md");
-const SKILL_USING_ASEP: &str = r#"---
-name: using-asep
-description: Use when the agent starts a session and must load the ASEP ambient skills listed in the pointer block, then apply capability routing to route each task to the correct skill.
----
+const SKILL_USING_ASEP: &str = include_str!("../../../skills/using-asep/SKILL.md");
 
-# using-asep
+/// Canonical core protocol. Native entry points and generated instructions are
+/// derived from this single source; managed copies are marked by `<!-- asep:start -->`.
+pub const CORE_PROTOCOL: &str = include_str!("../../../protocol/CORE.md");
 
-Load the ASEP ambient skills named in the session pointer block at startup. Each listed skill becomes available for capability routing, which routes tasks to the skill whose scope matches the task. Do not invent skills outside the pointer block. Follow Tier T capability routing; unmatched intents exit 3. When routing, match the task intent to a skill id, then execute that skill's procedure. If no skill matches, surface the gap instead of forcing a fit. Keep routing decisions traceable by recording the pointer block entry and the chosen skill id for each task.
-"#;
+/// Skills installed and listed as ambient by project initialization. The two
+/// retired compatibility skills remain in `EMBEDDED_SKILLS` for CLI/skill-manager
+/// compatibility but are no longer activated by default.
+pub const AMBIENT_SKILL_IDS: [&str; 5] = [
+    "system-architecture",
+    "code-contracts",
+    "engineering-specs",
+    "repository-governance",
+    "design-tokens",
+];
 
 const DEFAULT_PLUGIN_JSON: &str = r#"{
   "name": "asep",
@@ -84,6 +91,11 @@ static EMBEDDED_SKILLS: &[EmbeddedSkill] = &[
 /// Returns the slice of canonical embedded skills.
 pub fn get_embedded_skills() -> &'static [EmbeddedSkill] {
     EMBEDDED_SKILLS
+}
+
+/// Returns the canonical core protocol text.
+pub fn get_core_protocol() -> &'static str {
+    CORE_PROTOCOL
 }
 
 /// Returns the default Antigravity plugin manifest JSON string.

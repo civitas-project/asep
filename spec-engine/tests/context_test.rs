@@ -1,5 +1,5 @@
 use asep::affected::AffectedReport;
-use asep::context::compile_context;
+use asep::context::{compile_context, ContextBundle};
 use asep::runtime::budget::ResourceBudget;
 use serde_json::to_string as to_json;
 use std::path::{Path, PathBuf};
@@ -92,6 +92,31 @@ fn tiny_budget_truncates_explicitly() {
         unlimited.impacted.requirements
     );
     assert_eq!(bundle.impacted.tests, unlimited.impacted.tests);
+}
+
+#[test]
+// @test:S3-CTX-ROUNDTRIP
+fn bundle_round_trip_preserves_impact_data() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    spec_fixture(root);
+
+    let bundle = compile_context(
+        root,
+        &[PathBuf::from("src/lib.rs")],
+        ResourceBudget::default(),
+    )
+    .unwrap();
+    let json = to_json(&bundle).unwrap();
+    let restored: ContextBundle =
+        serde_json::from_str(&json).expect("bundle must deserialize from its own output");
+
+    assert_eq!(
+        impacted_ids(&bundle.impacted),
+        impacted_ids(&restored.impacted),
+        "round trip must preserve impacted node ids"
+    );
+    assert_eq!(bundle.commands, restored.commands);
 }
 
 #[test]
