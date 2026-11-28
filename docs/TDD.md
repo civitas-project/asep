@@ -624,6 +624,23 @@ Untuk setiap wave, jalankan `asep affected <changed-paths>` dan pakai keluaran s
 3. **FR-AUD-16 — tidak ada pembaca segmen di `observability.rs`.** Validasi `trace_id` pada event yang dibaca dari rotated segment tidak memiliki titik aplikasi di modul ini; exact-key lookup sudah diterapkan pada jalur penulisan, flush, purge, dan retention. Untuk menutup: bila pembaca segmen ditambahkan kelak, validasi `event.trace_id == trace` wajib disertakan.
 4. **Item di luar cakupan audit masih deferred** sesuai keputusan sebelumnya: AD-D05 (workload quality-distinguishing), AD-D06 (failure reproducibility), AD-D07 (lifecycle hook), AD-D11 (backend visual), AD-D12 (migrasi), dan P3.3 (graph export). Ini tidak termasuk 35 temuan `ASEP_dev_audit_4355dbc.md` dan tidak dibuka oleh perbaikan ini.
 
+### Known consequences — simplification & consolidation (S0–S6)
+
+Catatan pengerjaan yang belum selesai dan risiko yang tersisa dari inisiatif ini.
+Semua butir di bawah adalah **risiko kondisional**, bukan regresi terverifikasi.
+
+1. **Benchmark ditunda.** Tidak ada benchmark, stress test, load test, atau benchmark gate yang dijalankan pada S0–S6. O01–O10 tetap hipotesis; O01 sudah diukur sebelum milestone ini dan ditolak (median regresi), kode associated dibiarkan utuh tapi tidak diadopsi. Tidak ada klaim peningkatan performa. Penutupan: setujui isolasi resource dulu, lalu ukur dengan before/after pada commit dan fixture yang sama.
+2. **`harness_test`: 6 kegagalan karena fixture eksternal hilang.** Skrip `new-run.sh`, `vendor-loom.sh`, dan verifier tidak ada di repo (exit 127). Ini kondisi lokal yang sudah ada sebelumnya, bukan efek perubahan ini. Penutupan: sediakan fixture resmi, jangan mengarang pengganti.
+3. **MVCC tidak dihapus.** `spec-engine/src/snapshot/mod.rs` adalah `pub mod` (API publik) dan hanya dikonsumsi oleh tesnya sendiri. Tanpa bukti tidak ada konsumen eksternal, penghapusan adalah breaking change. Penutupan: keputusan kompatibilitas eksplisit + audit konsumen.
+4. **Versi protokol MCP masih hardcoded** (`2024-11-05` di `mcp/server.rs`). Negosiasi versi memerlukan pilot native-client; mengubahnya sekarang berisiko memecah klien yang ada.
+5. **Installer tidak menyegarkan salinan generated yang sudah ada.** `install_skill` melewati skill yang sudah hadir, sehingga salinan usang tidak diperbarui saat upgrade. Sudah dimitigasi di checkout ini dengan regenerasi; perbaikan kode harus menghindari menimpa kustomisasi pengguna.
+6. **Reorganisasi direktori penuh ditunda.** Target tree di blueprint bersifat ilustratif dan pemindahan path memecah referensi. Boundary crate workspace sengaja dipertahankan. Penutupan: keputusan kompatibilitas + migrasi path.
+7. **Sebagian temuan warisan belum direproduksi satu per satu.** S0–S5 merevalidasi subset prioritas (B01, B02, B03, B04, B05, B09, B16, B17, B21, B26, B30); sisanya tetap revalidation target, bukan temuan baru yang terverifikasi.
+8. **`dev` dilindungi di kedua remote.** Push langsung ditolak; pekerjaan ada di branch `refactor/asep-simplification` dan memerlukan PR. Branch lokal `dev` tertinggal dari `origin/dev` secara history (sudah di-merge secara lokal, konten identik).
+9. **`accept-scoped` memerlukan trusted runner.** Agent tidak boleh mengeluarkan `ACCEPTED`; tree bersih setelah commit hanya prasyarat, bukan jaminan acceptance.
+
+Bukti verifikasi untuk milestone ini: 409 tes `asep` lulus (semua integration suite kecuali `harness_test`), 144/144 tes lib, dan `cargo check --workspace --all-targets --offline --locked` lulus.
+
 ## Audit backlog execution — desain dan rencana
 
 Keputusan user: jalankan **semua** O01–O10 dan tutup butir 3 (pembaca trace). Tidak ada engine/dependency/`unsafe` baru. Benchmark memakai `criterion 0.5` yang sudah ada di `spec-engine/benches/engine_benchmarks.rs`; dijalankan dengan `cargo bench -p spec-engine --bench engine_benchmarks -- <filter>`. Setiap kandidat dicatat di `docs/OPTIMIZATION_BENCHMARKS.md` dengan before/after pada commit dan fixture sama; adopsi hanya bila median/p95 membaik dan output identik. Karena `cargo bench` tidak mengukur alokasi/RSS secara native, angka alokasi/RSS diambil dari `harness/e2e` bila tersedia atau dinyatakan `not measured` secara eksplisit — tidak boleh diklaim terukur.
