@@ -11,3 +11,14 @@ superpowers/
 SUGEST.md
 err.txt
 out.txt
+
+# Generated per-agent skill copies (produced by `asep pack` / `asep skill sync`)
+/.aider/
+/.claude/
+/.continue/
+/.cursor/
+/.goose/
+/.roo/
+/.windsurf/
+/.zed/
+/.github/skills/
