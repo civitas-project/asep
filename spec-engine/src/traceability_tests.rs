@@ -335,20 +335,20 @@ fn test_init_asep_project_creates_docs_tree_and_prd() {
     let tmp = tempdir().expect("tempdir created");
     init_asep_project(tmp.path()).expect("init must succeed");
 
-    assert!(tmp.path().join("docs/adr").is_dir());
-    assert!(tmp.path().join("docs/diagrams/rendered").is_dir());
-    assert!(tmp.path().join("docs/invariants").is_dir());
+    // Minimal init: no unsolicited documentation tree or fabricated MUST.
+    assert!(!tmp.path().join("docs/adr").is_dir());
+    assert!(!tmp.path().join("docs/PRD.md").exists());
+    assert!(tmp.path().join("protocol/CORE.md").is_file());
+    for name in ["AGENTS.md", "CLAUDE.md", "GEMINI.md"] {
+        assert!(tmp.path().join(name).is_file());
+    }
 
+    // A user-authored PRD is left untouched by re-init.
     let prd = tmp.path().join("docs/PRD.md");
-    assert!(prd.is_file());
-    let content = fs::read_to_string(&prd).unwrap();
-    assert!(content.contains("<!-- @req:FR-INIT-01:MUST Baseline project specification -->"));
-
-    // Re-init must not overwrite an existing PRD.
-    let first = fs::read_to_string(&prd).unwrap();
+    std::fs::create_dir_all(prd.parent().unwrap()).unwrap();
+    std::fs::write(&prd, "# MY PRD\n").unwrap();
     init_asep_project(tmp.path()).expect("re-init must succeed");
-    let second = fs::read_to_string(&prd).unwrap();
-    assert_eq!(first, second);
+    assert_eq!(fs::read_to_string(&prd).unwrap(), "# MY PRD\n");
 }
 
 // @test:FR-ANTISLOP-05

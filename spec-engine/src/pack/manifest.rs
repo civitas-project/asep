@@ -317,6 +317,9 @@ fn permission_rule_key(rule: &serde_json::Value) -> (Option<&str>, Option<&str>,
 /// Merges default permission rules into an existing agent preset and
 /// refreshes protocol content. `system`, `description`, `mode`, and `steps`
 /// are overwritten from the canonical default preset because they are
+/// Marker identifying a preset whose protocol fields ASEP may refresh.
+const MANAGED_MARKER: &str = "asep-managed-v2";
+
 /// protocol content, not user customization. Existing permission rules are
 /// kept and default rules missing from the existing set are appended
 /// (last-match-wins), deduped by action+resource+effect. All other fields on
@@ -326,12 +329,25 @@ fn merge_agent_permissions(
     default: &serde_json::Value,
 ) -> serde_json::Value {
     let mut merged = existing.clone();
+    let managed = existing
+        .get("asep_managed")
+        .and_then(|v| v.as_str())
+        .map(|v| v == MANAGED_MARKER)
+        .unwrap_or(false);
 
-    // Protocol content is canonical: always refresh from the default preset.
-    for field in ["system", "description", "mode", "steps"] {
-        if let Some(value) = default.get(field) {
-            merged[field] = value.clone();
+    if managed {
+        // Only ASEP-managed presets are refreshed from canonical content.
+        for field in ["system", "description", "mode", "steps", "asep_managed"] {
+            if let Some(value) = default.get(field) {
+                merged[field] = value.clone();
+            }
         }
+    } else if existing.get("system").and_then(|v| v.as_str())
+        != default.get("system").and_then(|v| v.as_str())
+    {
+        eprintln!(
+            "asep: preserved user-authored agent prompt; managed defaults were not applied"
+        );
     }
 
     let default_perms = match default.get("permissions").and_then(|v| v.as_array()) {
@@ -340,19 +356,13 @@ fn merge_agent_permissions(
     };
 
     let merged_perms = match existing.get("permissions").and_then(|v| v.as_array()) {
-        Some(existing_perms) => {
-            let mut rules = existing_perms.clone();
-            let mut seen: HashSet<(Option<&str>, Option<&str>, Option<&str>)> =
-                existing_perms.iter().map(permission_rule_key).collect();
-            for rule in default_perms {
-                let key = permission_rule_key(rule);
-                if seen.insert(key) {
-                    rules.push(rule.clone());
-                }
-            }
-            rules
-        }
-        None => default_perms.clone(),
+        // Managed presets derive permissions from the current capability
+        // profile, so a restrictive upgrade cannot retain previously granted
+        // permissions.
+        Some(_) if managed => default_perms.clone(),
+        Some(existing_perms) => existing_perms.clone(),
+        None if managed => default_perms.clone(),
+        None => Vec::new(),
     };
 
     merged["permissions"] = serde_json::Value::Array(merged_perms);
@@ -416,39 +426,19 @@ pub fn scaffold_opencode_agents(
 
     let default_agents = serde_json::json!({
         "leader": {
+            "asep_managed": "asep-managed-v2",
             "description": "Orchestrator for the bounded executor-judge workflow.",
             "mode": "primary",
             "steps": 60,
-            "system": r#"You are the leader orchestrator in a bounded executor-judge workflow. You own the loop; the executor implements and the judge reviews. You set scope and report review results; you do not grant ACCEPTED. Acceptance is granted by the trusted local runner; that does not authorize merge. Do not delegate the whole task in one call.
+            "system": r#"You are the primary agent. Execute the user objective directly with native tools: read, search, edit, compile and test as the task requires. ASEP capabilities are optional and activate only when `protocol/CORE.md` says they apply or the user asks explicitly. A general question, one file read, a typo or a local bug needs no ASEP tool, audit, PRD/TDD or delegation; a local bug uses a targeted regression test.
 
-Before any implementation:
-- Requirement phase: if the request leaves something material unsettled, ask the user ONE decisive question. Write the agreed behavior into `docs/PRD.md` as `@req:*:MUST` requirements tied to observable behavior. Do not invent requirements to make a gate green.
-- Plan phase: write the design and the ordered implementation plan into `docs/TDD.md` (`@design:` entries, and for each task a file path, symbol, acceptance criteria, and verification command). Stop and get explicit user approval before dispatching any executor.
+Activation is conditional, never a fixed sequence. Load a domain skill only when its scope matches the task. Ask the user only for material unresolved architecture decisions, breaking changes, irreversible operations or out-of-scope work. Do not create speculative documents, engines or dependencies.
 
-Never create `.superpowers/` or `docs/superpowers/`, and never add a new skill folder for this pattern. `docs/PRD.md`, `docs/TDD.md`, and `docs/TRACEABILITY.md` are the only specification artifacts. Executors never edit PRD/TDD.
-
-Verification scope: run `asep affected <changed-paths>` to derive the exact tests and check targets from the traceability graph. Use its output as the verification command. Do not run the full suite by default; full suite is reserved for merges to `main` or when the user explicitly asks.
-
-For every coding task:
-1. After PRD/TDD approval, decompose the request into small units: one file or one function per unit. If the request is ambiguous, ask the user before delegating.
-   If the request touches a project or code area you have not mapped yet, delegate the mapping to the `explorer` subagent first: it reads the project with `tools.asep.srcdump`, then returns a module list with file paths. Use that list to split the units.
-2. Before delegating, check the unit: it must name a file path, a function or symbol, acceptance criteria, and a verification command. If any is missing, split the task or ask the user; do not delegate. Then delegate one unit to the `executor` subagent with that scope, files in scope, acceptance criteria, and the verification command.
-3. After the executor returns, inspect the diff yourself. Run the relevant test, lint, typecheck, or build command. Capture the exact command and output.
-4. Send the original task, the diff, and the verification output to the `judge` subagent. The judge is read-only and returns JSON with `verdict`, `blocking`, `non_blocking`, `missing_evidence`, and `next_action`.
-5. If the verdict is FAIL, send only the blocking issues and the failing output back to the executor. Re-run verification, then invoke the judge again. Repeat for at most two fix rounds.
-6. If the judge still returns FAIL after two rounds, stop and report the unresolved blocking issues to the user. Do not start another open-ended loop.
-7. If the executor returns `UNCERTAIN` or `BLOCKED`, split the task further, gather the missing evidence, or ask the user. Do not force it to guess.
-8. Keep the final report short: what changed, verification evidence, judge verdict, and remaining risk.
-
-Rules:
-- Tests and executable checks are the primary source of truth. The judge is a semantic second opinion, not a replacement for tests.
-- Never claim completion without fresh verification output.
-- Do not ask the judge to edit, run shell, or review the entire repository. Give it bounded evidence.
-- Do not let the executor make architectural decisions. Decide architecture yourself, or ask the user.
-- Verification: after implementation run `asep check --rigor T2`. When green, call MCP tool `asep_accept_scoped` (or CLI `asep accept-scoped <commit>`) with the exact commit; report the evidence dir. Only the trusted runner grants ACCEPTED — never grant it yourself."#,
+Delegate selectively: one primary agent by default; use a subagent only when independent review is required or a bounded task materially benefits. Preserve scope and exact verification evidence. Agent judgement never grants ACCEPTED; only the trusted local runner does, and local acceptance does not authorize a merge. Never fabricate verification output or hide missing evidence."#,
             "permissions": agent_permissions(profile, &leader_agent_message_rules())
         },
         "executor": {
+            "asep_managed": "asep-managed-v2",
             "description": "Fast coding executor in a bounded executor-judge pipeline.",
             "mode": "subagent",
             "steps": 30,
@@ -469,6 +459,7 @@ Reply in Indonesian prose; code, comments, and identifiers stay in English."#,
             "permissions": agent_permissions(profile, &executor_agent_message_rules())
         },
         "judge": {
+            "asep_managed": "asep-managed-v2",
             "description": "Read-only reviewer verifying executor output against task, diff, and test evidence.",
             "mode": "subagent",
             "steps": 20,
@@ -500,21 +491,11 @@ Return PASS only when there are no blocking issues and the verification evidence
             )
         },
         "explorer": {
+            "asep_managed": "asep-managed-v2",
             "description": "Fast explorer subagent for codebase exploration.",
             "mode": "subagent",
             "steps": 30,
-            "system": r#"You are the explorer subagent. You are read-only: never edit files and never run shell commands.
-
-Working limits:
-1. Your first step is one call to `tools.asep.srcdump` through `execute`, with `dir` set to the project root and `mode` set to `signatures`. This gives the whole project in one call. If `srcdump` is unavailable, fall back to `read` and `grep` on the specific files the question needs. Do not read files one by one before this call unless `srcdump` is unavailable.
-2. Only call tool names listed by `search` (namespace `asep`). Never guess tool names.
-3. After the dump, read only the specific files the question needs. Batch independent reads into one step.
-4. You have a limited number of steps. Plan the reads so that the final step is your report.
-5. Coverage: if the question is about a crate or project module list, read the module root file (for example `lib.rs`) and make sure every declared module appears in your report. List any module you did not cover.
-6. Evidence: describe a module or file only after you have read its file content. A description based on a signature dump alone must be marked `(from signatures only)`.
-7. Report findings with file paths and line references, list what you did not cover, and state any limit you hit.
-
-Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
+            "system": r#"You are the explorer subagent, read-only. Use native `read`/`grep` on the specific files the question needs; batch independent reads. Do not require `srcdump` or any ASEP tool: structural extraction is optional and only chosen when native search is insufficient. Never guess tool names. Report findings with file paths and line references, list what you did not cover, and state any limits. Reply in Indonesian prose; code, identifiers and paths stay in English."#,
             "permissions": agent_permissions(
                 profile,
                 &[
@@ -527,6 +508,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             )
         },
         "code-worker": {
+            "asep_managed": "asep-managed-v2",
             "description": "Code-focused worker agent for implementation tasks.",
             "mode": "subagent",
             "steps": 20,
@@ -534,6 +516,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             "permissions": agent_permissions(profile, &[])
         },
         "git-worker": {
+            "asep_managed": "asep-managed-v2",
             "description": "Git-focused worker agent for version-control tasks.",
             "mode": "subagent",
             "steps": 20,
@@ -541,6 +524,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             "permissions": agent_permissions(profile, &[])
         },
         "media-worker": {
+            "asep_managed": "asep-managed-v2",
             "description": "Media-focused worker agent for image and audio assets.",
             "mode": "subagent",
             "steps": 20,
@@ -548,6 +532,7 @@ Reply in Indonesian prose; code, identifiers, and paths stay in English."#,
             "permissions": agent_permissions(profile, &[])
         },
         "verifier": {
+            "asep_managed": "asep-managed-v2",
             "description": "Verification worker agent that checks output against acceptance criteria.",
             "mode": "subagent",
             "steps": 20,

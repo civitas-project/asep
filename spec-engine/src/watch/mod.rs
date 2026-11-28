@@ -95,8 +95,12 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
                 }
             }
 
-            let (anti_errors, anti_warnings) = anti_slop_summary(dir);
-            println!("🧹 Anti-slop: {anti_errors} errors, {anti_warnings} warnings");
+            match anti_slop_summary(dir) {
+                Ok((anti_errors, anti_warnings)) => println!(
+                    "🧹 Anti-slop: {anti_errors} errors, {anti_warnings} warnings"
+                ),
+                Err(e) => println!("🧹 Anti-slop: UNPROVEN, audit unavailable ({e})"),
+            }
         }
         Err(e) => eprintln!("Scanner error: {e}"),
     }
@@ -104,8 +108,8 @@ fn run_cycle(dir: &Path, _tier: TierId, coverage_path: Option<&Path>) {
 
 /// Counts anti-slop violations by severity for `dir` without failing the
 /// cycle. Watch mode reports these every cycle but never exits non-zero.
-pub fn anti_slop_summary(dir: &Path) -> (usize, usize) {
-    let violations = audit_project_anti_slop(dir).unwrap_or_default();
+pub fn anti_slop_summary(dir: &Path) -> Result<(usize, usize), String> {
+    let violations = audit_project_anti_slop(dir).map_err(|e| e.to_string())?;
     let errors = violations
         .iter()
         .filter(|v| v.severity == Severity::Error)
@@ -114,7 +118,7 @@ pub fn anti_slop_summary(dir: &Path) -> (usize, usize) {
         .iter()
         .filter(|v| v.severity == Severity::Warning)
         .count();
-    (errors, warnings)
+    Ok((errors, warnings))
 }
 
 #[cfg(test)]
@@ -128,7 +132,7 @@ mod tests {
             .expect("write markdown fixture");
         std::fs::write(dir.path().join("main.rs"), "// ==========\nfn main() {}\n") // asep:allow-antislop
             .expect("write rust fixture");
-        let (errors, warnings) = anti_slop_summary(dir.path());
+        let (errors, warnings) = anti_slop_summary(dir.path()).expect("audit available");
         assert_eq!((errors, warnings), (1, 1));
     }
 }

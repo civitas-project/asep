@@ -2,7 +2,8 @@
 //! Interactive `inquire` TUI installer and headless packaging engine.
 // @impl:FR-AMB-02
 
-use crate::config::settings::load_config;
+use crate::config::settings::load_config_checked;
+use crate::error::AsepError;
 use crate::pack::embedded::{get_default_mcp_config_json, get_default_plugin_json};
 use crate::pack::manifest::{scaffold_opencode_agents, update_opencode_json};
 use crate::pack::targets::{default_global_home, resolve_target_paths, InstallScope, TargetAgent};
@@ -208,8 +209,9 @@ pub fn run_pack_installer(opts: PackOptions) -> Result<(), Box<dyn std::error::E
                 };
 
                 update_opencode_json(&config_file, "asep")?;
-                let profile = load_config(&target_dir).capabilities;
-                scaffold_opencode_agents(&config_file, &profile)?;
+                let config = load_config_checked(&target_dir)
+                    .map_err(|e| AsepError::InvalidState(format!("invalid capability configuration: {e}")))?;
+                scaffold_opencode_agents(&config_file, &config.capabilities)?;
 
                 println!(
                     "{} Installed OpenCode with MCP config and agent presets in {}",

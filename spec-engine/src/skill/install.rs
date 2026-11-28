@@ -56,15 +56,15 @@ pub fn install_skill(
     let mut installed_paths = Vec::new();
     let local_entries = inspect_skills(skills_dir);
 
-    for id in to_install {
-        // Skip if already present and not missing
-        if local_entries
-            .iter()
-            .any(|e| e.id == id && e.status != crate::skill::model::SkillStatus::Missing)
-        {
-            continue;
-        }
+    // Files under a generated plugin/skills directory are managed artifacts;
+    // older versions had no ownership marker, so location establishes
+    // ownership during upgrade.
+    let generated_dir = skills_dir
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+        || skills_dir.to_string_lossy().contains("plugins");
 
+    for id in to_install {
         let orig = embedded
             .iter()
             .find(|e| e.id == id || e.directory == id)
@@ -73,6 +73,22 @@ pub fn install_skill(
         let skill_folder = skills_dir.join(orig.directory);
         fs::create_dir_all(&skill_folder).map_err(|e| e.to_string())?;
         let skill_file = skill_folder.join("SKILL.md");
+
+        let existing = fs::read_to_string(&skill_file).ok();
+        let managed = existing
+            .as_deref()
+            .is_some_and(|text| text.contains("<!-- asep-managed-skill -->"));
+        let present = local_entries
+            .iter()
+            .any(|e| e.id == id && e.status != crate::skill::model::SkillStatus::Missing);
+
+        if present && !managed && !generated_dir {
+            // User-authored or customized copy: never overwrite.
+            continue;
+        }
+        if existing.as_deref() == Some(orig.content) {
+            continue;
+        }
         fs::write(&skill_file, orig.content).map_err(|e| e.to_string())?;
         installed_paths.push(skill_file);
     }

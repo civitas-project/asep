@@ -8,7 +8,7 @@
 use regex::Regex;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -152,12 +152,22 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         &[SANDBOX_EXE, "check", "--rigor", "T1"],
         "structural (check --rigor T1)",
     )?;
-    // Gate (c): ScopedTests from `asep affected <changed_paths> --json`.
-    let plan = build_test_plan(&base, &policy.changed_paths, root)?;
+    // Gate (c): one `asep affected` call feeds both the test plan and the
+    // per-requirement test mapping. Never derive proof from an aggregate count.
+    let affected = affected_value(&base, &policy.changed_paths)?;
+    let plan = plan_from_value(&affected, root)?;
+    let in_scope = in_scope_requirement_ids(&affected)?;
+    let requirement_tests = requirement_test_map(&affected);
+    let test_aliases = test_alias_map(&affected);
     let mut total_executed: usize = 0;
+    let mut observed_passed: BTreeSet<String> = BTreeSet::new();
+    let mut observed_failed: BTreeSet<String> = BTreeSet::new();
     for cmd in &plan.commands {
         let stdout = run_bwrap_capture(&base, &["sh", "-c", cmd], &format!("scoped test: {cmd}"))?;
         total_executed += executed_test_count(&stdout);
+        let (passed, failed) = executed_test_names(&stdout);
+        observed_passed.extend(passed);
+        observed_failed.extend(failed);
     }
     if total_executed == 0 {
         return Err("scoped acceptance executed zero tests".to_string());
@@ -172,7 +182,6 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     // Evidence: one semantic file per `@req:*:MUST` in docs/PRD.md.
     let evidence_dir = resolve_evidence_dir(root, &policy.evidence_dir)?;
     let req_ids = must_req_ids(root)?;
-    let in_scope = in_scope_requirement_ids(&base, &policy.changed_paths)?;
     let semantic_dir = evidence_dir.join("semantic");
     fs::create_dir_all(&semantic_dir).map_err(|e| {
         format!(
@@ -182,17 +191,69 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     })?;
     let changed_list = policy.changed_paths.join(", ");
     for req_id in &req_ids {
-        let proven = in_scope.contains(req_id) && total_executed > 0;
+        let associated = requirement_tests.get(req_id).cloned().unwrap_or_default();
+        let matched_passed: BTreeSet<String> = associated
+            .iter()
+            .filter(|id| {
+                let aliases = test_aliases.get(*id).cloned().unwrap_or_else(|| {
+                    let mut set = BTreeSet::new();
+                    set.insert((*id).clone());
+                    set
+                });
+                aliases
+                    .iter()
+                    .any(|alias| observed_passed.iter().any(|name| test_name_matches(name, alias)))
+            })
+            .cloned()
+            .collect();
+        let matched_failed: BTreeSet<String> = associated
+            .iter()
+            .filter(|id| {
+                let aliases = test_aliases.get(*id).cloned().unwrap_or_else(|| {
+                    let mut set = BTreeSet::new();
+                    set.insert((*id).clone());
+                    set
+                });
+                aliases
+                    .iter()
+                    .any(|alias| observed_failed.iter().any(|name| test_name_matches(name, alias)))
+            })
+            .cloned()
+            .collect();
+        let proven = in_scope.contains(req_id)
+            && !associated.is_empty()
+            && matched_failed.is_empty()
+            && matched_passed.len() == associated.len();
         let verdict = match proven {
             true => "ACCEPTED",
             false => "UNPROVEN",
         };
-        let scope = match proven {
-            true => "in_scope",
-            false => "out_of_scope",
+        let scope = if in_scope.contains(req_id) {
+            "in_scope"
+        } else {
+            "out_of_scope"
+        };
+        let selected_for_req = associated.iter().cloned().collect::<Vec<_>>().join(", ");
+        let passed_for_req = matched_passed.iter().cloned().collect::<Vec<_>>().join(", ");
+        let passed_names: Vec<String> = matched_passed
+            .iter()
+            .flat_map(|id| {
+                test_aliases.get(id).cloned().unwrap_or_else(|| {
+                    let mut set = BTreeSet::new();
+                    set.insert(id.clone());
+                    set
+                })
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        let passed_for_req = if passed_names.is_empty() {
+            passed_for_req
+        } else {
+            passed_names.join(", ")
         };
         let content = format!(
-            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_selected: {}\ntests_executed: {total_executed}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
+            "schema_version: 1\nrevision: {}\ntree_digest: {}\nchanged_paths_digest: {}\npolicy_digest: {}\ntoolchain: {}\nreviewer: scoped-trusted-runner\nscope: {scope}\ntests_selected: {}\ntests_executed: {total_executed}\ntests_selected_for_requirement: {selected_for_req}\ntests_passed_for_requirement: {passed_for_req}\nverdict: {verdict}\nrationale: commit {commit}, scoped gates passed, changed paths {changed_list}\n",
             plan.selected,
             identity.revision,
             identity.tree_digest,
@@ -353,40 +414,131 @@ fn run_bwrap_capture(base: &[String], cmd: &[&str], label: &str) -> Result<Strin
 }
 
 // @impl:FR-AUD-03
-// Run `asep affected <paths> --json` inside the sandbox and collect the
-/// requirement ids. Fail closed on spawn or JSON parse failure.
-fn in_scope_requirement_ids(
-    base: &[String],
-    changed_paths: &[String],
-) -> Result<HashSet<String>, String> {
+/// Run `asep affected <paths> --json` once inside the sandbox and parse the
+/// first JSON value. Fail closed on spawn, exit status, JSON parse or empty output.
+fn affected_value(base: &[String], changed_paths: &[String]) -> Result<serde_json::Value, String> {
     let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
     cmd.extend(changed_paths.iter().map(|s| s.as_str()));
     cmd.push("--json");
     let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
     let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
-    let value = match values.next() {
-        Some(Ok(v)) => v,
-        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
-        None => return Err("asep affected output is empty".to_string()),
-    };
-    let requirements = match value.get("requirements").and_then(|v| v.as_array()) {
-        Some(array) => array,
-        None => return Err("asep affected output missing requirements array".to_string()),
-    };
-    let mut ids: HashSet<String> = HashSet::new();
+    match values.next() {
+        Some(Ok(value)) => Ok(value),
+        Some(Err(e)) => Err(format!("asep affected output is not JSON: {e}")),
+        None => Err("asep affected output is empty".to_string()),
+    }
+}
+
+/// Requirement ids actually reported in scope by the single affected call.
+fn in_scope_requirement_ids(value: &serde_json::Value) -> Result<HashSet<String>, String> {
+    let requirements = value
+        .get("requirements")
+        .and_then(|v| v.as_array())
+        .ok_or("asep affected output missing requirements array")?;
+    let mut ids = HashSet::new();
     for req in requirements {
-        let id = match req.get("id").and_then(|v| v.as_str()) {
-            Some(id) => id.to_string(),
-            None => return Err("requirement entry missing id string".to_string()),
-        };
-        ids.insert(id);
+        let id = req
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or("requirement entry missing id string")?;
+        ids.insert(id.to_string());
     }
     Ok(ids)
+}
+
+/// Map each requirement to the test identifiers whose typed provenance chain
+/// reaches it. A test with no typed link is never associated, so an aggregate
+/// pass can no longer prove an unrelated requirement.
+fn requirement_test_map(value: &serde_json::Value) -> HashMap<String, BTreeSet<String>> {
+    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
+    let Some(provenance) = value.get("provenance").and_then(|v| v.as_object()) else {
+        return result;
+    };
+    for (key, hops) in provenance {
+        let Some(test_id) = key.strip_prefix("Test:") else {
+            continue;
+        };
+        let Some(hops) = hops.as_array() else {
+            continue;
+        };
+        for hop in hops {
+            let Some(node) = hop.get("node").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(req_id) = node.strip_prefix("Req:") else {
+                continue;
+            };
+            result
+                .entry(req_id.to_string())
+                .or_default()
+                .insert(test_id.to_string());
+        }
+    }
+    result
+}
+
+/// Aliases (node id and extracted function name) for each reported test id.
+fn test_alias_map(value: &serde_json::Value) -> HashMap<String, BTreeSet<String>> {
+    let mut result: HashMap<String, BTreeSet<String>> = HashMap::new();
+    let Some(tests) = value.get("tests").and_then(|v| v.as_array()) else {
+        return result;
+    };
+    for test in tests {
+        let Some(id) = test.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let aliases = result.entry(id.to_string()).or_default();
+        aliases.insert(id.to_string());
+        if let Some(function) = test.get("function").and_then(|v| v.as_str()) {
+            aliases.insert(function.to_string());
+        }
+    }
+    result
+}
+
+/// Names reported by `cargo test` as passed and failed, e.g.
+/// `test tests::verifies_a ... ok`.
+fn executed_test_names(output: &str) -> (BTreeSet<String>, BTreeSet<String>) {
+    let mut passed = BTreeSet::new();
+    let mut failed = BTreeSet::new();
+    for line in output.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("test ") else {
+            continue;
+        };
+        if let Some(name) = rest.strip_suffix(" ... ok") {
+            passed.insert(name.trim().to_string());
+        } else if let Some(name) = rest.strip_suffix(" ... FAILED") {
+            failed.insert(name.trim().to_string());
+        }
+    }
+    (passed, failed)
+}
+
+/// Compare a cargo test name with a traceability test identifier, tolerating
+/// module-qualified names (`tests::foo`) and bare function names.
+fn test_name_matches(observed: &str, ident: &str) -> bool {
+    observed == ident
+        || observed.rsplit("::").next() == Some(ident)
+        || ident.rsplit("::").next() == Some(observed)
 }
 
 /// Sum the `N` in lines matching `test result: ok. N passed`; ignore lines
 /// with 0.
 fn executed_test_count(output: &str) -> usize {
+    // Individual `test <name> ... ok|FAILED` lines are the most precise signal;
+    // a failed test is still an executed test. Fall back to the Cargo summary.
+    let individual = output
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            line.starts_with("test ")
+                && (line.contains(" ... ok") || line.contains(" ... FAILED"))
+        })
+        .count();
+    if individual > 0 {
+        return individual;
+    }
     let mut total: usize = 0;
     for line in output.lines() {
         let line = line.trim();
@@ -426,16 +578,12 @@ pub fn build_test_plan(
     changed_paths: &[String],
     root: &Path,
 ) -> Result<TestPlan, String> {
-    let mut cmd: Vec<&str> = vec![SANDBOX_EXE, "affected"];
-    cmd.extend(changed_paths.iter().map(|s| s.as_str()));
-    cmd.push("--json");
-    let stdout = run_bwrap_capture(base, &cmd, "asep affected --json")?;
-    let mut values = serde_json::Deserializer::from_str(&stdout).into_iter::<serde_json::Value>();
-    let value = match values.next() {
-        Some(Ok(v)) => v,
-        Some(Err(e)) => return Err(format!("asep affected output is not JSON: {e}")),
-        None => return Err("asep affected output is empty".to_string()),
-    };
+    plan_from_value(&affected_value(base, changed_paths)?, root)
+}
+
+/// Build the scoped test plan from an already-parsed affected report so the
+/// `asep affected` call is not repeated within one request.
+fn plan_from_value(value: &serde_json::Value, root: &Path) -> Result<TestPlan, String> {
     let commands = match value.get("commands").and_then(|v| v.as_array()) {
         Some(array) => array,
         None => return Err("asep affected output missing commands array".to_string()),

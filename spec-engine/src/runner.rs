@@ -2104,6 +2104,7 @@ pub fn run() -> ExitCode {
             target,
             dry_run,
             measure,
+            allow_full,
         }) => {
             let root = root
                 .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
@@ -2173,7 +2174,13 @@ pub fn run() -> ExitCode {
                 None => default_threshold(),
             };
 
-            match crate::clean::execute(&root, &target_dir, threshold, dry_run) {
+            match crate::clean::execute(
+                &root,
+                &target_dir,
+                threshold,
+                dry_run,
+                allow_full,
+            ) {
                 Ok(report) => {
                     #[allow(clippy::match_bool)]
                     // Policy AS-CODE-ELSE forbids `else`; match the bool explicitly instead.

@@ -132,7 +132,8 @@ fn test_cli_init_and_adr_commands() {
     let mut cmd_init = Command::cargo_bin("spec-engine").expect("binary exists");
     cmd_init.arg("init").arg(root);
     cmd_init.assert().success().code(0);
-    assert!(root.join("docs/PRD.md").exists());
+    assert!(root.join("protocol/CORE.md").exists());
+    assert!(!root.join("docs/PRD.md").exists(), "init must not fabricate a MUST stub");
 
     // 2. Run asep adr new
     let mut cmd_adr = Command::cargo_bin("spec-engine").expect("binary exists");

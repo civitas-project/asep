@@ -49,6 +49,22 @@ fn impacted_files(impacted: &AffectedReport) -> Vec<PathBuf> {
     files
 }
 
+/// Resolves an explicit source path against `root` and rejects escapes.
+/// Canonicalization prevents `..` traversal and symlinks to outside the root.
+fn safe_source_path(root: &Path, file: &Path) -> Result<PathBuf, String> {
+    let joined = root.join(file);
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("invalid context root: {e}"))?;
+    let canonical = joined
+        .canonicalize()
+        .map_err(|e| format!("unreadable source path {}: {e}", joined.display()))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err(format!("source path escapes context root: {}", file.display()));
+    }
+    Ok(joined)
+}
+
 /// Conservative estimate for source text that has no tokenizer result.
 ///
 /// This is a bounded heuristic (one token per four bytes, rounded up), not a
@@ -71,7 +87,7 @@ fn excerpt_for_file(
     root: &Path,
     file: &Path,
 ) -> Result<(u64, String), String> {
-    let full = root.join(file);
+    let full = safe_source_path(root, file)?;
     let mut output: Vec<u8> = Vec::new();
     if formatter
         .format_files(vec![full.clone()], &mut output)
@@ -116,14 +132,15 @@ fn excerpt_for_file(
     Ok((tokens_est, content))
 }
 
-pub fn compile_context(
+/// Compiles a bounded context bundle from an explicit file list. No impact
+/// analysis is performed: callers who need impact pass it to `compile_context`.
+pub fn compile_context_files(
     root: &Path,
-    paths: &[PathBuf],
+    files: &[PathBuf],
+    objective: String,
     budget: ResourceBudget,
+    commands: Vec<String>,
 ) -> Result<ContextBundle, String> {
-    let impacted = affected(root, paths)?;
-    let files = impacted_files(&impacted);
-
     let config = Config {
         root: root.to_path_buf(),
         mode: OutputMode::Signatures,
@@ -142,7 +159,7 @@ pub fn compile_context(
     };
     let mut excerpts: Vec<ContextExcerpt> = Vec::new();
     let mut truncation = String::new();
-    for file in &files {
+    for file in files {
         if !truncation.is_empty() {
             break;
         }
@@ -158,20 +175,50 @@ pub fn compile_context(
         }
     }
 
-    let mut changed_paths: Vec<PathBuf> = paths.to_vec();
-    changed_paths.sort();
-    changed_paths.dedup();
-    let objective = format!("Context for {} changed paths", changed_paths.len());
-
-    let commands = impacted.commands.clone();
     Ok(ContextBundle {
-        changed_paths,
+        changed_paths: Vec::new(),
         objective,
-        impacted,
+        impacted: AffectedReport {
+            impls: Vec::new(),
+            requirements: Vec::new(),
+            tests: Vec::new(),
+            adrs: Vec::new(),
+            unmapped: Vec::new(),
+            provenance: Default::default(),
+            commands: Vec::new(),
+            invalid_references: Vec::new(),
+        },
         excerpts,
         truncation,
         commands,
     })
+}
+
+/// Compiles context for changed paths. Impact analysis is invoked only by
+/// this entry point; callers with explicit files should use
+/// `compile_context_files`.
+pub fn compile_context(
+    root: &Path,
+    paths: &[PathBuf],
+    budget: ResourceBudget,
+) -> Result<ContextBundle, String> {
+    let impacted = affected(root, paths)?;
+    let files = impacted_files(&impacted);
+    let mut changed_paths = paths.to_vec();
+    changed_paths.sort();
+    changed_paths.dedup();
+    let objective = format!("Context for {} changed paths", changed_paths.len());
+    let commands = impacted.commands.clone();
+    let mut bundle = compile_context_files(
+        root,
+        &files,
+        objective,
+        budget,
+        commands,
+    )?;
+    bundle.changed_paths = changed_paths;
+    bundle.impacted = impacted;
+    Ok(bundle)
 }
 
 #[cfg(test)]

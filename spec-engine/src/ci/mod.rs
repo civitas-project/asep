@@ -55,16 +55,25 @@ fn ci_strict() -> bool {
         .unwrap_or(false)
 }
 
+/// Default CI never includes the benchmark gate. An explicit `--gate 4` is
+/// still routed to an honest unproven result, not to Cargo.
+fn ci_target_gates(opts: &CiOptions) -> Vec<u8> {
+    match opts.gate {
+        Some(g) => vec![g],
+        None => vec![0, 1, 2, 3],
+    }
+}
+
 pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
     let start = Instant::now();
     let mut gates = Vec::new();
     let mut overall_success = true;
     let mut unproven = false;
 
-    let target_gates: Vec<u8> = match opts.gate {
-        Some(g) => vec![g],
-        None => vec![0, 1, 2, 3, 4],
-    };
+    // Benchmarks are explicitly deferred. Gate 4 is never a default side
+    // effect and is unavailable in this milestone, even when explicitly
+    // requested, so no benchmark (including `--no-run`) can run silently.
+    let target_gates = ci_target_gates(opts);
 
     for &g in &target_gates {
         if opts.skip.contains(&g) {
@@ -85,7 +94,17 @@ pub fn run_ci_pipeline(dir: &Path, opts: &CiOptions) -> CiReport {
             1 => run_gate_1(dir, &opts.rigor),
             2 => run_gate_2(dir),
             3 => run_gate_3(dir),
-            4 => run_gate_4(dir),
+            4 => GateResult {
+                gate_number: 4,
+                name: gate_name(4).to_string(),
+                passed: false,
+                skipped: true,
+                duration_ms: 0,
+                details: vec![
+                    "Benchmark execution is deferred for this milestone".to_string(),
+                    "No benchmark or noise-floor evidence can be produced or claimed".to_string(),
+                ],
+            },
             _ => GateResult {
                 gate_number: g,
                 name: "Unknown Gate".to_string(),
@@ -187,7 +206,20 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
 
             // Anti-slop audit: Error violations block outside T0; Warning
             // violations block only under --strict (ci_strict).
-            let anti_slop_violations = audit_project_anti_slop(dir).unwrap_or_default();
+            let anti_slop_violations = match audit_project_anti_slop(dir) {
+                Ok(violations) => violations,
+                Err(e) => {
+                    details.push(format!("[UNPROVEN] anti-slop audit unavailable: {e}"));
+                    return GateResult {
+                        gate_number: 1,
+                        name: gate_name(1).to_string(),
+                        passed: false,
+                        skipped: false,
+                        duration_ms: 0,
+                        details,
+                    };
+                }
+            };
             let anti_errors: Vec<_> = anti_slop_violations
                 .iter()
                 .filter(|v| v.severity == Severity::Error)
@@ -369,50 +401,17 @@ fn run_gate_3(dir: &Path) -> GateResult {
     }
 }
 
-fn run_gate_4(dir: &Path) -> GateResult {
-    let bench_dir = dir.join("benches");
-    if !bench_dir.exists() {
-        return GateResult {
-            gate_number: 4,
-            name: gate_name(4).to_string(),
-            passed: true,
-            skipped: true,
-            duration_ms: 0,
-            details: vec!["No benches directory found; benchmark gate skipped".to_string()],
-        };
-    }
-
-    let out = Command::new("cargo")
-        .arg("bench")
-        .arg("--no-run")
-        .current_dir(dir)
-        .output();
-
-    match out {
-        Ok(res) => {
-            let passed = res.status.success();
-            GateResult {
-                gate_number: 4,
-                name: gate_name(4).to_string(),
-                passed,
-                skipped: false,
-                duration_ms: 0,
-                details: vec![match passed {
-                    true => {
-                        "Benchmark harness compiled and verified against noise floor".to_string()
-                    }
-                    false => String::from_utf8_lossy(&res.stderr).trim().to_string(),
-                }],
-            }
-        }
-        Err(e) => GateResult {
-            gate_number: 4,
-            name: gate_name(4).to_string(),
-            passed: false,
-            skipped: false,
-            duration_ms: 0,
-            details: vec![e.to_string()],
-        },
+/// Benchmark gate is intentionally inert. Kept only so callers that still
+/// reference the symbol get an honest unproven result; it never starts Cargo.
+#[allow(dead_code)]
+fn benchmark_gate_unavailable() -> GateResult {
+    GateResult {
+        gate_number: 4,
+        name: gate_name(4).to_string(),
+        passed: false,
+        skipped: true,
+        duration_ms: 0,
+        details: vec!["Benchmark execution is deferred for this milestone".to_string()],
     }
 }
 
@@ -483,5 +482,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
         assert!(res.passed, "empty gate 0 must pass: {:?}", res.details);
         assert!(res.skipped, "empty gate 0 must be skipped");
+    }
+
+    #[test]
+    // @test:R05
+    fn benchmark_gate_is_not_a_default_side_effect() {
+        let opts = CiOptions {
+            gate: None,
+            skip: Vec::new(),
+            rigor: "T1".to_string(),
+        };
+        assert!(!ci_target_gates(&opts).contains(&4));
+    }
+
+    #[test]
+    // @test:R05
+    fn explicit_benchmark_gate_returns_unproven_without_running_cargo() {
+        let dir = tempfile::tempdir().unwrap();
+        let opts = CiOptions {
+            gate: Some(4),
+            skip: Vec::new(),
+            rigor: "T1".to_string(),
+        };
+        let report = run_ci_pipeline(dir.path(), &opts);
+        let gate = &report.gates[0];
+        assert!(gate.skipped && !gate.passed);
+        assert!(gate.details.iter().any(|d| d.contains("deferred")));
     }
 }

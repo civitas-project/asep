@@ -2,6 +2,7 @@
 name: using-asep
 description: Use when a legacy project still references the ASEP bootstrap skill and the current activation rules must be located.
 ---
+<!-- asep-managed-skill -->
 
 # using-asep (compatibility reference)
 

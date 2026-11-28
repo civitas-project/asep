@@ -273,24 +273,17 @@ fn test_scaffold_opencode_agents_merges_without_clobbering_existing_agents() {
         "custom leader permission rule must remain"
     );
     assert!(
-        leader_perms.iter().any(|r| {
-            r["action"].as_str() == Some("asep_agent_send")
-                && r["resource"].as_str() == Some("*")
-                && r["effect"].as_str() == Some("allow")
-        }),
-        "missing default leader permission rule must be merged"
+        !leader_perms.iter().any(|r| r["action"].as_str() == Some("asep_agent_send")),
+        "user-authored agent must not gain new tool permissions on upgrade"
     );
     assert_eq!(
         parsed["agents"]["leader"]["description"],
-        "Orchestrator for the bounded executor-judge workflow."
+        "Custom leader agent"
     );
-    assert_eq!(parsed["agents"]["leader"]["mode"], "primary");
-    assert_eq!(parsed["agents"]["leader"]["steps"], 60);
+    assert_eq!(parsed["agents"]["leader"]["mode"], "subagent");
+    assert_eq!(parsed["agents"]["leader"]["steps"], 5);
     let leader_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
-    assert!(
-        leader_system.contains("docs/PRD.md"),
-        "leader system must reference PRD"
-    );
+    assert_eq!(leader_system, "You are a custom leader agent.");
     assert_eq!(
         parsed["agents"]["executor"]["description"],
         "Fast coding executor in a bounded executor-judge pipeline."
@@ -335,24 +328,12 @@ fn test_scaffold_opencode_agents_writes_full_presets() {
         );
     }
 
-    // Lead must know when to delegate mapping to the explorer.
+    // Native-first, conditional activation; no mandatory PRD/TDD or delegation.
     let lead_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
-    assert!(
-        lead_system.contains("`explorer` subagent"),
-        "leader prompt lacks explorer rule"
-    );
-    assert!(
-        lead_system.contains("docs/PRD.md"),
-        "leader prompt lacks PRD reference"
-    );
-    assert!(
-        lead_system.contains("docs/TDD.md"),
-        "leader prompt lacks TDD reference"
-    );
-    assert!(
-        lead_system.contains(".superpowers/"),
-        "leader prompt lacks superpowers prohibition"
-    );
+    assert!(lead_system.contains("native tools"));
+    assert!(!lead_system.contains("docs/PRD.md"));
+    assert!(!lead_system.contains("docs/TDD.md"));
+    assert!(!lead_system.contains("executor-judge"));
 
     // Executor and judge carry their own scope and step rules.
     let exec_system = parsed["agents"]["executor"]["system"].as_str().unwrap();
@@ -624,18 +605,12 @@ fn test_scaffold_opencode_agents_merges_missing_permissions_into_existing_agent(
 
     let executor = &parsed["agents"]["executor"];
 
-    // Protocol content is refreshed from the canonical default preset.
-    assert_eq!(executor["steps"], 30);
-    assert_eq!(
-        executor["description"],
-        "Fast coding executor in a bounded executor-judge pipeline."
-    );
+    // Unmanaged agent content is preserved; no permission widening.
+    assert_eq!(executor["steps"], 99);
+    assert_eq!(executor["description"], "Custom executor agent");
     assert_eq!(executor["mode"], "subagent");
     let system = executor["system"].as_str().unwrap();
-    assert!(
-        system.contains("bounded executor-judge pipeline"),
-        "system must be the canonical default"
-    );
+    assert_eq!(system, "Custom executor system prompt.");
 
     let perms = executor["permissions"]
         .as_array()
@@ -648,10 +623,9 @@ fn test_scaffold_opencode_agents_merges_missing_permissions_into_existing_agent(
         })
     };
 
-    // Missing default permission rules were merged in (last-match-wins: appended after existing rules).
-    assert!(has("asep_agent_send", "kind=TASK_REPORT", "allow"));
-    assert!(has("asep_agent_recv", "*", "allow"));
+    // User-authored permissions are preserved verbatim; no widening.
     assert!(has("read", "*", "allow"), "existing rule kept");
+    assert!(!has("asep_agent_recv", "*", "allow"));
 
     // No duplicate rules (identical action+resource+effect).
     let mut seen: HashSet<(&str, &str, &str)> = HashSet::new();
@@ -699,18 +673,9 @@ fn test_scaffold_updates_existing_agent_system() {
 
     let leader = &parsed["agents"]["leader"];
 
-    // System prompt refreshed to the canonical leader text.
+    // User-authored prompt is preserved, not replaced by managed defaults.
     let system = leader["system"].as_str().unwrap();
-    assert!(system.contains("docs/PRD.md"), "system must reference PRD");
-    assert!(system.contains("docs/TDD.md"), "system must reference TDD");
-    assert!(
-        system.contains(".superpowers/"),
-        "system must prohibit superpowers"
-    );
-    assert!(
-        system.contains("After PRD/TDD approval"),
-        "system must contain the approval gate"
-    );
+    assert_eq!(system, "You are an outdated leader agent.");
 
     // Custom permission rule preserved.
     let perms = leader["permissions"]
@@ -725,31 +690,19 @@ fn test_scaffold_updates_existing_agent_system() {
         "custom permission rule must remain"
     );
 
-    // Missing default permission rules merged in.
-    assert!(
-        perms.iter().any(|r| {
-            r["action"].as_str() == Some("asep_agent_send")
-                && r["resource"].as_str() == Some("*")
-                && r["effect"].as_str() == Some("allow")
-        }),
-        "missing default permission rule must be merged"
-    );
 
-    // Protocol fields refreshed from the canonical default preset.
-    assert_eq!(
-        leader["description"],
-        "Orchestrator for the bounded executor-judge workflow."
-    );
-    assert_eq!(leader["mode"], "primary");
-    assert_eq!(leader["steps"], 60);
+    // Unmanaged agent protocol fields are preserved.
+    assert_eq!(leader["description"], "Stale leader agent");
+    assert_eq!(leader["mode"], "subagent");
+    assert_eq!(leader["steps"], 5);
 
     // Top-level keys preserved.
     assert_eq!(parsed["model"], "9router/ag/claude-sonnet-4-6");
 }
 
-// @test:ARCH-06
+// @test:R06
 #[test]
-fn test_leader_system_defaults_to_targeted_verification() {
+fn test_leader_system_uses_conditional_activation() {
     let tmp = tempdir().unwrap();
     let config_file = tmp.path().join("opencode.json");
 
@@ -757,18 +710,14 @@ fn test_leader_system_defaults_to_targeted_verification() {
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
-
     let leader_system = parsed["agents"]["leader"]["system"].as_str().unwrap();
     let normalized = leader_system.to_ascii_lowercase().replace('`', "");
 
-    assert!(
-        normalized.contains("asep affected"),
-        "leader system must direct verification to `asep affected`"
-    );
-    assert!(
-        normalized.contains("full suite is reserved for merges to main"),
-        "leader system must reserve the full suite for merges to main"
-    );
+    assert!(normalized.contains("native tools"));
+    assert!(normalized.contains("optional"));
+    assert!(!normalized.contains("asep affected <changed-paths>"));
+    assert!(!normalized.contains("prd/tdd approval"));
+    assert!(!normalized.contains("full suite is reserved for merges to main"));
 }
 
 // @test:ARCH-06
@@ -788,4 +737,72 @@ fn test_scaffold_opencode_agents_includes_worker_presets() {
         assert_eq!(agent["mode"], "subagent", "{name} mode must be subagent");
         assert_eq!(agent["steps"], 20, "{name} steps must be 20");
     }
+}
+
+#[test]
+// @test:R06
+fn test_generated_presets_are_direct_execution_first() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("opencode.json");
+    scaffold_opencode_agents(&path, &CapabilityProfile::default()).unwrap();
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let leader = &config["agents"]["leader"];
+    let system = leader["system"].as_str().unwrap();
+    assert_eq!(leader["asep_managed"].as_str(), Some("asep-managed-v2"));
+    assert!(system.contains("native tools"));
+    assert!(!system.contains("PRD/TDD approval"));
+    assert!(!system.contains("asep affected <changed-paths>"));
+    assert!(!system.contains("executor-judge"));
+    let explorer = config["agents"]["explorer"]["system"].as_str().unwrap();
+    assert!(!explorer.contains("first step"));
+}
+
+#[test]
+// @test:R06
+fn test_user_authored_preset_is_preserved_and_not_widened() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("opencode.json");
+    fs::write(
+        &path,
+        r#"{"agents":{"leader":{"description":"My agent","mode":"primary","steps":7,"system":"MY CUSTOM PROMPT","permissions":[{"action":"read","effect":"allow","resource":"*"}]}}}"#,
+    )
+    .unwrap();
+    scaffold_opencode_agents(&path, &CapabilityProfile::default()).unwrap();
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let leader = &config["agents"]["leader"];
+    assert_eq!(leader["system"].as_str(), Some("MY CUSTOM PROMPT"));
+    assert_eq!(leader["description"].as_str(), Some("My agent"));
+    assert_eq!(leader["steps"].as_u64(), Some(7));
+    assert!(leader["permissions"].as_array().unwrap().len() == 1);
+}
+
+#[test]
+// @test:R06
+fn test_managed_preset_updates_protocol_but_restrictive_profile_widens_nothing() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("opencode.json");
+    let permissive = CapabilityProfile::default();
+    scaffold_opencode_agents(&path, &permissive).unwrap();
+    let before: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+
+    let restrictive = CapabilityProfile::restrictive();
+    scaffold_opencode_agents(&path, &restrictive).unwrap();
+    let after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let permits = |v: &serde_json::Value, action: &str| {
+        v["agents"]["leader"]["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|rule| {
+                rule["action"].as_str() == Some(action)
+                    && rule["effect"].as_str() == Some("allow")
+            })
+    };
+    assert!(permits(&before, "edit"));
+    assert!(!permits(&after, "edit"), "restrictive upgrade must not keep write access");
+    assert!(after["agents"]["leader"]["asep_managed"].is_string());
 }

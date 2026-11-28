@@ -5,6 +5,7 @@ requires: []
 version: 2.2.0
 depends: []
 ---
+<!-- asep-managed-skill -->
 
 # workflow-router (compatibility reference)
 

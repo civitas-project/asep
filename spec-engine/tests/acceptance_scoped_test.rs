@@ -58,6 +58,25 @@ fn scoped_acceptance_writes_accepted_evidence() {
         );
         assert!(content.contains("policy_digest:"), "{id} policy_digest");
         assert!(content.contains("toolchain:"), "{id} toolchain");
+        assert!(
+            content.contains("tests_selected_for_requirement:"),
+            "{id} per-requirement selection"
+        );
+        assert!(
+            content.contains("tests_passed_for_requirement:"),
+            "{id} per-requirement passes"
+        );
+        if id == "REQ-ALPHA" {
+            assert!(
+                content.contains("tests_passed_for_requirement: scoped_alpha_passes"),
+                "REQ-ALPHA must name its actually executed passing test"
+            );
+        } else {
+            assert!(
+                !content.contains("tests_passed_for_requirement: scoped_alpha_passes"),
+                "unmapped requirement must not inherit another test's pass"
+            );
+        }
     }
     assert!(
         !semantic.join("REQ-GAMMA.md").exists(),
@@ -209,8 +228,7 @@ fn run(root: &Path, args: &[&str]) {
 /// parallel and `ASEP_BWRAP` is process-global, so every test must point at
 /// the same path that outlives any single test's temp dirs.
 /// `asep affected --json` shim output: only REQ-ALPHA is in scope.
-const AFFECTED_JSON: &str =
-    "{\"requirements\":[{\"id\":\"REQ-ALPHA\"}],\"impls\":[],\"tests\":[],\"adrs\":[],\"unmapped\":[],\"commands\":[\"cargo test --test scoped_traceability\"],\"provenance\":{}}";
+const AFFECTED_JSON: &str = "{\"requirements\":[{\"id\":\"REQ-ALPHA\"}],\"impls\":[],\"tests\":[{\"id\":\"test-alpha\",\"function\":\"scoped_alpha_passes\",\"file\":\"tests/scoped_traceability.rs\",\"line\":1}],\"adrs\":[],\"unmapped\":[],\"commands\":[\"cargo test --test scoped_traceability\"],\"provenance\":{\"Test:test-alpha\":[{\"node\":\"Test:test-alpha\",\"edge\":null},{\"node\":\"Req:REQ-ALPHA\",\"edge\":\"Satisfies:forward\"}]}}";
 
 fn bwrap_shim() -> PathBuf {
     let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap");
@@ -227,7 +245,7 @@ fn bwrap_shim() -> PathBuf {
     .expect("write affected arm");
     writeln!(
         shim,
-        "  *\"cargo test\"*) echo 'test result: ok. 1 passed; 0 failed' ;;"
+        "  *\"cargo test\"*) echo 'test scoped_alpha_passes ... ok'; echo 'test result: ok. 1 passed; 0 failed' ;;"
     )
     .expect("write cargo test arm");
     writeln!(shim, "esac").expect("write case close");
@@ -244,6 +262,29 @@ fn bwrap_shim() -> PathBuf {
 
 fn bwrap_log() -> PathBuf {
     std::env::temp_dir().join("asep-acceptance-test-bwrap.log")
+}
+
+/// A bwrap shim with a caller-supplied test result, for failure-path evidence tests.
+fn bwrap_shim_with_test_result(name: &str, test_line: &str) -> PathBuf {
+    let shim_path = std::env::temp_dir().join(format!("asep-acceptance-test-bwrap-{name}"));
+    let mut shim = fs::File::create(&shim_path).expect("create custom shim");
+    writeln!(shim, "#!/bin/sh").expect("shebang");
+    writeln!(shim, "case \"$*\" in").expect("case");
+    writeln!(
+        shim,
+        "  *affected*) printf '%s\\n' '{}' 'cargo test --test scoped_traceability' ;;",
+        AFFECTED_JSON
+    )
+    .expect("affected arm");
+    writeln!(shim, "  *\"cargo test\"*) echo '{}' ;;", test_line).expect("test arm");
+    writeln!(shim, "esac").expect("esac");
+    writeln!(shim, "exit 0").expect("exit");
+    drop(shim);
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&shim_path).expect("metadata").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&shim_path, perms).expect("perms");
+    shim_path
 }
 
 /// `git -C <root> rev-parse HEAD`; panics on failure. Trimmed stdout.
@@ -563,4 +604,28 @@ fn head_mismatch_is_rejected() {
         error.contains("HEAD") || error.contains("commit"),
         "error must mention HEAD or commit: {error}"
     );
+}
+
+#[test]
+fn failed_test_does_not_produce_acceptance_evidence() {
+    let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let root = scoped_acceptance_root();
+    let root_path = root.path();
+    let commit = head_of(root_path);
+    let shim = bwrap_shim_with_test_result("failed", "test scoped_alpha_passes ... FAILED");
+    std::env::set_var("ASEP_BWRAP", shim.to_str().unwrap());
+
+    let evidence = run_scoped_acceptance(root_path, &commit).expect("acceptance run succeeds");
+    let alpha = fs::read_to_string(evidence.join("semantic").join("REQ-ALPHA.md"))
+        .expect("read REQ-ALPHA evidence");
+    assert!(
+        alpha.contains("verdict: UNPROVEN"),
+        "a failed test must not produce ACCEPTED evidence: {alpha}"
+    );
+    assert!(
+        !alpha.contains("tests_passed_for_requirement: scoped_alpha_passes"),
+        "failed test must not be recorded as passed"
+    );
+
+    std::env::set_var("ASEP_BWRAP", bwrap_shim().to_str().unwrap());
 }

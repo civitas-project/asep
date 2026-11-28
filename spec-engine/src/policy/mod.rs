@@ -16,6 +16,20 @@ pub enum EdgeKind {
     Constrains,
 }
 
+/// Maps the three documented engineering rigor levels to the canonical tiers.
+/// Lightweight keeps T0/T1 semantics (no mandatory semantic evidence),
+/// Structured requires T2, High Assurance requires T3/T4. Callers should use
+/// `TierId::from_str` for explicit tier overrides; this mapping avoids a
+/// silently weaker requirement when only a level name is supplied.
+pub fn tier_for_rigor_level(level: &str) -> Option<TierId> {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "lightweight" | "light" => Some(TierId::T1),
+        "structured" | "medium" => Some(TierId::T2),
+        "high assurance" | "high_assurance" | "high" => Some(TierId::T4),
+        _ => None,
+    }
+}
+
 /// Rigor tier.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 pub enum TierId {

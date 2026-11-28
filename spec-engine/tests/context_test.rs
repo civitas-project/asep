@@ -1,5 +1,5 @@
 use asep::affected::AffectedReport;
-use asep::context::{compile_context, ContextBundle};
+use asep::context::{compile_context, compile_context_files, ContextBundle};
 use asep::runtime::budget::ResourceBudget;
 use serde_json::to_string as to_json;
 use std::path::{Path, PathBuf};
@@ -130,4 +130,39 @@ fn deterministic_bundle() {
     let second = compile_context(root, paths, ResourceBudget::default()).unwrap();
 
     assert_eq!(to_json(&first).unwrap(), to_json(&second).unwrap());
+}
+
+#[test]
+// @test:R10
+fn explicit_files_compile_without_impact_analysis() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    spec_fixture(root);
+    let bundle = compile_context_files(
+        root,
+        &[PathBuf::from("src/lib.rs")],
+        "explicit objective".to_string(),
+        ResourceBudget::default(),
+        Vec::new(),
+    )
+    .unwrap();
+    assert_eq!(bundle.objective, "explicit objective");
+    assert!(!bundle.excerpts.is_empty());
+    assert!(bundle.impacted.impls.is_empty());
+    assert!(bundle.commands.is_empty());
+}
+
+#[test]
+// @test:R10
+fn context_rejects_paths_outside_root() {
+    let temp = TempDir::new().unwrap();
+    spec_fixture(temp.path());
+    let result = compile_context_files(
+        temp.path(),
+        &[PathBuf::from("../outside.rs")],
+        "escape".to_string(),
+        ResourceBudget::default(),
+        Vec::new(),
+    );
+    assert!(result.is_err(), "path escape must be rejected");
 }

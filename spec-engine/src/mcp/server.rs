@@ -10,6 +10,35 @@ use std::path::Path;
 // @impl:FR-MCP-PROTO-03-B
 // @impl:FR-MCP-PROTO-04
 
+/// Protocol versions this adapter can answer. A client may request one of
+/// these; unsupported versions are reported honestly rather than silently
+/// accepted. A native-client pilot is still required before claiming full
+/// interoperability.
+const SUPPORTED_PROTOCOL_VERSIONS: [&str; 2] = ["2024-11-05", "2025-03-26"];
+const DEFAULT_PROTOCOL_VERSION: &str = "2024-11-05";
+
+fn negotiated_version(req: &JsonRpcRequest) -> String {
+    req.params
+        .get("protocolVersion")
+        .and_then(|v| v.as_str())
+        .filter(|v| SUPPORTED_PROTOCOL_VERSIONS.contains(v))
+        .unwrap_or(DEFAULT_PROTOCOL_VERSION)
+        .to_string()
+}
+
+/// Optional allowlist of exposed tools. Unset means the supported legacy
+/// full surface; an explicit empty value exposes no tools. The same filter is
+/// applied to listing and invocation.
+fn tool_exposed(name: &str) -> bool {
+    let Ok(allowlist) = std::env::var("ASEP_MCP_TOOLS") else {
+        return true;
+    };
+    allowlist
+        .split(',')
+        .map(str::trim)
+        .any(|allowed| allowed == name)
+}
+
 /// Maps an error category to its JSON-RPC error code.
 fn error_code(category: &str) -> i64 {
     match category {
@@ -48,7 +77,8 @@ fn handle_method(
 ) -> Result<serde_json::Value, &'static str> {
     match req.method.as_str() {
         "initialize" => Ok(serde_json::json!({
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": negotiated_version(req),
+            "supportedVersions": SUPPORTED_PROTOCOL_VERSIONS,
             "capabilities": {
                 "tools": {}
             },
@@ -57,7 +87,17 @@ fn handle_method(
                 "version": env!("CARGO_PKG_VERSION")
             }
         })),
-        "tools/list" => Ok(get_tools_list()),
+        "tools/list" => {
+            let mut list = get_tools_list();
+            if let Some(tools) = list.get_mut("tools").and_then(|v| v.as_array_mut()) {
+                tools.retain(|tool| {
+                    tool.get("name")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(tool_exposed)
+                });
+            }
+            Ok(list)
+        }
         "ping" => Ok(serde_json::json!({})),
         "tools/call" => {
             let name = req
@@ -65,6 +105,9 @@ fn handle_method(
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            if !tool_exposed(name) {
+                return Err("invalid_params");
+            }
             let empty_obj = serde_json::json!({});
             let arguments = req.params.get("arguments").unwrap_or(&empty_obj);
 

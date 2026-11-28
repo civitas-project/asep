@@ -1,13 +1,23 @@
 # ASEP: Axiomatic Systems Engineering Protocol
 
-> Spec-Driven Extreme Programming (FXP) engineering protocol featuring a two-phase SDLC, 1:1 closed-loop traceability, multi-language contracts, formal methods (Alloy/TLA+), and high-performance Rust deterministic validation.
+> Protocol-driven, modular engineering framework: optional source intelligence, traceability and validators governed by a concise activation contract. Native tools remain the default.
 
 ---
 
 <!-- @gov:README-SUMMARY -->
 ## Overview
 
-`ASEP` (Axiomatic Systems Engineering Protocol) formalizes an autonomous, sovereign software engineering discipline that removes administrative overhead during exploratory phases while enforcing mathematical rigor during stabilization. The framework implements ISO/IEC/IEEE 29148 requirements grammar, canonical PlantUML visual modeling, idiomatic Design by Contract across five programming languages (Rust, TypeScript, Python, Go, C/C++), zero-dependency repository governance, Diátaxis + Progressive Disclosure manuals (`MANUAL.md`), and a native Rust verification engine (`asep`).
+`ASEP` (Axiomatic Systems Engineering Protocol) supplies engineering constraints, evidence contracts and optional validators. It does not replace the native toolchain or require a fixed SDLC: a general question, a single file read or a local bug needs no ASEP mechanism. Use `asep check`, `asep affected`, `asep context`, audits, formal specs or full CI only when the activation contract in [`protocol/CORE.md`](protocol/CORE.md) applies or you request them explicitly.
+
+### Reading order and architecture map
+
+1. `README.md` — what ASEP is and when to use it.
+2. `protocol/CORE.md` — canonical activation contract and mandatory constraints.
+3. `ARCHITECTURE.md` — components, ownership and boundaries.
+4. Relevant subsystem: `spec-engine/` (CLI, MCP, validators), `srcidx/`, `srcdump/`, `srcwalk/`, or `skills/<domain>/SKILL.md`.
+5. `docs/TDD.md` — closure ledger and the distinction between verified findings, conditional risks and deferred work.
+
+Domain skills are loaded only when their scope matches the task. Historical notes in `docs/` and root audit documents are evidence, not normative instructions.
 
 ---
 

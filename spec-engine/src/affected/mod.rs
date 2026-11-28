@@ -226,28 +226,6 @@ pub fn affected(root: &Path, changed: &[PathBuf]) -> Result<AffectedReport, Stri
     // graph.edges in the BFS below.
     let index = TypedIndex::from_graph(&graph);
 
-    // BFS over IDs, cycle-safe.
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: std::collections::VecDeque<(String, Vec<ProvenanceHop>)> =
-        std::collections::VecDeque::new();
-    // Collect reached node kinds per id.
-    let mut reached_ids: HashSet<String> = HashSet::new();
-
-    for node in &start_nodes {
-        let tid = typed(node.kind, &node.id);
-        if visited.insert(tid.clone()) {
-            let chain = vec![ProvenanceHop {
-                node: tid.clone(),
-                edge: None,
-            }];
-            queue.push_back((node.id.clone(), chain.clone()));
-            // store provenance under typed key
-            // (handled below when popping)
-            reached_ids.insert(node.id.clone());
-            // We'll record provenance when we pop; but need typed key. Store in a side map id->typed?
-        }
-    }
-
     // We need provenance keyed by typed id. Re-run with typed keys in queue.
     // Rework: queue holds (typed_id, node_id, kind, is_start, chain)
     let mut queue2: std::collections::VecDeque<(

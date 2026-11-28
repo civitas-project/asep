@@ -7,7 +7,7 @@ use crate::adr::create_new_adr;
 use crate::affected::affected;
 use crate::agent_protocol::{Kind, MessageStore, Role};
 use crate::auditor::audit_project_docstrings;
-use crate::config::settings::load_config;
+use crate::config::settings::{load_config, load_config_checked};
 use crate::context::compile_context;
 use crate::diagram::render_plantuml_diagrams;
 use crate::graph::builder::build_trace_graph;
@@ -861,12 +861,14 @@ pub fn execute_tool(
                 media.as_deref().filter(|m| !m.is_empty()),
             ) {
                 (None, None) => None,
-                (caps, med) => {
-                    let profile = load_config(default_dir).capabilities;
-                    let names: Vec<&str> = caps
-                        .map(|vec| vec.iter().map(String::as_str).collect())
-                        .unwrap_or_default();
-                    profile.covers(&names, med).err()
+                (caps, med) => match load_config_checked(default_dir) {
+                    Ok(config) => {
+                        let names: Vec<&str> = caps
+                            .map(|vec| vec.iter().map(String::as_str).collect())
+                            .unwrap_or_default();
+                        config.capabilities.covers(&names, med).err()
+                    }
+                    Err(e) => Some(format!("BLOCKED: invalid capability configuration: {e}")),
                 }
             };
             match guard_reason {

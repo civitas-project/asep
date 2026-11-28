@@ -32,6 +32,8 @@ Level is a **scope classification**, not model size, seniority, or permission. A
 
 ## 2. Engineering Rigor — depth of process
 
+Canonical mapping: Lightweight -> `Tier T1`, Structured -> `Tier T2`, High Assurance -> `Tier T4`. Explicit `Tier T0`..`T4` values remain valid and override this mapping. The mapping never weakens a requirement: a level name resolves to the tier that preserves its evidence obligations.
+
 Rigor is **independent of level**. A single-line change in auth can be High Assurance.
 
 | Mechanism | Lightweight (default) | Structured | High Assurance |

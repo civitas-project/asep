@@ -9,32 +9,13 @@ const ASEP_START: &str = "<!-- asep:start -->";
 const ASEP_END: &str = "<!-- asep:end -->";
 
 // @impl:FR-CLI-INIT-01 @impl:FR-CLI-03 @impl:FR-INIT-01
-/// Initializes standard documentation directories and baseline PRD specification.
+/// Minimal, idempotent, non-destructive adoption.
+///
+/// Creates only the native instruction entry points, the canonical Core
+/// Protocol and the five ambient domain skills. Documentation artifacts are
+/// on demand: init never fabricates a MUST requirement or empty doc tree.
 pub fn init_asep_project(root: &Path) -> Result<(), AsepError> {
-    let docs_dir = root.join("docs");
-    let adr_dir = docs_dir.join("adr");
-    let diagrams_dir = docs_dir.join("diagrams");
-    let rendered_dir = diagrams_dir.join("rendered");
-    let invariants_dir = docs_dir.join("invariants");
-    let prd_path = docs_dir.join("PRD.md");
-
-    fs::create_dir_all(&adr_dir)?;
-    fs::create_dir_all(&rendered_dir)?;
-    fs::create_dir_all(&invariants_dir)?;
-
-    if !prd_path.exists() {
-        let starter_prd = r#"# Product Requirements Document (PRD)
-
-<!-- @req:FR-INIT-01:MUST Baseline project specification -->
-## 1. Overview
-Project initialized under ASEP SDLC framework.
-"#;
-        fs::write(&prd_path, starter_prd)?;
-    }
-
-    write_ambient_skill_files(root)?;
-
-    Ok(())
+    write_ambient_skill_files(root)
 }
 
 /// Writes the canonical core protocol, then idempotent ambient blocks into
@@ -47,9 +28,8 @@ fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
     if let Some(parent) = protocol_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if !protocol_path.exists() {
-        fs::write(&protocol_path, get_core_protocol())?;
-    }
+    // The protocol is a managed generated artifact, not user-authored content.
+    fs::write(&protocol_path, get_core_protocol())?;
 
     let ambient: Vec<_> = get_embedded_skills()
         .iter()
@@ -73,8 +53,22 @@ fn write_ambient_skill_files(root: &Path) -> Result<(), AsepError> {
         if let Some(parent) = skill_md.parent() {
             fs::create_dir_all(parent)?;
         }
-        if !skill_md.exists() {
-            fs::write(&skill_md, skill.content)?;
+        let managed = skill
+            .content
+            .contains("<!-- asep-managed-skill -->");
+        match fs::read_to_string(&skill_md) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => fs::write(&skill_md, skill.content)?,
+            Err(e) => return Err(AsepError::Io(e)),
+            Ok(existing) if existing.contains("<!-- asep-managed-skill -->") && managed => {
+                // Refresh only ASEP-managed copies; never overwrite custom text.
+                fs::write(&skill_md, skill.content)?;
+            }
+            Ok(_) => {
+                eprintln!(
+                    "asep: preserved customized skill {}; managed update skipped",
+                    skill.id
+                );
+            }
         }
     }
 

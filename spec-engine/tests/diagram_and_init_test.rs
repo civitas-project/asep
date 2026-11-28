@@ -10,17 +10,14 @@ fn test_init_and_diagram_render_flow() {
     let dir = tempdir().expect("tempdir created");
     let root = dir.path();
 
-    // 1. Test init_asep_project
+    // 1. Init is minimal: no unsolicited documentation trees or MUST stubs.
     init_asep_project(root).expect("init succeeds");
-    assert!(root.join("docs").exists());
-    assert!(root.join("docs/adr").exists());
-    assert!(root.join("docs/diagrams").exists());
-    assert!(root.join("docs/diagrams/rendered").exists());
-    assert!(root.join("docs/invariants").exists());
-    assert!(root.join("docs/PRD.md").exists());
+    assert!(!root.join("docs/PRD.md").exists());
+    assert!(!root.join("docs/adr").exists());
 
-    // 2. Create sample plantuml file in docs/diagrams/
+    // 2. Create the diagram source on demand and render it.
     let puml_path = root.join("docs/diagrams/test_sequence.puml");
+    fs::create_dir_all(puml_path.parent().unwrap()).expect("create diagram dir");
     fs::write(
         &puml_path,
         "@startuml\nactor Alice\nparticipant Bob\nAlice -> Bob: Hello\n@enduml\n",
@@ -145,4 +142,24 @@ fn test_init_writes_ambient_skill_files_idempotently() {
             "{name} must have exactly one asep block after repeated init"
         );
     }
+}
+
+#[test]
+// @test:R08
+fn test_init_refreshes_managed_skill_but_preserves_customization() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+    init_asep_project(root).unwrap();
+
+    let skill = root.join("skills/code-contracts/SKILL.md");
+    let original = fs::read_to_string(&skill).unwrap();
+    assert!(original.contains("asep-managed-skill"));
+
+    fs::write(&skill, "<!-- asep-managed-skill -->\nOLD MANAGED CONTENT").unwrap();
+    init_asep_project(root).unwrap();
+    assert_eq!(fs::read_to_string(&skill).unwrap(), original);
+
+    fs::write(&skill, "# MY CUSTOM SKILL\nno marker").unwrap();
+    init_asep_project(root).unwrap();
+    assert_eq!(fs::read_to_string(&skill).unwrap(), "# MY CUSTOM SKILL\nno marker");
 }

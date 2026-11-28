@@ -624,6 +624,46 @@ Untuk setiap wave, jalankan `asep affected <changed-paths>` dan pakai keluaran s
 3. **FR-AUD-16 — tidak ada pembaca segmen di `observability.rs`.** Validasi `trace_id` pada event yang dibaca dari rotated segment tidak memiliki titik aplikasi di modul ini; exact-key lookup sudah diterapkan pada jalur penulisan, flush, purge, dan retention. Untuk menutup: bila pembaca segmen ditambahkan kelak, validasi `event.trace_id == trace` wajib disertakan.
 4. **Item di luar cakupan audit masih deferred** sesuai keputusan sebelumnya: AD-D05 (workload quality-distinguishing), AD-D06 (failure reproducibility), AD-D07 (lifecycle hook), AD-D11 (backend visual), AD-D12 (migrasi), dan P3.3 (graph export). Ini tidak termasuk 35 temuan `ASEP_dev_audit_4355dbc.md` dan tidak dibuka oleh perbaikan ini.
 
+### Completion ledger — post-refactor handoff (R01–R19)
+
+Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXISTING`
+(revalidated present), `BLOCKED` (external dependency/authorization), `DEFERRED`
+(explicitly out of scope this milestone).
+
+| ID | Status | Current location / evidence |
+|---|---|---|
+| R01 | FIXED | `acceptance_scoped.rs` typed provenance mapping + per-requirement evidence; `acceptance_scoped_test` 10/10 and `mcp_test` 28/28 |
+| R02 | FIXED | `config/settings.rs` canonical registry, `load_config_checked`, unknown names blocking; config lib 8/8 |
+| R03 | FIXED | `ci/mod.rs::run_gate_1` explicit UNPROVEN on audit error; `watch/mod.rs` Result-returning summary |
+| R04 | FIXED | `self_update.rs` digest verification + unique temp + rename-only replacement; 4/4 unit tests, no network |
+| R05 | FIXED | Gate 4 removed from default and inert on explicit request; `ci::tests` 5/5; TDD benchmark text superseded |
+| R06 | FIXED | `pack/manifest.rs` direct-execution presets + managed marker; `targets_test` 17/17; `opencode.json` synchronized |
+| R07 | FIXED | Five skills rewritten as focused conditional references; canonical mirrors updated; `embedded_test` 7/7 |
+| R08 | FIXED | Minimal init (no fabricated PRD/dirs), managed skill refresh, installer ownership via marker/known-generated dirs; `diagram_and_init_test` 5/5 |
+| R09 | DEFERRED (partial) | Deterministic check core exists; dual graph projection and dedicated MCP check adapter retained for public-output compatibility. No new graph storage introduced. |
+| R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; `context_test` 6/6 |
+| R11 | FIXED (partial) | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md` mapping; style severities remain project policy |
+| R12 | FIXED (partial) | MCP version negotiation + `ASEP_MCP_TOOLS` exposure filter; `mcp_test` 28/28. Native-client pilot and tool-error distinction remain unverified. |
+| R13 | DEFERRED | Target-tree moves are breaking path changes; blueprint tree is illustrative. Crate boundaries preserved. Precise blocker: path-reference/compatibility decision required. |
+| R14 | BLOCKED | `pub mod snapshot` is public API; no proof of no external consumers. Removal needs compatibility decision. |
+| R15 | FIXED (partial) | `clean::execute` requires explicit `allow_full`; clean tests 10/10. Watch is opt-in, telemetry off by default. Messaging exposure remains conditional. |
+| R16 | BLOCKED | `harness/e2e/scripts/{new-run,verify-artifacts,vendor-loom}.sh` absent in both archives; do not fabricate. Windows target unavailable. |
+| R17 | FIXED (inventory below) | Every inherited B item classified; no unclassified finding remains |
+| R18 | FIXED (static only) | Dead queue/visited/reached initialization removed from `affected/mod.rs`; `affected_test` 20/20. No performance claim. |
+| R19 | FIXED | This ledger plus README/SKILLS/LEVEL_CALIBRATION synchronization; historical notes preserved as historical |
+
+### Inherited audit finding classification (R17)
+
+`FIXED` = issue not reproducible in current checkout or corrected here. `VERIFIED_EXISTING` = remediation present and covered by tests. `CONDITIONAL` = code-level risk with no bounded reproduction in this environment. `BLOCKED`/`DEFERRED` = external resource or approved deferral.
+
+| Range | Classification | Notes |
+|---|---|---|
+| B01, B02, B04, B05, B06, B07, B09, B17, B22, B26, B30 | VERIFIED_EXISTING | Context module, snapshot binding, evidence states, zero-test guard, typed graph/impact, formal states, mandatory telemetry allowlist, budget validation, comment prefix guard, symlink containment all present with tests |
+| B03, B16, B18, B21 | FIXED | Per-requirement acceptance (R01), exact trace keys, trace report denominators, config fail-closed (R02) |
+| B08, B15, B19, B20, B23, B24, B25, B27, B28, B29, B31, B32, B33, B34, B35 | CONDITIONAL | Scanner completeness, task identity, rotation/persistence, message transactions, lexer diagnostics, srcdump format/token/config, srcwalk semantics, truncation arithmetic, MCP error semantics and Windows target. Retained components; bounded fixtures only. |
+| B10–B14 | BLOCKED | Harness process/complexity findings require missing e2e scripts or heavy workloads; benchmarks and stress tests prohibited |
+| O01–O10 | DEFERRED | Optimization hypotheses; O01 rejected on prior evidence; no performance claims without approved measurement |
+
 ### Known consequences — simplification & consolidation (S0–S6)
 
 Catatan pengerjaan yang belum selesai dan risiko yang tersisa dari inisiatif ini.
@@ -643,7 +683,9 @@ Bukti verifikasi untuk milestone ini: 409 tes `asep` lulus (semua integration su
 
 ## Audit backlog execution — desain dan rencana
 
-Keputusan user: jalankan **semua** O01–O10 dan tutup butir 3 (pembaca trace). Tidak ada engine/dependency/`unsafe` baru. Benchmark memakai `criterion 0.5` yang sudah ada di `spec-engine/benches/engine_benchmarks.rs`; dijalankan dengan `cargo bench -p spec-engine --bench engine_benchmarks -- <filter>`. Setiap kandidat dicatat di `docs/OPTIMIZATION_BENCHMARKS.md` dengan before/after pada commit dan fixture sama; adopsi hanya bila median/p95 membaik dan output identik. Karena `cargo bench` tidak mengukur alokasi/RSS secara native, angka alokasi/RSS diambil dari `harness/e2e` bila tersedia atau dinyatakan `not measured` secara eksplisit — tidak boleh diklaim terukur.
+> **Superseded (benchmark deferral):** paragraf dan perintah benchmark di bawah ini adalah catatan historis dari backlog audit, bukan instruksi aktif. Penundaan benchmark oleh user mengoverride rencana ini. `cargo bench` (termasuk `--no-run`), stress/load, Loom, dan CI penuh **dilarang** pada milestone ini. Gate 4 tidak termasuk default CI dan tidak mengeksekusi Cargo. FR-OPT-00 tetap berlaku: tidak ada adopsi atau klaim performa tanpa pengukuran yang disetujui kemudian.
+
+Keputusan historis: jalankan **semua** O01–O10 dan tutup butir 3 (pembaca trace). Tidak ada engine/dependency/`unsafe` baru. Benchmark memakai `criterion 0.5` yang sudah ada di `spec-engine/benches/engine_benchmarks.rs`; dijalankan dengan `cargo bench -p spec-engine --bench engine_benchmarks -- <filter>`. Setiap kandidat dicatat di `docs/OPTIMIZATION_BENCHMARKS.md` dengan before/after pada commit dan fixture sama; adopsi hanya bila median/p95 membaik dan output identik. Karena `cargo bench` tidak mengukur alokasi/RSS secara native, angka alokasi/RSS diambil dari `harness/e2e` bila tersedia atau dinyatakan `not measured` secara eksplisit — tidak boleh diklaim terukur.
 
 <!-- @design:FR-PERF-01 -->
 <!-- @design:FR-PERF-02 -->
@@ -673,7 +715,7 @@ Keputusan user: jalankan **semua** O01–O10 dan tutup butir 3 (pembaca trace). 
 | Order | Requirement | File & symbol | Acceptance criteria | Verification command |
 |---|---|---|---|---|
 | 1 | FR-TRACE-READ-01 | `observability.rs::read_trace_events`, `runner.rs`, `mcp/tools.rs::build_trace_summary` | Event trace beda dengan prefix sama tidak muncul; CLI/MCP parity. | `cargo test -p asep --lib observability --offline --locked` + `cargo test -p asep --test trace_cli_test --offline --locked` |
-| 2 | FR-PERF-01 | `affected/mod.rs::TypedIndex` | Traversal O(V+E), impacted IDs identik pada 4 fixture. | `cargo test -p asep --test affected_test --offline --locked` + `cargo bench -p spec-engine --bench engine_benchmarks -- affected` |
+| 2 | FR-PERF-01 | `affected/mod.rs::TypedIndex` | Traversal O(V+E), impacted IDs identik pada 4 fixture. | `cargo test -p asep --test affected_test --offline --locked` (benchmark deferred; no performance claim) |
 | 3 | FR-PERF-02 | `affected/mod.rs` provenance reconstruction | Chain identik, alokasi turun. | `cargo test -p asep --test affected_test --offline --locked` |
 | 4 | FR-PERF-03 | `graph/builder.rs`, `affected/mod.rs::line_index` | Output/diagnostik identik, lookup terinduksi. | `cargo test -p asep --test graph_test --offline --locked` |
 | 5 | FR-PERF-04 | `observability.rs::pending_count`, `flush` | Redaction/durability test lulus; O(1) count. | `cargo test -p asep --lib observability --offline --locked` |

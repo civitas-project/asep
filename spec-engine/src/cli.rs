@@ -263,6 +263,10 @@ pub enum Commands {
         /// Report the plan without deleting anything
         #[arg(long)]
         dry_run: bool,
+
+        /// Explicitly permit full workspace cleanup after package cleanup
+        #[arg(long)]
+        allow_full: bool,
     },
 
     /// Inspect and manage telemetry trace segments

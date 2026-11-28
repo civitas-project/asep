@@ -117,6 +117,7 @@ pub fn execute(
     target: &Path,
     threshold: u64,
     dry_run: bool,
+    allow_full: bool,
 ) -> Result<CleanReport, String> {
     let before = measure_dir(target);
     if dry_run {
@@ -141,7 +142,8 @@ pub fn execute(
         after = measure_dir(target);
     }
 
-    if after > threshold {
+    // Full cleanup is never a hidden escalation: it requires an explicit flag.
+    if after > threshold && allow_full {
         let mut cmd = Command::new("cargo");
         cmd.arg("clean").arg("--target-dir").arg(target);
         run_cargo_clean(&mut cmd, target, "")?;

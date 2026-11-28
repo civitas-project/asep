@@ -89,9 +89,22 @@ impl Default for TelemetryConfig {
     }
 }
 
+/// Canonical capability names. A required capability outside this registry is
+/// blocked, never silently ignored.
+pub const CAPABILITIES: [&str; 6] = [
+    "file_read",
+    "file_write",
+    "terminal",
+    "mcp",
+    "subagents",
+    "web",
+];
+
 /// Agent capability profile: fail-closed ceiling applied to scaffolded
-/// OpenCode agent permissions. Default is all capabilities enabled with a
-/// 200k context window, preserving existing scaffold behavior.
+/// OpenCode agent permissions. The all-enabled default preserves fresh-install
+/// scaffold behavior; it is a declared policy, not an inference about native
+/// runtime limits. `context_window` and `delegation_threshold` are advisory
+/// metadata only and are not used to grant permissions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[serde(deny_unknown_fields)]
@@ -149,22 +162,26 @@ impl CapabilityProfile {
     }
 
     /// Returns the names from `required` that are disabled on this profile,
-    /// preserving the order of `required`. Unknown names are ignored.
+    /// preserving the order of `required`. Unknown capability names are
+    /// blocking: an unrecognised requirement can never be treated as satisfied.
     pub fn missing(&self, required: &[&str]) -> Vec<String> {
         required
             .iter()
-            .filter_map(|name| {
-                let disabled = match *name {
+            .filter(|name| {
+                if !CAPABILITIES.contains(name) {
+                    return true;
+                }
+                match **name {
                     "file_read" => !self.file_read,
                     "file_write" => !self.file_write,
                     "terminal" => !self.terminal,
                     "mcp" => !self.mcp,
                     "subagents" => !self.subagents,
                     "web" => !self.web,
-                    _ => return None,
-                };
-                disabled.then_some(name.to_string())
+                    _ => true,
+                }
             })
+            .map(|name| name.to_string())
             .collect()
     }
 
@@ -200,6 +217,7 @@ pub fn validate_capabilities(text: &str) -> Result<CapabilityProfile, String> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct EngineConfig {
     #[serde(default)]
     pub editor: EditorSettings,
@@ -232,20 +250,29 @@ pub fn get_config_path(target_dir: &Path) -> PathBuf {
 /// config with no capabilities granted, so invalid policy can never widen
 /// permissions. Use `validate_capabilities` to surface a parse error explicitly.
 pub fn load_config(target_dir: &Path) -> EngineConfig {
-    let path = get_config_path(target_dir);
-    if !path.exists() {
-        return EngineConfig::default();
-    }
-
-    let restricted = || EngineConfig {
+    load_config_checked(target_dir).unwrap_or_else(|_| EngineConfig {
         capabilities: CapabilityProfile::restrictive(),
         ..EngineConfig::default()
-    };
+    })
+}
 
-    match fs::read_to_string(&path) {
-        Ok(content) => toml::from_str(&content).unwrap_or_else(|_| restricted()),
-        Err(_) => restricted(),
+/// Loads persistent configuration with explicit errors. Missing config returns
+/// engine defaults for fresh installs. An inaccessible path, a non-file, an
+/// unreadable file, malformed TOML or an unknown key is an error, never a
+/// silent widening or narrowing of policy. Enforcement call sites should use
+/// this variant and surface the error instead of relying on the restricted
+/// fallback in `load_config`.
+pub fn load_config_checked(target_dir: &Path) -> Result<EngineConfig, String> {
+    let path = get_config_path(target_dir);
+    match fs::metadata(&path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => return Err(format!("config path is not a file: {}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(EngineConfig::default()),
+        Err(e) => return Err(format!("cannot access config {}: {e}", path.display())),
     }
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read config {}: {e}", path.display()))?;
+    toml::from_str(&content).map_err(|e| format!("invalid config {}: {e}", path.display()))
 }
 
 /// Saves the persistent configuration to `config.toml`.
@@ -288,6 +315,39 @@ mod tests {
     #[test]
     fn malformed_toml_is_rejected() {
         assert!(validate_capabilities("[[unclosed\n").is_err());
+    }
+
+    #[test]
+    // @test:R02
+    fn unknown_required_capability_is_blocking() {
+        let profile = CapabilityProfile::default();
+        assert_eq!(
+            profile.missing(&["file_read", "not_a_capability"]),
+            vec!["not_a_capability".to_string()]
+        );
+        assert!(profile
+            .covers(&["not_a_capability"], None)
+            .unwrap_err()
+            .contains("not_a_capability"));
+    }
+
+    #[test]
+    // @test:R02
+    fn checked_loader_distinguishes_missing_malformed_and_unknown_key() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(load_config_checked(dir.path()).is_ok(), "missing config is allowed");
+
+        let path = get_config_path(dir.path());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "[[unclosed\n").unwrap();
+        assert!(load_config_checked(dir.path()).is_err(), "malformed config must error");
+
+        fs::write(&path, "unknown_section = 1\n").unwrap();
+        assert!(load_config_checked(dir.path()).is_err(), "unknown key must error");
+
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(load_config_checked(dir.path()).is_err(), "non-file config must error");
     }
 
     #[test]

@@ -949,9 +949,10 @@ fn bwrap_shim() -> PathBuf {
 # that covers the PRD requirement; `sh -c` runs report one passing test.
 case "$*" in
     *affected*--json*)
-        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
+        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"test-alpha","function":"scoped_alpha_passes","file":"tests/scoped.rs","line":1}}],"provenance":{{"Test:test-alpha":[{{"node":"Test:test-alpha","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
         ;;
     *)
+        echo "test scoped_alpha_passes ... ok"
         echo "test result: ok. 1 passed"
         ;;
 esac
@@ -967,4 +968,48 @@ exit 0
     perms.set_mode(0o755);
     fs::set_permissions(&shim_path, perms).expect("shim perms");
     shim_path
+}
+
+static MCP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[test]
+// @test:R12
+fn initialize_negotiates_supported_protocol_version() {
+    let req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}"#;
+    let res = asep::mcp::server::process_jsonrpc_request(req, std::path::Path::new(""))
+        .expect("initialize response");
+    let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(parsed["result"]["protocolVersion"], "2025-03-26");
+    assert!(parsed["result"]["supportedVersions"].as_array().unwrap().len() >= 2);
+
+    let unsupported = r#"{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}"#;
+    let res = asep::mcp::server::process_jsonrpc_request(unsupported, std::path::Path::new(""))
+        .expect("initialize response");
+    let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(parsed["result"]["protocolVersion"], "2024-11-05");
+}
+
+#[test]
+// @test:R12
+fn tool_exposure_filter_applies_to_listing_and_invocation() {
+    let _guard = MCP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::set_var("ASEP_MCP_TOOLS", "asep_check");
+    let list_req = r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#;
+    let res = asep::mcp::server::process_jsonrpc_request(list_req, std::path::Path::new(""))
+        .expect("tools/list response");
+    let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
+    let names: Vec<&str> = parsed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|t| t["name"].as_str())
+        .collect();
+    assert_eq!(names, vec!["asep_check"]);
+
+    let call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"asep_affected","arguments":{"paths":["a"]}}}"#;
+    let res = asep::mcp::server::process_jsonrpc_request(call, std::path::Path::new(""))
+        .expect("tool call response");
+    let parsed: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert!(parsed["error"].is_object(), "disabled tool must be rejected: {res}");
+    std::env::remove_var("ASEP_MCP_TOOLS");
 }
