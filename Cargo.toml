@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["srcidx", "srcdump", "spec-engine", "srcwalk"]
+members = ["crates/source-intelligence/srcidx", "crates/source-intelligence/srcdump", "crates/spec-engine", "crates/source-intelligence/srcwalk"]
 
 [workspace.package]
 version = "0.1.0"

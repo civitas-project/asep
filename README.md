@@ -14,7 +14,7 @@
 1. `README.md` — what ASEP is and when to use it.
 2. `protocol/CORE.md` — canonical activation contract and mandatory constraints.
 3. `ARCHITECTURE.md` — components, ownership and boundaries.
-4. Relevant subsystem: `spec-engine/` (CLI, MCP, validators), `srcidx/`, `srcdump/`, `srcwalk/`, or `skills/<domain>/SKILL.md`.
+4. Relevant subsystem: `crates/spec-engine/` (CLI, MCP, validators) and `crates/source-intelligence/` (`srcidx`, `srcdump`, `srcwalk`), or `skills/<domain>/SKILL.md`.
 5. `docs/TDD.md` — closure ledger and the distinction between verified findings, conditional risks and deferred work.
 
 Domain skills are loaded only when their scope matches the task. Historical notes in `docs/` and root audit documents are evidence, not normative instructions.
@@ -87,77 +87,40 @@ flowchart TD
     GatePipeline --> Complete([Release & Deployment Ready])
 ```
 
-### Canonical Protocol Modules & Skills
+### Canonical Components
 
-The ASEP architecture comprises five self-contained, optional domain skills. A single canonical Core Protocol ([`protocol/CORE.md`](protocol/CORE.md)) defines activation and mandatory constraints; no router or bootstrap is required to start a task. The retired router remains only as a compatibility reference:
+One Core Protocol (`protocol/CORE.md`) defines activation and mandatory constraints. Five optional domain skills live in `skills/`. Reference material is grouped under `templates/` and `docs/`.
 
-| Protocol Module | Scope & Responsibility | Canonical Specification | Autonomous AI Skill |
-| :--- | :--- | :--- | :--- |
-| **System-Architecture** | **Core Architecture & Systems Engine**<br>PRD/TDD lifecycle, two-phase SDLC, Rich ADRs, 1:1 traceability graph closure. | [`system-architecture/system-architecture.md`](system-architecture/system-architecture.md) | [`system-architecture`](system-architecture/skill/SKILL.md) |
-| **Workflow-Router** (retired, compatibility only) | **Optional reference**<br>Retired as a mandatory router by decision 07.1. Activation now lives in `protocol/CORE.md`; see README → Core Protocol → architecture overview → relevant skill. | [`workflow-router/workflow-router.md`](workflow-router/workflow-router.md) | [`workflow-router`](workflow-router/skill/SKILL.md) |
-| **Engineering-Specs** | **Technical Authoring & Specifications**<br>ISO/IEC/IEEE 29148:2018 requirements grammar, four canonical PlantUML diagrams. | [`engineering-specs/engineering-specs.md`](engineering-specs/engineering-specs.md) | [`engineering-specs`](engineering-specs/skill/SKILL.md) |
-| **Code-Contracts** | **Code-Level Operational Contracts**<br>Anti-parroting heuristics, strict conditionality, multi-language contract templates. | [`code-contracts/code-contracts.md`](code-contracts/code-contracts.md) | [`code-contracts`](code-contracts/skill/SKILL.md) |
-| **Repository-Governance** | **Repository Governance & Manuals**<br>README structure, directory topology, Diátaxis MANUAL.md, CVSS response SLAs. | [`repository-governance/repository-governance.md`](repository-governance/repository-governance.md) | [`repository-governance`](repository-governance/skill/SKILL.md) |
-| **Design-Tokens** | **Deterministic Design Tokens**<br>KDL-based token AST, 14 color spaces, unit invariance constraints. | [`design-tokens/design-tokens.md`](design-tokens/design-tokens.md) | [`design-tokens`](design-tokens/skill/SKILL.md) |
+| Component | Canonical location | Responsibility |
+| :--- | :--- | :--- |
+| Core Protocol | `protocol/CORE.md` | Activation contract, evidence constraints, skill discovery |
+| System Architecture | `skills/system-architecture/SKILL.md` | Boundaries, dependencies, decisions, invariants |
+| Engineering Specs | `skills/engineering-specs/SKILL.md` | Requirements, designs, ADRs, diagrams |
+| Code Contracts | `skills/code-contracts/SKILL.md` | Contracts, pre/postconditions, error semantics |
+| Repository Governance | `skills/repository-governance/SKILL.md` | Repository docs and organization |
+| Design Tokens | `skills/design-tokens/SKILL.md` | Semantic tokens, accessibility, interaction contracts |
+| Engine | `crates/spec-engine/` | CLI, MCP, validators, shared core |
+| Source Intelligence | `crates/source-intelligence/` | `srcidx`, `srcdump`, `srcwalk` |
 
 <!-- @gov:README-LAYOUT -->
-### Workspace Layout
+### Repository Layout
 
 ```text
 .
-├── README.md                # [@gov:README-HEADER] Primary repository specification (SWEBOK v4)
-├── MANUAL.md                # [@gov:MANUAL-HEADER] Diátaxis operator & developer manual (Parts I–V)
-├── ARCHITECTURE.md          # [@gov:ARCH-OVERVIEW] Architectural topology map and boundary invariants
-├── CONTRIBUTING.md          # [@gov:CONTRIB-VERIFY] Contributor pipeline, git topology, and local gates
-├── SECURITY.md              # [@gov:SEC-SLA] Coordinated vulnerability disclosure policy and SLAs
-├── CHANGELOG.md             # [@gov:GOV-RELEASE] Semantic release history
-├── LICENSE                  # [@gov:GOV-LICENSE] Open-source MIT license
-├── trace_manifest.json      # [@gov:GOV-MANIFEST] Dynamic Option C verified trace manifest
-├── system-architecture/     # [@gov:MOD-SYSTEM-ARCH] 2-Phase SDLC, TDD, & formal proofs
-│   ├── system-architecture.md
-│   ├── adr/                 # Architecture Decision Records archive
-│   ├── diagrams/            # Formal PlantUML models and compiled SVG assets
-│   └── skill/SKILL.md       # AI agent guidance for system architecture
-├── protocol/                # Canonical Core Protocol (activation + mandatory constraints)
-│   └── CORE.md              # Single source for generated AGENTS/CLAUDE/GEMINI blocks
-├── workflow-router/         # [@gov:MOD-ROUTER] Retired compatibility reference (not ambient)
-│   ├── workflow-router.md   # Migration pointer to protocol/CORE.md
-│   └── skill/SKILL.md       # Optional compatibility skill
-├── engineering-specs/       # [@gov:MOD-SPECS] Technical Authoring, Brainstorming, & ISO 29148 Grammar
-│   ├── engineering-specs.md
-│   ├── skeletons/           # Adaptive document skeletons (PRD, TDD, ADR, Runbook, Alloy .als, TLA+ .tla)
-│   ├── templates/           # Four canonical PlantUML templates (.puml)
-│   └── skill/SKILL.md
-├── code-contracts/          # [@gov:MOD-CONTRACTS] Code Contracts, Meyer DbC, & Comment Hygiene
-│   ├── code-contracts.md
-│   ├── templates/           # Idiomatic contract templates (Rust, TS, Python, Go, C++)
-│   └── skill/SKILL.md
-├── repository-governance/   # [@gov:MOD-GOV] Repository Governance & Diátaxis MANUAL
-│   ├── repository-governance.md
-│   ├── templates/           # Governance templates (README, ARCHITECTURE, MANUAL, SECURITY)
-│   └── skill/SKILL.md
-├── design-tokens/           # [@gov:MOD-TOKENS] Design Token AST, OKLCH Math, & Ergonomic Bounds
-│   ├── design-tokens.md
-│   ├── templates/           # KDL token schema templates
-│   └── skill/SKILL.md
-└── spec-engine/             # [@gov:MOD-ENGINE] Rust Validation Engine & Multi-Agent Packager
-    ├── Cargo.toml           # Package manifest (v2.1.0, MSRV 1.80+)
-    ├── src/                 # Scanner, Graph Engine, Auditor, Scaffolder, MCP
-    └── tests/               # 46 integration, unit, and protocol test suites
+├── AGENTS.md, CLAUDE.md, GEMINI.md   # generated native entry points
+├── protocol/CORE.md                  # canonical activation and constraints
+├── skills/<domain>/SKILL.md          # single canonical skill source
+├── crates/
+│   ├── spec-engine/                  # CLI, MCP, validators, shared core
+│   └── source-intelligence/          # srcidx, srcdump, srcwalk
+├── templates/<domain>/               # contract, diagram and governance templates
+├── docs/reference/                   # domain reference material
+├── docs/decisions/                   # architecture decision records
+├── docs/architecture/                # architecture diagrams
+├── docs/specifications/, docs/guides/  # specifications and guides
+├── experiments/, scripts/, configs/   # optional artifacts
+└── vendor/                            # offline builds only
 ```
-
-### Software Configuration Items (SCI) Traceability Matrix
-
-| Software Configuration Item | Traceability Tag | Canonical Scope | Primary Artifacts |
-| :--- | :--- | :--- | :--- |
-| **System Architecture**<br>`system-architecture/` | `<!-- @gov:MOD-SYSTEM-ARCH -->`<br>`@gov:MOD-SYSTEM-ARCH` | Dual-Mode SDLC, Vertical TDD, Systematic Debugging, Worktrees | `system-architecture.md`<br>`adr/*.md`, `diagrams/*.puml` |
-| **Core Protocol**<br>`protocol/` | `<!-- @gov:MOD-CORE -->`<br>`@gov:MOD-CORE` | Activation contract, mandatory evidence constraints, skill discovery | `CORE.md` |
-| **Workflow Router** (retired)<br>`workflow-router/` | `<!-- @gov:MOD-ROUTER -->`<br>`@gov:MOD-ROUTER` | Optional compatibility reference; no mandatory dispatch | `workflow-router.md`<br>`skill/SKILL.md` |
-| **Engineering Specs**<br>`engineering-specs/` | `<!-- @gov:MOD-SPECS -->`<br>`@gov:MOD-SPECS` | ISO 29148 SRS Grammar, Pre-Spec Brainstorming, Vector SVG | `engineering-specs.md`<br>`skeletons/*`, `templates/*.puml` |
-| **Code Contracts**<br>`code-contracts/` | `<!-- @gov:MOD-CONTRACTS -->`<br>`@gov:MOD-CONTRACTS` | SWEBOK 4.4 DbC, Inline Comment Hygiene, Memory Bounds | `code-contracts.md`<br>`templates/*` |
-| **Repository Governance**<br>`repository-governance/` | `<!-- @gov:MOD-GOV -->`<br>`@gov:MOD-GOV` | SWEBOK v4 README, Diátaxis MANUAL (Parts I–V), CVD Security | `repository-governance.md`<br>`templates/*` |
-| **Design Tokens**<br>`design-tokens/` | `<!-- @gov:MOD-TOKENS -->`<br>`@gov:MOD-TOKENS` | KDL AST, OKLCH Math, 8px Grid, 44px Touch Bounds | `design-tokens.md`<br>`templates/*.kdl` |
-| **Engine Core**<br>`spec-engine/` | `<!-- @gov:MOD-ENGINE -->`<br>`@gov:MOD-ENGINE` | Rust Deterministic CLI Validator, Packager, MCP stdio | `Cargo.toml` (v2.1.0)<br>`src/*`, `tests/*` |
 
 ---
 
@@ -301,7 +264,7 @@ asep skill config --preference terminal
 <!-- @gov:README-CONTRIB -->
 ## Quality Gates
 
-Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request. Exit codes and coverage rules `COV-01`..`COV-06` are defined canonically in `spec-engine/policy/asep-policy.toml`.
+Contributors are required to verify changes locally with **Exit Code 0** before submitting a Pull Request. Exit codes and coverage rules `COV-01`..`COV-06` are defined canonically in `crates/spec-engine/policy/asep-policy.toml`.
 
 ```bash
 cd spec-engine
@@ -370,4 +333,4 @@ Engineering artifacts are interconnected using canonical tag metadata syntax:
 | `@lim\:...` | Specifications | Quantitative system limits and resource ceilings | `\@lim:LIM-MEM-01` |
 | `@criticality\:...` | Specifications / ADRs | Execution criticality marker (`high` or `low`); never enters the closure graph | `\@criticality:high` |
 
-> **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1** (see `spec-engine/policy/asep-policy.toml` for canonical exit codes and coverage rules `COV-01`..`COV-06`).
+> **Strict Hard Gate Rule:** If any requirement marked `MUST` lacks a corresponding `// @impl` interface or passing `// @test`, the `asep check` command halts the verification pipeline with **Exit Code 1** (see `crates/spec-engine/policy/asep-policy.toml` for canonical exit codes and coverage rules `COV-01`..`COV-06`).

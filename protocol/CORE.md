@@ -43,5 +43,5 @@ No bootstrap or router is required to start. The retired `using-asep` and `workf
 skills are optional compatibility references, not activation layers.
 
 Canonical rule IDs (`COV-01`..`COV-06`, `Tier T0`..`Tier T4`, exit codes `0`/`1`/`2`/`3`
-and `AS-*` anti-slop rules) live in `spec-engine/policy/asep-policy.toml`. Skills reference
+and `AS-*` anti-slop rules) live in `crates/spec-engine/policy/asep-policy.toml`. Skills reference
 IDs and do not restate rule patterns.

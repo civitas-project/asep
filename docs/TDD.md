@@ -640,17 +640,32 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | R06 | FIXED | `pack/manifest.rs` direct-execution presets + managed marker; `targets_test` 17/17; `opencode.json` synchronized |
 | R07 | FIXED | Five skills rewritten as focused conditional references; canonical mirrors updated; `embedded_test` 7/7 |
 | R08 | FIXED | Minimal init (no fabricated PRD/dirs), managed skill refresh, installer ownership via marker/known-generated dirs; `diagram_and_init_test` 5/5 |
-| R09 | DEFERRED (partial) | Deterministic check core exists; dual graph projection and dedicated MCP check adapter retained for public-output compatibility. No new graph storage introduced. |
-| R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; `context_test` 6/6 |
-| R11 | FIXED (partial) | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md` mapping; style severities remain project policy |
-| R12 | FIXED (partial) | MCP version negotiation + `ASEP_MCP_TOOLS` exposure filter; `mcp_test` 28/28. Native-client pilot and tool-error distinction remain unverified. |
-| R13 | DEFERRED | Target-tree moves are breaking path changes; blueprint tree is illustrative. Crate boundaries preserved. Precise blocker: path-reference/compatibility decision required. |
-| R14 | BLOCKED | `pub mod snapshot` is public API; no proof of no external consumers. Removal needs compatibility decision. |
-| R15 | FIXED (partial) | `clean::execute` requires explicit `allow_full`; clean tests 10/10. Watch is opt-in, telemetry off by default. Messaging exposure remains conditional. |
-| R16 | BLOCKED | `harness/e2e/scripts/{new-run,verify-artifacts,vendor-loom}.sh` absent in both archives; do not fabricate. Windows target unavailable. |
+| R09 | PARTIAL | `ci::check_core` shared with MCP `spec_check`; canonical `GraphReport` drives verification. Legacy `build_trace_graph` retained only for CLI summary text; full removal needs rewriting those consumers. |
+| R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; CLI/MCP share it; `context_test` 6/6 |
+| R11 | FIXED | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md`; removed `context_window`/`delegation_threshold` assumptions |
+| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy full-surface mode; `mcp_test` 29/29. Native-client pilot and tool-error distinction unverified. |
+| R13 | FIXED | Crates moved under `crates/spec-engine` and `crates/source-intelligence/`; templates/docs/ADRs regrouped; all paths updated; workspace check passes. |
+| R14 | REMOVED | `pub mod snapshot`, implementation and dedicated tests deleted; Git snapshot identity in acceptance preserved. |
+| R15 | FIXED | `clean::execute` requires explicit `--allow-full`; watch module and CLI removed; presets opt-in; telemetry off by default. |
+| R16 | BLOCKED | `harness_test` (6 cases) needs official e2e scripts absent from both archives; Windows target unavailable. `harness_e2e_test` 9/9 passes. No fixture fabricated. |
 | R17 | FIXED (inventory below) | Every inherited B item classified; no unclassified finding remains |
-| R18 | FIXED (static only) | Dead queue/visited/reached initialization removed from `affected/mod.rs`; `affected_test` 20/20. No performance claim. |
+| R18 | FIXED (static) | Dead queue/visited/reached initialization removed; no speculative optimization adopted; no performance claim. |
 | R19 | FIXED | This ledger plus README/SKILLS/LEVEL_CALIBRATION synchronization; historical notes preserved as historical |
+
+### Additional findings (N01–N10)
+
+| ID | Status | Evidence |
+|---|---|---|
+| N01 | FIXED | Evidence records `test_package`, `test_targets`, `tests_qualified_for_requirement`; acceptance 10/10 |
+| N02 | FIXED | Evidence carries typed `evidence_state`; enum-based evaluation; verification 10/10 |
+| N03 | FIXED | Managed markers for presets and skills; user-authored content preserved; targets 18/18, init 5/5 |
+| N04 | FIXED | `GateResult.unproven`; explicitly requested unavailable gate is unproven; ci 5/5 |
+| N05 | FIXED | `compile_context_files` does not call `affected`; context 6/6 |
+| N06 | PARTIAL | `ci::check_core` shared with MCP `spec_check`; CLI still renders a legacy summary |
+| N07 | FIXED | Root skill directories removed; `skills/` is the only canonical source |
+| N08 | FIXED | Preset scaffolding opt-in via `enabled` flag and installer gate; targets 18/18 |
+| N09 | FIXED | Minimal default MCP exposure; no legacy full-surface mode; mcp 29/29 |
+| N10 | FIXED | `context_window`/`delegation_threshold` fields and MCP argument removed |
 
 ### Inherited audit finding classification (R17)
 
@@ -660,7 +675,8 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 |---|---|---|
 | B01, B02, B04, B05, B06, B07, B09, B17, B22, B26, B30 | VERIFIED_EXISTING | Context module, snapshot binding, evidence states, zero-test guard, typed graph/impact, formal states, mandatory telemetry allowlist, budget validation, comment prefix guard, symlink containment all present with tests |
 | B03, B16, B18, B21 | FIXED | Per-requirement acceptance (R01), exact trace keys, trace report denominators, config fail-closed (R02) |
-| B08, B15, B19, B20, B23, B24, B25, B27, B28, B29, B31, B32, B33, B34, B35 | CONDITIONAL | Scanner completeness, task identity, rotation/persistence, message transactions, lexer diagnostics, srcdump format/token/config, srcwalk semantics, truncation arithmetic, MCP error semantics and Windows target. Retained components; bounded fixtures only. |
+| B25, B27, B30, B33, B34 | VERIFIED_EXISTING | Lexer unknown-priority diagnostic, srcdump format dispatch, symlink metadata containment, bounded truncation with ellipsis, JSON-RPC error categories all covered by tests |
+| B08, B15, B19, B20, B23, B24, B28, B29, B31, B32, B35 | CONDITIONAL | Scanner completeness, task identity, rotation/persistence, message transactions, token metadata, srcdump config precedence, srcwalk semantics, Windows target. Bounded fixtures only; no new failures reproduced. |
 | B10–B14 | BLOCKED | Harness process/complexity findings require missing e2e scripts or heavy workloads; benchmarks and stress tests prohibited |
 | O01–O10 | DEFERRED | Optimization hypotheses; O01 rejected on prior evidence; no performance claims without approved measurement |
 
