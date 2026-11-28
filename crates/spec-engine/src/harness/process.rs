@@ -568,3 +568,18 @@ mod tests {
         None
     }
 }
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    #[test]
+    // @test:B12
+    fn process_tree_measurement_is_nonzero_and_reports_incomplete() {
+        let measurement = run_cmd_memory_detailed("true", 8 * 1024 * 1024 * 1024, Duration::from_secs(5))
+            .expect("tiny command measurement succeeds");
+        assert!(measurement.peak_bytes > 0, "zero peak must not be accepted");
+        assert_eq!(measurement.complete, cfg!(target_os = "linux"), "completeness must match platform support");
+        assert!(!measurement.method.is_empty());
+    }
+}

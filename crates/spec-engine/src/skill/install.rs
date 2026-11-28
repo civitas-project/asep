@@ -4,6 +4,7 @@ use crate::skill::distribution::embedded::get_embedded_skills;
 use crate::skill::inspector::{extract_skill_full_metadata, inspect_skills};
 use std::collections::{HashSet, VecDeque};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Resolves transitive dependencies for a skill id.
@@ -50,6 +51,56 @@ fn digest(content: &str) -> String {
     format!("{:x}", Sha256::digest(content.as_bytes()))
 }
 
+/// Reject ids/directories that could escape the skills directory.
+fn safe_skill_name(name: &str) -> Result<&str, String> {
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name == "."
+        || name == ".."
+        || name.starts_with('.')
+    {
+        return Err(format!("unsafe skill name: {name}"));
+    }
+    Ok(name)
+}
+
+/// Writes through a uniquely named sibling temp file and renames it into
+/// place, so a failed write never leaves a partially replaced artifact.
+fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
+    let parent = path.parent().ok_or("file has no parent directory")?;
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or("file name is not UTF-8")?;
+    for attempt in 0..10_000u32 {
+        let temp = parent.join(format!(
+            ".{name}.asep-{}-{attempt}",
+            std::process::id()
+        ));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+        {
+            Ok(mut file) => {
+                let result = file
+                    .write_all(content.as_bytes())
+                    .and_then(|_| file.flush())
+                    .map_err(|e| e.to_string())
+                    .and_then(|_| fs::rename(&temp, path).map_err(|e| e.to_string()));
+                if result.is_err() {
+                    let _ = fs::remove_file(&temp);
+                }
+                return result;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("cannot create temp file: {e}")),
+        }
+    }
+    Err("cannot reserve temp file".to_string())
+}
+
 /// Refreshes a skill only when the file still matches the digest recorded at
 /// the last ASEP install. A managed marker is not proof of ownership: user
 /// edits, missing state, unreadable files and conflicts are preserved.
@@ -57,17 +108,19 @@ pub fn refresh_managed_skill(
     skills_dir: &Path,
     skill: &crate::skill::distribution::embedded::EmbeddedSkill,
 ) -> Result<bool, String> {
+    safe_skill_name(skill.id)?;
+    safe_skill_name(skill.directory)?;
     let skill_file = skills_dir.join(skill.directory).join("SKILL.md");
     let existing = match fs::read_to_string(&skill_file) {
         Ok(content) => content,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             fs::create_dir_all(skill_file.parent().ok_or("invalid skill path")?)
                 .map_err(|e| e.to_string())?;
-            fs::write(&skill_file, skill.content).map_err(|e| e.to_string())?;
+            write_atomic(&skill_file, skill.content)?;
             let state = managed_state_path(skills_dir, skill.id);
             fs::create_dir_all(state.parent().ok_or("invalid state path")?)
                 .map_err(|e| e.to_string())?;
-            fs::write(state, digest(skill.content)).map_err(|e| e.to_string())?;
+            write_atomic(&state, &digest(skill.content))?;
             return Ok(true);
         }
         Err(e) => return Err(format!("unreadable skill {}: {e}", skill_file.display())),
@@ -83,8 +136,8 @@ pub fn refresh_managed_skill(
     if existing == skill.content {
         return Ok(false);
     }
-    fs::write(&skill_file, skill.content).map_err(|e| e.to_string())?;
-    fs::write(state, digest(skill.content)).map_err(|e| e.to_string())?;
+    write_atomic(&skill_file, skill.content)?;
+    write_atomic(&state, &digest(skill.content))?;
     Ok(true)
 }
 

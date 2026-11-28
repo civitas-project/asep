@@ -47,7 +47,7 @@ fn test_mcp_tools_list() {
 fn test_tool_descriptions_are_compact() {
     let tools = get_tools_list();
     let tool_list = tools["tools"].as_array().expect("tools array");
-    assert_eq!(tool_list.len(), 14, "expected exactly 14 tools");
+    assert_eq!(tool_list.len(), 13, "expected 13 canonical tools");
     let names: Vec<&str> = tool_list
         .iter()
         .map(|t| t["name"].as_str().unwrap())
@@ -531,6 +531,30 @@ fn test_accept_scoped_success_writes_evidence() {
         .trim()
         .to_string();
 
+    // Authoritative Cargo metadata for strict test identity resolution.
+    fs::write(
+        root_path.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[test]]\nname = \"mcp_test\"\npath = \"tests/mcp_test.rs\"\n",
+    )
+    .expect("Cargo.toml");
+    fs::create_dir_all(root_path.join("tests")).expect("tests dir");
+    fs::write(root_path.join("tests/mcp_test.rs"), "// fixture").expect("test fixture");
+    git(root_path, &["add", "Cargo.toml", "tests"]);
+    git(root_path, &["commit", "-q", "-m", "metadata fixture"]);
+    let commit = String::from_utf8(
+        Command::new("git")
+            .arg("-C")
+            .arg(root_path)
+            .arg("rev-parse")
+            .arg("HEAD")
+            .output()
+            .expect("git rev-parse")
+            .stdout,
+    )
+    .expect("utf8")
+    .trim()
+    .to_string();
+
     // Policy + PRD with one MUST requirement.
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
     let policy = format!(
@@ -945,7 +969,7 @@ fn bwrap_shim() -> PathBuf {
 # that covers the PRD requirement; `sh -c` runs report one passing test.
 case "$*" in
     *affected*--json*)
-        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"test-alpha","function":"scoped_alpha_passes","file":"tests/mcp_test.rs","line":1}}],"provenance":{{"Test:test-alpha":[{{"node":"Test:test-alpha","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p asep --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
+        echo '{{"requirements":[{{"id":"REQ-ALPHA"}}],"tests":[{{"id":"test-alpha","function":"scoped_alpha_passes","file":"tests/mcp_test.rs","line":1}}],"provenance":{{"Test:test-alpha":[{{"node":"Test:test-alpha","edge":null}},{{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}}]}},"commands":["cargo test -p fixture --test mcp_test -- --test-threads=1 --skip test_mcp_tools_call_srcdump --skip test_mcp_tools_call_srcidx"]}}'
         ;;
     *)
         echo "test scoped_alpha_passes ... ok"
@@ -1048,4 +1072,28 @@ fn tool_execution_failure_is_distinct_from_invalid_params() {
     let res = process_jsonrpc_request(tool_failure, std::path::Path::new("")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&res).unwrap();
     assert_eq!(v["error"]["code"], -32000, "tool failure must not look like bad params: {res}");
+}
+
+#[test]
+// @test:P1.5
+fn asep_check_validators_schema_and_parameter_validation() {
+    let tools = get_tools_list();
+    let tool = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "asep_check")
+        .expect("asep_check present");
+    assert!(tool["inputSchema"]["properties"]["validators"].is_object());
+    assert!(!tools["tools"].as_array().unwrap().iter().any(|t| t["name"] == "spec_check"));
+
+    let empty = r#"{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"asep_check","arguments":{"validators":[]}}}"#;
+    let res = process_jsonrpc_request(empty, std::path::Path::new(".")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(v["error"]["code"], -32000, "empty validators must fail: {res}");
+
+    let wrong_type = r#"{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"asep_check","arguments":{"validators":"traceability"}}}"#;
+    let res = process_jsonrpc_request(wrong_type, std::path::Path::new(".")).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(v["error"]["code"], -32000, "wrong type must fail: {res}");
 }

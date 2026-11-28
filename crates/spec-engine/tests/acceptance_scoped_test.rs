@@ -360,10 +360,17 @@ fn scoped_acceptance_root() -> tempfile::TempDir {
         .expect("git commit");
 
     fs::create_dir_all(root_path.join(".spec-engine")).expect("spec-engine dir");
+    fs::write(
+        root_path.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[test]]\nname = \"scoped_traceability\"\npath = \"tests/scoped_traceability.rs\"\n",
+    )
+    .expect("Cargo.toml");
     let test_dir = root_path.join("crates/spec-engine/tests");
     fs::create_dir_all(&test_dir).expect("test dir");
+    fs::create_dir_all(root_path.join("tests")).expect("tests dir");
+    fs::write(root_path.join("tests/scoped_traceability.rs"), "// fixture").expect("metadata test fixture");
     fs::write(test_dir.join("scoped_traceability.rs"), "// fixture").expect("test fixture");
-    run(root_path, &["git", "add", "crates"]);
+    run(root_path, &["git", "add", "crates", "tests", "Cargo.toml"]);
     run(root_path, &["git", "commit", "-q", "-m", "test target fixture"]);
     let commit = head_of(root_path);
     let policy = format!(
@@ -467,6 +474,13 @@ fn build_test_plan_uses_json_commands_and_adds_package() {
     let root_path = root.path();
     fs::create_dir_all(root_path.join("crates").join("spec-engine").join("tests")).expect("tests dir");
     fs::write(
+        root_path.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[test]]\nname = \"alpha\"\npath = \"tests/alpha.rs\"\n",
+    )
+    .expect("Cargo.toml");
+    fs::create_dir_all(root_path.join("tests")).expect("tests source dir");
+    fs::write(root_path.join("tests/alpha.rs"), "// fixture").expect("alpha source");
+    fs::write(
         root_path.join("crates/spec-engine/tests/alpha.rs"),
         "#[test]\nfn alpha() {}\n",
     )
@@ -487,12 +501,12 @@ fn build_test_plan_uses_json_commands_and_adds_package() {
     assert_eq!(plan.selected, 2, "plan must select both commands");
     assert_eq!(plan.commands.len(), 2);
     assert_eq!(
-        plan.commands[0], "cargo test -p asep --test alpha",
-        "existing target kept with -p asep: {}",
+        plan.commands[0], "cargo test -p fixture --test alpha",
+        "existing target kept with authoritative package: {}",
         plan.commands[0]
     );
     assert_eq!(
-        plan.commands[1], "cargo test -p asep --lib",
+        plan.commands[1], "cargo test -p fixture --lib",
         "nonexistent target converted to --lib fallback: {}",
         plan.commands[1]
     );
@@ -646,11 +660,18 @@ fn test_identity_is_package_target_qualified_and_isolated() {
     let root_path = root.path();
     let commit = head_of(root_path);
 
+    fs::write(
+        root_path.join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[[test]]\nname = \"target_a\"\npath = \"tests/target_a.rs\"\n\n[[test]]\nname = \"target_b\"\npath = \"tests/target_b.rs\"\n",
+    ).unwrap();
     let test_dir = root_path.join("crates/spec-engine/tests");
     fs::create_dir_all(&test_dir).unwrap();
-    fs::write(test_dir.join("target_a.rs"), "// fixture").unwrap();
-    fs::write(test_dir.join("target_b.rs"), "// fixture").unwrap();
-    run(root_path, &["git", "add", "crates"]);
+    fs::create_dir_all(root_path.join("tests")).unwrap();
+    for name in ["target_a", "target_b"] {
+        fs::write(root_path.join(format!("tests/{name}.rs")), "// fixture").unwrap();
+        fs::write(test_dir.join(format!("{name}.rs")), "// fixture").unwrap();
+    }
+    run(root_path, &["git", "add", "crates", "tests", "Cargo.toml"]);
     run(root_path, &["git", "commit", "-q", "-m", "fixture targets"]);
     let commit = head_of(root_path);
     let policy = format!(
@@ -658,7 +679,7 @@ fn test_identity_is_package_target_qualified_and_isolated() {
         commit
     );
     fs::write(root_path.join(".spec-engine/acceptance.json"), policy).unwrap();
-    let affected = r#"{"requirements":[{"id":"REQ-ALPHA"},{"id":"REQ-BETA"}],"tests":[{"id":"test-alpha","function":"same_name","file":"target_a.rs","line":1},{"id":"test-beta","function":"same_name","file":"target_b.rs","line":1}],"provenance":{"Test:test-alpha":[{"node":"Test:test-alpha","edge":null},{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}],"Test:test-beta":[{"node":"Test:test-beta","edge":null},{"node":"Req:REQ-BETA","edge":"Satisfies:forward"}]},"commands":["cargo test -p pkg-a --test target_a -- same_name --exact","cargo test -p pkg-b --test target_b -- same_name --exact"]}"#;
+    let affected = r#"{"requirements":[{"id":"REQ-ALPHA"},{"id":"REQ-BETA"}],"tests":[{"id":"test-alpha","function":"same_name","file":"tests/target_a.rs","line":1},{"id":"test-beta","function":"same_name","file":"tests/target_b.rs","line":1}],"provenance":{"Test:test-alpha":[{"node":"Test:test-alpha","edge":null},{"node":"Req:REQ-ALPHA","edge":"Satisfies:forward"}],"Test:test-beta":[{"node":"Test:test-beta","edge":null},{"node":"Req:REQ-BETA","edge":"Satisfies:forward"}]},"commands":["cargo test -p fixture --test target_a -- same_name --exact","cargo test -p fixture --test target_b -- same_name --exact"]}"#;
     let shim_path = std::env::temp_dir().join("asep-acceptance-test-bwrap-identity");
     let mut shim = fs::File::create(&shim_path).unwrap();
     writeln!(shim, "#!/bin/sh").unwrap();
@@ -680,7 +701,7 @@ fn test_identity_is_package_target_qualified_and_isolated() {
     let alpha = fs::read_to_string(semantic.join("REQ-ALPHA.md")).unwrap();
     let beta = fs::read_to_string(semantic.join("REQ-BETA.md")).unwrap();
     assert!(alpha.contains("verdict: ACCEPTED"), "alpha: {alpha}");
-    assert!(alpha.contains("pkg-a::target_a::same_name"), "actual package/target missing: {alpha}");
+    assert!(alpha.contains("fixture::target_a::same_name"), "actual package/target missing: {alpha}");
     assert!(!alpha.contains("unrelated_name"), "unrelated test must not appear as proof: {alpha}");
     assert!(beta.contains("verdict: UNPROVEN"), "same-name failure in other target must not prove beta: {beta}");
 
@@ -696,14 +717,24 @@ fn run_acceptance_with_shim(
     let _guard = BWRAP_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let root = scoped_acceptance_root();
     let root_path = root.path();
+    let mut manifest = String::from("[package]\nname = \"fixture\"\nversion = \"0.0.0\"\nedition = \"2021\"\n");
     let test_dir = root_path.join("crates/spec-engine/tests");
     fs::create_dir_all(&test_dir).unwrap();
+    fs::create_dir_all(root_path.join("tests")).unwrap();
+    let mut declared: std::collections::HashSet<String> = std::collections::HashSet::new();
     for command in commands {
         if let Some(target) = command.split_whitespace().skip_while(|t| *t != "--test").nth(1) {
+            fs::write(root_path.join(format!("tests/{target}.rs")), "// fixture").unwrap();
             fs::write(test_dir.join(format!("{target}.rs")), "// fixture").unwrap();
+            if declared.insert(target.to_string()) {
+                manifest.push_str(&format!(
+                    "\n[[test]]\nname = \"{target}\"\npath = \"tests/{target}.rs\"\n"
+                ));
+            }
         }
     }
-    run(root_path, &["git", "add", "crates"]);
+    fs::write(root_path.join("Cargo.toml"), manifest).unwrap();
+    run(root_path, &["git", "add", "crates", "tests", "Cargo.toml"]);
     run(root_path, &["git", "commit", "-q", "-m", "fixture"]);
     let commit = head_of(root_path);
     fs::write(

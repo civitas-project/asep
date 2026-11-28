@@ -48,31 +48,11 @@ pub fn get_tools_list() -> serde_json::Value {
                         "deny_drafts": {
                             "type": "boolean",
                             "description": "Deny all @req:*:DRAFT tags (enforced on main production branch)"
-                        }
-                    }
-                }
-            },
-            {
-                "name": "spec_check",
-                "description": "Legacy alias for asep_check; validates traceability tags.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "dir": {
-                            "type": "string",
-                            "description": "Root path to scan (defaults to repository root)"
                         },
-                        "strict": {
-                            "type": "boolean",
-                            "description": "Treat pending SHOULD requirements as errors"
-                        },
-                        "rigor": {
-                            "type": "string",
-                            "description": "Rigor tier: 'T0'..'T4' (default: T1 for code, T0 for docs-only)"
-                        },
-                        "deny_drafts": {
-                            "type": "boolean",
-                            "description": "Deny all @req:*:DRAFT tags (enforced on main production branch)"
+                        "validators": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Validators to include in the verdict"
                         }
                     }
                 }
@@ -461,18 +441,25 @@ pub fn execute_tool(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            let validators = arguments
-                .get("validators")
-                .and_then(|v| v.as_array())
-                .map(|values| {
+            let validators = match arguments.get("validators") {
+                Some(serde_json::Value::Array(values)) if values.is_empty() => {
+                    return Err("'validators' must not be empty".to_string());
+                }
+                Some(serde_json::Value::Array(values)) => Some(
                     values
                         .iter()
-                        .filter_map(|v| v.as_str())
-                        .map(str::parse::<crate::ci::Validator>)
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()
-                .map_err(|e| format!("invalid validator: {e}"))?;
+                        .map(|value| {
+                            value
+                                .as_str()
+                                .ok_or_else(|| "validator must be a string".to_string())?
+                                .parse::<crate::ci::Validator>()
+                                .map_err(|e| format!("invalid validator: {e}"))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+                Some(_) => return Err("'validators' must be an array".to_string()),
+                None => None,
+            };
             let mut options = crate::ci::CheckOptions {
                 rigor: rigor.to_string(),
                 strict,

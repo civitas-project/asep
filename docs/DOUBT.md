@@ -18,7 +18,7 @@
 | AD-D09 | Verification independence | Bedakan objective checks, judgement subjektif, dan acceptance manusia; hindari self-certification. | RESOLVED — trusted local runner grants ACCEPTED; agent never grants it (FR-ACC-02..05, FR-INT-01). |
 | AD-D10 | Formal methods applicability | Identifikasi properti yang benar-benar membutuhkan model checking, bukan sekadar test biasa. | DECIDED (policy) — property-driven; implementation conditional. |
 | AD-D11 | Visual backend cost | Ukur akurasi, toleransi, portability, dan overhead CV terhadap DOM/native screenshot tools. | DEFERRED — user decision: defer until a concrete UI project exists. |
-| AD-D12 | Migration compatibility | Audit dampak penyederhanaan terhadap skill, CLI, MCP, schema, dan existing quality gates. | DEFERRED — user decision: defer until a concrete UI project; reopen with migration target when known. |
+| AD-D12 | Migration compatibility | Backward compatibility is explicitly out of scope; canonical interfaces were migrated and documented. | NOT_APPLICABLE under approved blueprint — reopen only for a new concrete compatibility target. |
 
 ## Operational doubts raised during IN-01 (resolved)
 

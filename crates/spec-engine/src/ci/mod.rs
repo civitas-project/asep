@@ -10,7 +10,7 @@ use crate::graph::model::NodeKind;
 use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::lexer::{Priority, TagKind};
 use crate::scanner::scan_project_tags;
-use crate::verification::{evaluate, VerificationStatus};
+use crate::verification::{evaluate, evaluate_bound, EvidenceBinding, VerificationStatus};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -52,7 +52,7 @@ impl CiReport {
 
 /// `--strict` is active for PRs targeting `dev` or `main`; local/feature-branch
 /// runs leave it off.
-fn ci_strict() -> bool {
+pub fn ci_strict() -> bool {
     env::var("GITHUB_BASE_REF")
         .map(|v| v == "dev" || v == "main")
         .unwrap_or(false)
@@ -117,11 +117,31 @@ impl Default for CheckOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum Verdict {
+    Pass,
+    Fail,
+    Unproven,
+}
+
+impl Verdict {
+    pub fn exit_code(self) -> u8 {
+        match self {
+            Self::Pass => 0,
+            Self::Fail => 1,
+            Self::Unproven => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CheckOutcome {
     pub passed: bool,
+    pub verdict: Verdict,
     pub status: VerificationStatus,
     pub structural: bool,
+    pub behavioral: bool,
+    pub semantic: bool,
     pub total_requirements: usize,
     pub must_broken: usize,
     pub should_pending: usize,
@@ -134,6 +154,7 @@ pub struct CheckOutcome {
     pub denied_drafts: bool,
     pub validators: Vec<String>,
     pub skipped: Vec<String>,
+    pub details: Vec<String>,
 }
 
 /// One canonical verification implementation shared by CLI and MCP. Only
@@ -152,7 +173,12 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
         .evidence_dir
         .clone()
         .unwrap_or_else(|| dir.join("evidence"));
-    let report = evaluate(&graph, &evidence_dir, tier, &behavioral);
+    let binding = EvidenceBinding::current(dir).ok();
+    let report = match &binding {
+        Some(binding) => evaluate_bound(&graph, &evidence_dir, tier, &behavioral, binding),
+        None => evaluate(&graph, &evidence_dir, tier, &behavioral),
+    };
+    let mut details: Vec<String> = Vec::new();
     let has = |v: &Validator| opts.validators.contains(v);
     let mut passed = true;
 
@@ -177,6 +203,15 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
             matches!(&tag.kind, TagKind::Req { priority, .. } if *priority == Priority::Draft)
         })
         .count();
+    for violation in &graph.violations {
+        details.push(format!(
+            "{}: {} (found {}, required {})",
+            violation.rule_id, violation.subject, violation.found, violation.required
+        ));
+    }
+    if opts.deny_drafts && draft_total > 0 {
+        details.push(format!("--deny-drafts: {draft_total} active DRAFT requirement(s)"));
+    }
     if has(&Validator::Traceability) {
         passed &= graph.is_closed && !(opts.strict && should_pending > 0);
     }
@@ -195,7 +230,11 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
         0
     };
     let ambient_violations = if has(&Validator::AmbientSkills) && dir.join("skills").is_dir() {
-        let count = audit_ambient_skills(dir).len();
+        let found = audit_ambient_skills(dir);
+        for violation in &found {
+            details.push(format!("Ambient Skills Violations: {violation}"));
+        }
+        let count = found.len();
         passed &= tier == TierId::T0 || count == 0;
         count
     } else {
@@ -205,6 +244,9 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
     let anti_slop_errors = if has(&Validator::AntiSlop) {
         match audit_project_anti_slop(dir) {
             Ok(violations) => {
+                for violation in &violations {
+                    details.push(format!("Anti-slop: {}", violation.message));
+                }
                 let errors = violations
                     .iter()
                     .filter(|v| v.severity == Severity::Error)
@@ -240,10 +282,20 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
         0
     };
 
+    let verdict = if passed {
+        Verdict::Pass
+    } else if report.status == VerificationStatus::Unproven {
+        Verdict::Unproven
+    } else {
+        Verdict::Fail
+    };
     Ok(CheckOutcome {
         passed,
+        verdict,
         status: report.status,
         structural: graph.is_closed,
+        behavioral: report.behavioral,
+        semantic: report.semantic,
         total_requirements,
         must_broken,
         should_pending,
@@ -256,6 +308,7 @@ pub fn check_core(dir: &Path, opts: &CheckOptions) -> Result<CheckOutcome, Strin
         denied_drafts: opts.deny_drafts && draft_total > 0,
         validators: opts.validators.iter().map(|v| format!("{v:?}")).collect(),
         skipped: report.skipped,
+        details,
     })
 }
 
@@ -493,7 +546,11 @@ fn run_gate_1(dir: &Path, rigor: &str) -> GateResult {
 
             let behavioral = dir.join(".spec-engine").join("behavioral.json");
             let evidence_dir = dir.join("evidence");
-            let report = evaluate(&graph, &evidence_dir, tier, &behavioral);
+            let binding = EvidenceBinding::current(dir).ok();
+            let report = match &binding {
+                Some(binding) => evaluate_bound(&graph, &evidence_dir, tier, &behavioral, binding),
+                None => evaluate(&graph, &evidence_dir, tier, &behavioral),
+            };
             let mut gate_unproven = false;
             if report.status == crate::verification::VerificationStatus::Unproven {
                 details.push("Gate 1 unproven: semantic evidence required but missing".to_string());

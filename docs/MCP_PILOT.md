@@ -31,3 +31,11 @@
 ## MCP.4 preliminary gap assessment
 
 Existing tools (`asep_check`, `asep_affected`, `asep_accept_scoped`, `asep_trace_report`) cover discovery, impact, verification, acceptance, and reporting. No demonstrated need for full graph topology export. **P3.3 remains DEFERRED** pending a concrete consumer that requires full topology beyond these reports.
+
+## Final native pilot (current binary)
+
+OpenCode v2.4.1 native client: `opencode mcp list` reports `asep connected`.
+A native `asep_check` invocation at rigor T1 returned **FAIL**, 129 requirements,
+22 broken MUST, exit code 1. Direct CLI `asep check --rigor T1 .` returned the
+same verdict and counts (FAIL, 129, 22). Discovery, invocation, error surfacing
+and CLI/MCP parity are therefore verified for the current binary.

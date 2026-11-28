@@ -17,7 +17,7 @@ use crate::policy::{load_policy, Severity, TierId};
 use crate::scanner::scan_project_tags;
 use crate::scanner::ScannedTag;
 use crate::skill::inspector::detect_skill_drift;
-use crate::verification::{evaluate, VerificationStatus};
+use crate::verification::{evaluate, evaluate_bound, EvidenceBinding, VerificationStatus};
 use clap::Parser;
 use colored::Colorize;
 use serde::Serialize;
@@ -121,127 +121,27 @@ pub fn run() -> ExitCode {
                 return run_skill_drift_report(&target_path);
             }
 
-            let tags = match scan_project_tags(&target_path) {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("{} Failed to scan project tags: {e}", "✖".red());
-                    return e.exit_code();
-                }
-            };
-            let config = crate::config::load_config(&target_path);
-            let tier = resolve_rigor(rigor.as_deref(), &tags, &config);
-
-
-            if args.verbose {
-                println!(
-                    "{} scanning {} (strict: {}, deny-drafts: {})",
-                    "ASEP".bold().cyan(),
-                    target_path.display(),
-                    strict,
-                    deny_drafts
-                );
-            }
-
-            let policy = load_policy();
-            let graph = build_relation_graph(&tags, &policy);
-            let total_requirements = graph
-                .nodes
-                .iter()
-                .filter(|node| node.kind == NodeKind::Req)
-                .count();
-            let must_broken: Vec<&crate::graph::model::CoverageViolation> = graph
-                .violations
-                .iter()
-                .filter(|violation| violation.rule_id == "COV-01")
-                .collect();
-            let should_pending: Vec<&crate::graph::model::CoverageViolation> = graph
-                .violations
-                .iter()
-                .filter(|violation| violation.rule_id == "COV-02")
-                .collect();
-            let draft_total = tags
-                .iter()
-                .filter(|tag| matches!(&tag.kind, TagKind::Req { priority, .. } if *priority == Priority::Draft))
-                .count();
-
-            let evidence_dir = evidence_dir
-                .or_else(|| config.evidence_dir.as_deref().map(|d| target_path.join(d)))
-                .unwrap_or_else(|| target_path.join("evidence"));
-            let behavioral_path = behavioral_report
-                .unwrap_or_else(|| target_path.join(".spec-engine").join("behavioral.json"));
-            let verification_report = evaluate(&graph, &evidence_dir, tier, &behavioral_path);
-
-            // Write `.spec-engine/verification.json` for tooling and later `--rigor` wiring.
-            let spec_engine_dir = target_path.join(".spec-engine");
-            let verification_out = spec_engine_dir.join("verification.json");
-            let json = match serde_json::to_string_pretty(&verification_report) {
-                Ok(j) => j,
-                Err(e) => {
-                    eprintln!("{} Failed to serialize verification report: {e}", "✖".red());
-                    return ExitCode::from(2);
-                }
-            };
-            if let Err(e) = fs::create_dir_all(&spec_engine_dir)
-                .and_then(|_| fs::write(&verification_out, &json))
-            {
-                eprintln!("{} Failed to write verification report: {e}", "✖".red());
-                return ExitCode::from(2);
-            }
-
-            let violations = match audit_project_docstrings(&target_path) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{} Failed to audit docstring contracts: {e}", "✖".red());
-                    return e.exit_code();
-                }
-            };
-
-            // Ambient skills audit: opt-in gate; violations block outside T0,
-            // same tier rule as docstring contracts.
-            let ambient_violations = audit_ambient_skills(&target_path);
-            let has_ambient_failure = tier != TierId::T0 && !ambient_violations.is_empty();
-
-            // Anti-slop audit: Error violations block outside T0; Warning
-            // violations block only under --strict.
-            let anti_slop_violations = match audit_project_anti_slop(&target_path) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{} Failed to audit anti-slop: {e}", "✖".red());
-                    return e.exit_code();
-                }
-            };
-            let anti_errors: Vec<_> = anti_slop_violations
-                .iter()
-                .filter(|v| v.severity == Severity::Error)
-                .collect();
-            let anti_warnings: Vec<_> = anti_slop_violations
-                .iter()
-                .filter(|v| v.severity == Severity::Warning)
-                .collect();
-            let has_antislop_failure = tier != TierId::T0
-                && (!anti_errors.is_empty() || (strict && !anti_warnings.is_empty()));
-
-            // Structural verification: installed skill copies must match embedded canonicals.
-            let skill_drift_dirs = [
-                target_path.join(".opencode").join("skills"),
-                target_path
-                    .join(".agents")
-                    .join("plugins")
-                    .join("asep")
-                    .join("skills"),
-            ];
-            let skill_drifts: Vec<_> = skill_drift_dirs
-                .iter()
-                .flat_map(|d| detect_skill_drift(d))
-                .collect();
-            let has_skill_drift = !skill_drifts.is_empty();
-
+            // Thin adapter: all verification semantics live in ci::check_core.
+            let tier: TierId = rigor
+                .as_deref()
+                .unwrap_or("T1")
+                .parse()
+                .unwrap_or(TierId::T1);
+            let strict = strict || crate::ci::ci_strict();
             let mut options = crate::ci::CheckOptions {
                 rigor: tier.as_str().to_string(),
                 strict,
                 deny_drafts,
-                evidence_dir: Some(evidence_dir.clone()),
-                behavioral_report: Some(behavioral_path.clone()),
+                evidence_dir: evidence_dir
+                    .as_ref()
+                    .map(|d| target_path.join(d))
+                    .or_else(|| {
+                        crate::config::load_config(&target_path)
+                            .evidence_dir
+                            .as_ref()
+                            .map(|d| target_path.join(d))
+                    }),
+                behavioral_report: behavioral_report.clone(),
                 ..Default::default()
             };
             if !validator.is_empty() {
@@ -257,17 +157,14 @@ pub fn run() -> ExitCode {
                     }
                 }
             }
-            let outcome = match crate::ci::check_core(&target_path, &options) {
+            let mut outcome = match crate::ci::check_core(&target_path, &options) {
                 Ok(outcome) => outcome,
                 Err(e) => {
                     eprintln!("{} Failed to verify project: {e}", "✖".red());
-                    return ExitCode::from(2);
+                    return ExitCode::from(3);
                 }
             };
-            let mut passed = outcome.passed;
-            let has_deny_drafts_failure = outcome.denied_drafts;
 
-            // --messages: validate agent message directory; errors fold into `passed`.
             if let Some(messages_dir) = &messages {
                 match crate::agent_protocol::validate_dir(messages_dir) {
                     Ok(()) => {}
@@ -275,300 +172,51 @@ pub fn run() -> ExitCode {
                         for e in &errors {
                             eprintln!("{} {}", "✖".red(), e);
                         }
-                        passed = false;
+                        outcome.passed = false;
+                        if outcome.verdict == crate::ci::Verdict::Pass {
+                            outcome.verdict = crate::ci::Verdict::Fail;
+                        }
                     }
                 }
             }
 
-            #[allow(clippy::match_bool)]
-            // `match bool` replaces `if/else` so the file keeps zero `else` tokens (AS-CODE-ELSE).
-            match args.json {
-                true => {
-                    let json_output = CheckJsonReport {
-                        passed,
-                        rigor: tier.as_str().to_string(),
-                        total_requirements,
-                        must_satisfied: total_requirements.saturating_sub(must_broken.len()),
-                        must_broken: must_broken.len(),
-                        should_pending: should_pending.len(),
-                        draft_total,
-                        draft_pending: draft_total,
-                        doc_contract_violations: violations.len(),
-                        anti_slop_violations: anti_slop_violations.len(),
-                        anti_slop_warnings: anti_warnings.len(),
-                        violations,
-                    };
-
-                    match serde_json::to_string_pretty(&json_output) {
-                        Ok(json_str) => println!("{json_str}"),
-                        Err(e) => {
-                            eprintln!("{} JSON serialization failed: {e}", "✖".red());
-                            return ExitCode::from(2);
-                        }
+            if args.json {
+                match serde_json::to_string_pretty(&outcome) {
+                    Ok(json) => println!("{json}"),
+                    Err(e) => {
+                        eprintln!("{} JSON serialization failed: {e}", "✖".red());
+                        return ExitCode::from(2);
                     }
                 }
-                false => {
-                    println!(
-                        "{}",
-                        "============================================================"
-                            .bold()
-                            .cyan()
-                    );
-                    println!(
-                        "{}",
-                        "              ASEP SDLC Traceability Report                 "
-                            .bold()
-                            .cyan()
-                    );
-                    println!(
-                        "{}",
-                        "============================================================"
-                            .bold()
-                            .cyan()
-                    );
-
-                    match total_requirements == 0 {
-                        true => println!("{}", "No @req tags discovered in target repository.".yellow()),
-                        false => println!(
-                            "Discovered {} requirements across workspace.",
-                            total_requirements.to_string().bold()
-                        ),
-                    }
-
-                    if !graph.violations.is_empty() {
-                        println!("\n{}", "❌ Canonical Relation Violations:".red().bold());
-                        for violation in &graph.violations {
-                            println!(
-                                "   - {} {} (found {}, required {})",
-                                violation.rule_id.red(),
-                                violation.subject,
-                                violation.found,
-                                violation.required
-                            );
-                        }
-                    }
-
-                    if has_deny_drafts_failure {
-                        println!(
-                            "\n{}",
-                            "❌ Production Policy Violation (--deny-drafts):"
-                                .red()
-                                .bold()
-                        );
-                        println!(
-                            "   Discovered {} active @req:*:DRAFT tag(s). Graduate all drafts to MUST before merging into main trunk.",
-                            draft_total
-                        );
-                    }
-
-                    if !violations.is_empty() {
-                        #[allow(clippy::match_bool)]
-                        // guard-clause policy requires matching on a bool
-                        let header = match tier == TierId::T0 {
-                            true => "⚠️ Docstring Contract Warnings (Non-blocking in T0 Mode):"
-                                .yellow()
-                                .bold(),
-                            false => "❌ Docstring Contract Violations:".red().bold(),
-                        };
-                        println!("\n{header}");
-                        for v in &violations {
-                            #[allow(clippy::match_bool)]
-                            // guard-clause policy requires matching on a bool
-                            let message = match tier == TierId::T0 {
-                                true => v.message.yellow(),
-                                false => v.message.red(),
-                            };
-                            println!(
-                                "   - {}:{}: {}",
-                                v.file_path.display(),
-                                v.line_number,
-                                message
-                            );
-                        }
-                    }
-
-                    if !ambient_violations.is_empty() {
-                        #[allow(clippy::match_bool)]
-                        // guard-clause policy requires matching on a bool
-                        let header = match tier == TierId::T0 {
-                            true => "⚠️ Ambient Skills Warnings (Non-blocking in T0 Mode):"
-                                .yellow()
-                                .bold(),
-                            false => "❌ Ambient Skills Violations:".red().bold(),
-                        };
-                        println!("\n{header}");
-                        for v in &ambient_violations {
-                            #[allow(clippy::match_bool)]
-                            // guard-clause policy requires matching on a bool
-                            let message = match tier == TierId::T0 {
-                                true => v.yellow(),
-                                false => v.red(),
-                            };
-                            println!("   - {message}");
-                        }
-                    }
-
-                    if !anti_errors.is_empty() {
-                        #[allow(clippy::match_bool)]
-                        // guard-clause policy requires matching on a bool
-                        let header = match tier == TierId::T0 {
-                            true => "⚠️ Anti-slop Errors (Non-blocking in T0 Mode):"
-                                .yellow()
-                                .bold(),
-                            false => "❌ Anti-slop Violations:".red().bold(),
-                        };
-                        println!("\n{header}");
-                        for v in &anti_errors {
-                            #[allow(clippy::match_bool)]
-                            // guard-clause policy requires matching on a bool
-                            let message = match tier == TierId::T0 {
-                                true => v.message.yellow(),
-                                false => v.message.red(),
-                            };
-                            println!(
-                                "   - {}:{}: {}",
-                                v.file_path.display(),
-                                v.line_number,
-                                message
-                            );
-                        }
-                    }
-
-                    if !anti_warnings.is_empty() && strict {
-                        println!("\n{}", "❌ Anti-slop Warnings (--strict):".red().bold());
-                        for v in &anti_warnings {
-                            println!(
-                                "   - {}:{}: {}",
-                                v.file_path.display(),
-                                v.line_number,
-                                v.message.red()
-                            );
-                        }
-                    }
-                    if !anti_warnings.is_empty() && !strict {
-                        println!(
-                            "{}",
-                            "⚠️ Anti-slop Preferences (reported, non-blocking):"
-                                .yellow()
-                                .bold()
-                        );
-                        for v in &anti_warnings {
-                            println!(
-                                "   - {}:{}: {}",
-                                v.file_path.display(),
-                                v.line_number,
-                                v.message.yellow()
-                            );
-                        }
-                    }
-
-                    if !skill_drifts.is_empty() {
-                        println!("\n{}", "❌ Skill Drift Detected:".red().bold());
-                        println!("   Installed skill copies differ from embedded canonicals:");
-                        for d in &skill_drifts {
-                            println!(
-                                "   - {} [{}] {}",
-                                d.skill_id.bold(),
-                                d.kind.red(),
-                                d.path.display()
-                            );
-                        }
-                        println!(
-                            "   Restore canonical copies with 'asep skill restore --all' or re-run the pack installer.",
-                        );
-                    }
-
-                    if let Some(ref cov_path) = coverage {
-                        match crate::coverage::parse_lcov_file(cov_path) {
-                            Ok(cov_map) => {
-                                let cov_rep = crate::coverage::map_coverage_to_requirements(
-                                    &tags, &cov_map, 80.0,
-                                );
-                                println!(
-                                    "\n{}",
-                                    "🎯 Requirement Traceability Test Coverage:".bold().cyan()
-                                );
-                                for item in &cov_rep.items {
-                                    #[allow(clippy::match_bool)]
-                                    // guard-clause policy requires matching on a bool
-                                    let badge = match item.passed {
-                                        true => format!("{:.1}% PASS", item.percentage).green(),
-                                        false => {
-                                            format!("{:.1}% FAIL (< 80%)", item.percentage).red()
-                                        }
-                                    };
-                                    println!(
-                                        "   - {}: {} ({}/{} impl lines covered)",
-                                        item.req_id.bold(),
-                                        badge,
-                                        item.covered_lines,
-                                        item.total_lines
-                                    );
-                                }
-                                passed = passed && (cov_rep.all_passed || tier == TierId::T0);
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "{} Failed to parse coverage file {}: {e}",
-                                    "⚠".yellow(),
-                                    cov_path.display()
-                                );
-                            }
-                        }
-                    }
-
-                    println!(
-                        "{}",
-                        "------------------------------------------------------------".dimmed()
-                    );
-                    println!(
-                        "Summary (rigor: {}): {} closed MUST | {} broken MUST | {} pending SHOULD | {} DRAFT | {} docstring contract violations | {} ambient skills violations",
-                        tier.as_str().cyan().bold(),
-                        total_requirements.saturating_sub(must_broken.len()).to_string().green().bold(),
-                        must_broken.len().to_string().red().bold(),
-                        should_pending.len().to_string().yellow().bold(),
-                        draft_total.to_string().cyan().bold(),
-                        violations.len().to_string().red().bold(),
-                        ambient_violations.len().to_string().red().bold(),
-                    );
-
-                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
-                    match passed {
-                        true => {
-                            println!("\n{}", "✔ Gate Result: PASSED (Exit Code 0)".green().bold())
-                        }
-                        false => {
-                            println!("\n{}", "✖ Gate Result: FAILED (Exit Code 1)".red().bold())
-                        }
-                    }
-
-                    println!(
-                        "Verification: {} | structural={} behavioral={} semantic={} skipped={:?}",
-                        match verification_report.status {
-                            VerificationStatus::Pass => "PASS".green(),
-                            VerificationStatus::Fail => "FAIL".red(),
-                            VerificationStatus::Unproven => "UNPROVEN".yellow(),
-                        },
-                        verification_report.structural,
-                        verification_report.behavioral,
-                        verification_report.semantic,
-                        verification_report.skipped
-                    );
-                }
+                return ExitCode::from(outcome.verdict.exit_code());
             }
 
-            let exit_codes = policy.exit_codes();
-            match verification_report.status {
-                VerificationStatus::Unproven => ExitCode::from(exit_codes.unproven),
-                VerificationStatus::Fail => ExitCode::from(exit_codes.fail),
-                VerificationStatus::Pass => {
-                    #[allow(clippy::match_bool)] // guard-clause policy requires matching on a bool
-                    match passed {
-                        true => ExitCode::from(exit_codes.pass),
-                        false => ExitCode::from(exit_codes.fail),
-                    }
-                }
+            println!("{}", "ASEP Verification".bold().cyan());
+            println!(
+                "Verdict: {} | rigor: {} | validators: {:?}",
+                match outcome.verdict {
+                    crate::ci::Verdict::Pass => "PASS".green(),
+                    crate::ci::Verdict::Fail => "FAIL".red(),
+                    crate::ci::Verdict::Unproven => "UNPROVEN".yellow(),
+                },
+                tier.as_str(),
+                outcome.validators
+            );
+            println!(
+                "Requirements: {} total | {} broken MUST | {} pending SHOULD | {} DRAFT",
+                outcome.total_requirements,
+                outcome.must_broken,
+                outcome.should_pending,
+                outcome.draft_total
+            );
+            println!(
+                "Evidence: structural={} behavioral={} semantic={} skipped={:?}",
+                outcome.structural, outcome.behavioral, outcome.semantic, outcome.skipped
+            );
+            for detail in &outcome.details {
+                println!("  - {detail}");
             }
+            ExitCode::from(outcome.verdict.exit_code())
         }
 
         Some(Commands::Affected { paths, stdin, root }) => {

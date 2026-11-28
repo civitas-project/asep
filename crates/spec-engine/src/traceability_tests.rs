@@ -158,7 +158,7 @@ fn test_mcp_tool_catalogue_contains_expected_tools() {
     let arr = tools["tools"]
         .as_array()
         .expect("tools list must be an array");
-    assert_eq!(arr.len(), 14);
+    assert_eq!(arr.len(), 13);
     let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "asep_check",

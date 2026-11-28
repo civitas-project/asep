@@ -158,8 +158,8 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
     let plan = plan_from_value(&affected, root)?;
     let in_scope = in_scope_requirement_ids(&affected)?;
     let requirement_tests = requirement_test_map(&affected);
-    let test_aliases = test_alias_map(&affected);
-    let test_targets_by_id = test_target_map(&affected);
+    let cargo_targets = cargo_metadata(root)?;
+    let expected = expected_identities(&affected, &cargo_targets, root);
     let mut total_executed: usize = 0;
     let mut observed_passed: BTreeSet<TestIdentity> = BTreeSet::new();
     let mut observed_failed: BTreeSet<TestIdentity> = BTreeSet::new();
@@ -207,26 +207,13 @@ pub fn run_scoped_acceptance(root: &Path, commit: &str) -> Result<PathBuf, Strin
         let mut resolved_passed: BTreeSet<TestIdentity> = BTreeSet::new();
         let mut unresolved: Vec<String> = Vec::new();
         for id in &associated {
-            let aliases = test_aliases.get(id).cloned().unwrap_or_else(|| {
-                let mut set = BTreeSet::new();
-                set.insert(id.clone());
-                set
-            });
-            match resolve_test_identity(
-                id,
-                &aliases,
-                test_targets_by_id.get(id),
-                &observed_passed,
-            ) {
-                Ok(identity) => {
-                    resolved_passed.insert(identity);
-                }
-                Err(_) => match resolve_test_identity(
-                    id,
-                    &aliases,
-                    test_targets_by_id.get(id),
-                    &observed_failed,
-                ) {
+            let Some(expected_id) = expected.get(id) else {
+                unresolved.push(format!("{id}: no authoritative Cargo identity"));
+                continue;
+            };
+            match resolve_test_identity(expected_id, &observed_passed) {
+                Ok(identity) => { resolved_passed.insert(identity); }
+                Err(_) => match resolve_test_identity(expected_id, &observed_failed) {
                     Ok(_) => unresolved.push(format!("{id}: failed")),
                     Err(reason) => unresolved.push(reason),
                 },
@@ -503,6 +490,65 @@ fn test_alias_map(value: &serde_json::Value) -> HashMap<String, BTreeSet<String>
     result
 }
 
+/// Authoritative Cargo target metadata used to resolve expected identities.
+#[derive(Debug, Clone)]
+struct ProjectTarget {
+    package: String,
+    name: String,
+    kinds: Vec<String>,
+    src_path: PathBuf,
+}
+
+fn cargo_metadata(root: &Path) -> Result<Vec<ProjectTarget>, String> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--offline", "--no-deps", "--format-version", "1", "--manifest-path"])
+        .arg(root.join("Cargo.toml"))
+        .output()
+        .map_err(|e| format!("cargo metadata spawn failed: {e}"))?;
+    if !output.status.success() {
+        return Err(format!("cargo metadata failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|e| format!("cargo metadata JSON: {e}"))?;
+    let mut targets = Vec::new();
+    for package in value.get("packages").and_then(|v| v.as_array()).ok_or("cargo metadata missing packages")? {
+        let package_name = package.get("name").and_then(|v| v.as_str()).ok_or("package missing name")?.to_string();
+        for target in package.get("targets").and_then(|v| v.as_array()).ok_or("package missing targets")? {
+            let name = target.get("name").and_then(|v| v.as_str()).ok_or("target missing name")?.to_string();
+            let kinds = target.get("kind").and_then(|v| v.as_array()).map(|values| {
+                values.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()
+            }).unwrap_or_default();
+            let src_path = target.get("src_path").and_then(|v| v.as_str()).map(PathBuf::from).ok_or("target missing src_path")?;
+            targets.push(ProjectTarget { package: package_name.clone(), name, kinds, src_path });
+        }
+    }
+    Ok(targets)
+}
+
+struct ExpectedIdentity {
+    package: String,
+    target: String,
+    name: String,
+}
+
+fn expected_identity(file: &str, name: &str, targets: &[ProjectTarget], root: &Path) -> Result<ExpectedIdentity, String> {
+    let path = root.join(file);
+    let canonical = path.canonicalize().unwrap_or(path);
+    let matching: Vec<&ProjectTarget> = targets
+        .iter()
+        .filter(|target| {
+            let target_path = if target.src_path.is_absolute() { target.src_path.clone() } else { root.join(&target.src_path) };
+            target_path.canonicalize().unwrap_or(target_path) == canonical
+        })
+        .filter(|target| target.kinds.iter().any(|kind| matches!(kind.as_str(), "lib" | "bin" | "test")))
+        .collect();
+    match matching.as_slice() {
+        [target] => Ok(ExpectedIdentity { package: target.package.clone(), target: target.name.clone(), name: name.to_string() }),
+        [] => Err(format!("no Cargo target for test file {file}")),
+        _ => Err(format!("ambiguous Cargo targets for test file {file}")),
+    }
+}
+
 /// A test actually observed in a command's output, attributed to the package
 /// and target of that command. Names alone are not identities: the same
 /// function name can exist in several packages or test targets.
@@ -580,59 +626,58 @@ fn test_target_map(value: &serde_json::Value) -> HashMap<String, String> {
     result
 }
 
-/// Resolves a traced test id to exactly one observed test identity.
-///
-/// Matching is deliberately strict: the expected target (derived from the
-/// test's source file) and the command's `--exact` filter must agree, and the
-/// observed name must match an alias exactly. A unique module-suffix match is
-/// accepted only when there is exactly one candidate. Ambiguous or unknown
-/// identities are rejected, never credited to a requirement.
+/// Exact identity check: package, target and test name must all match the
+/// authoritative expectation. No uniqueness-based or suffix fallback.
 fn resolve_test_identity(
-    id: &str,
-    aliases: &BTreeSet<String>,
-    expected_target: Option<&String>,
+    expected: &ExpectedIdentity,
     observed: &BTreeSet<TestIdentity>,
 ) -> Result<TestIdentity, String> {
-    let mut candidates: Vec<&TestIdentity> = observed
+    observed
         .iter()
-        .filter(|candidate| {
-            expected_target.is_none_or(|target| target == &candidate.target)
-                && candidate
-                    .filter
-                    .as_ref()
-                    .is_none_or(|filter| aliases.iter().any(|alias| test_name_matches(filter, alias)))
+        .find(|identity| {
+            identity.package == expected.package
+                && identity.target == expected.target
+                && identity.name == expected.name
         })
-        .filter(|candidate| aliases.iter().any(|alias| alias == &candidate.name))
-        .collect();
-    if candidates.is_empty() {
-        candidates = observed
-            .iter()
-            .filter(|candidate| {
-                expected_target.is_none_or(|target| target == &candidate.target)
-                    && candidate
-                        .filter
-                        .as_ref()
-                        .is_none_or(|filter| aliases.iter().any(|alias| test_name_matches(filter, alias)))
-            })
-            .filter(|candidate| {
-                aliases
-                    .iter()
-                    .any(|alias| test_name_matches(&candidate.name, alias))
-            })
-            .collect();
+        .cloned()
+        .ok_or_else(|| format!(
+            "unknown test identity: {}::{}::{}",
+            expected.package, expected.target, expected.name
+        ))
+}
+
+fn expected_identities(
+    affected: &serde_json::Value,
+    targets: &[ProjectTarget],
+    root: &Path,
+) -> HashMap<String, ExpectedIdentity> {
+    let mut filters: HashSet<String> = HashSet::new();
+    if let Some(commands) = affected.get("commands").and_then(|v| v.as_array()) {
+        for command in commands.iter().filter_map(|v| v.as_str()) {
+            if let Some(name) = command_test_filter(command) {
+                filters.insert(name);
+            }
+        }
     }
-    match candidates.as_slice() {
-        [identity] => Ok((*identity).clone()),
-        [] => Err(format!("unknown test identity for {id}")),
-        _ => Err(format!(
-            "ambiguous test identity for {id}: {}",
-            candidates
-                .iter()
-                .map(|identity| identity.qualified())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+    let mut result = HashMap::new();
+    let Some(tests) = affected.get("tests").and_then(|v| v.as_array()) else {
+        return result;
+    };
+    for test in tests {
+        let (Some(id), Some(file), Some(function)) = (
+            test.get("id").and_then(|v| v.as_str()),
+            test.get("file").and_then(|v| v.as_str()),
+            test.get("function").and_then(|v| v.as_str()),
+        ) else { continue };
+        let name = filters
+            .get(function)
+            .cloned()
+            .unwrap_or_else(|| function.to_string());
+        if let Ok(identity) = expected_identity(file, &name, targets, root) {
+            result.insert(id.to_string(), identity);
+        }
     }
+    result
 }
 
 /// Names reported by `cargo test` as passed and failed, e.g.
@@ -652,14 +697,6 @@ fn executed_test_names(output: &str) -> (BTreeSet<String>, BTreeSet<String>) {
         }
     }
     (passed, failed)
-}
-
-/// Compare a cargo test name with a traceability test identifier, tolerating
-/// module-qualified names (`tests::foo`) and bare function names.
-fn test_name_matches(observed: &str, ident: &str) -> bool {
-    observed == ident
-        || observed.rsplit("::").next() == Some(ident)
-        || ident.rsplit("::").next() == Some(observed)
 }
 
 /// Sum the `N` in lines matching `test result: ok. N passed`; ignore lines
@@ -727,8 +764,12 @@ fn plan_from_value(value: &serde_json::Value, root: &Path) -> Result<TestPlan, S
         Some(array) => array,
         None => return Err("asep affected output missing commands array".to_string()),
     };
-    const FALLBACK: &str = "cargo test -p asep --lib";
-    let tests_dir = root.join("crates").join("spec-engine").join("tests");
+    let targets = cargo_metadata(root)?;
+    let default_package = targets
+        .first()
+        .map(|target| target.package.clone())
+        .unwrap_or_else(|| "asep".to_string());
+    let fallback = format!("cargo test -p {default_package} --lib");
     let mut planned: Vec<String> = Vec::new();
     let mut fallbacks: HashSet<String> = HashSet::new();
     for item in commands {
@@ -737,18 +778,20 @@ fn plan_from_value(value: &serde_json::Value, root: &Path) -> Result<TestPlan, S
             None => return Err("asep affected command is not a string".to_string()),
         };
         let mut final_cmd = command;
-        let is_cargo_test = final_cmd.starts_with("cargo test");
-        let has_p = final_cmd.split_whitespace().any(|token| token == "-p");
-        if is_cargo_test && !has_p {
-            let rest = final_cmd.strip_prefix("cargo test").unwrap_or("");
-            final_cmd = format!("cargo test -p asep{rest}");
-        }
-        let missing_target = test_target(&final_cmd)
-            .map(|target| !tests_dir.join(format!("{target}.rs")).is_file())
-            .unwrap_or(false);
-        if missing_target {
-            fallbacks.insert(FALLBACK.to_string());
-            continue;
+        if final_cmd.starts_with("cargo test") {
+            let has_p = final_cmd.split_whitespace().any(|token| token == "-p" || token == "--package");
+            if !has_p {
+                let rest = final_cmd.strip_prefix("cargo test").unwrap_or("");
+                final_cmd = format!("cargo test -p {default_package}{rest}");
+            }
+            let missing = test_target(&final_cmd).is_some_and(|target| {
+                !root.join("tests").join(format!("{target}.rs")).is_file()
+                    && !root.join("crates/spec-engine/tests").join(format!("{target}.rs")).is_file()
+            });
+            if missing {
+                fallbacks.insert(fallback.clone());
+                continue;
+            }
         }
         planned.push(final_cmd);
     }

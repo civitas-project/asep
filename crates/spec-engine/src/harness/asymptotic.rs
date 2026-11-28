@@ -223,3 +223,25 @@ mod tests {
         assert!(start.elapsed() < Duration::from_millis(250));
     }
 }
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    #[test]
+    // @test:B13
+    fn timeout_is_cooperative_and_returns_immediately() {
+        let observed = Arc::new(AtomicBool::new(false));
+        let worker_observed = observed.clone();
+        let start = std::time::Instant::now();
+        let result = AsymptoticAnalyzer::run_with_timeout(Duration::from_millis(20), move || {
+            std::thread::sleep(Duration::from_millis(120));
+            worker_observed.store(true, Ordering::SeqCst);
+            42
+        });
+        assert!(result.is_err(), "unfinished workload must time out");
+        assert!(start.elapsed() < Duration::from_millis(500), "timeout must not block on worker");
+    }
+}

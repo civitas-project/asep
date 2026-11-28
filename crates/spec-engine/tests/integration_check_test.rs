@@ -288,7 +288,7 @@ fn test_missing_semantic_evidence_is_unproven() {
     // behavioral.json already written; no evidence/semantic/FR-UNPROVEN-01.md.
 
     let mut cmd = Command::cargo_bin("spec-engine").expect("binary exists");
-    cmd.arg("check").arg(root);
+    cmd.arg("check").arg("--rigor").arg("T2").arg(root);
     cmd.assert().failure().code(3);
 }
 
@@ -484,7 +484,7 @@ fn check_fails_on_guard_clause_violations() {
     .expect("write guard.rs");
 
     let mut cmd = Command::cargo_bin("asep").expect("binary exists");
-    cmd.arg("check").arg("--rigor").arg("T1").arg(root);
+    cmd.arg("check").arg("--rigor").arg("T1").arg("--validator").arg("anti-slop").arg(root);
     cmd.assert()
         .success()
         .code(0)

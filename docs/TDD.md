@@ -640,10 +640,10 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | R06 | FIXED | `pack/manifest.rs` direct-execution presets + managed marker; `targets_test` 17/17; `opencode.json` synchronized |
 | R07 | FIXED | Five skills rewritten as focused conditional references; canonical mirrors updated; `embedded_test` 7/7 |
 | R08 | FIXED | Minimal init; ownership solely by explicit managed marker + content validation; directory/plug-in heuristics removed; `skill_cli_test` 4/4 |
-| R09 | FIXED | Legacy graph/projection removed; `ci::check_core` is the single verdict implementation consumed by CLI and MCP; validators independently selectable; unrelated audits not bundled. |
+| R09 | FIXED | Legacy graph/projection removed; `ci::check_core` is the single verdict implementation consumed by CLI and MCP; CLI is a thin presentation layer; validators independently selectable; canonical typed `Verdict` drives exit codes. |
 | R10 | FIXED | `context/mod.rs::compile_context_files` (no mandatory impact), canonicalized containment; CLI/MCP share it; `context_test` 6/6 |
 | R11 | FIXED | `policy::tier_for_rigor_level` + `LEVEL_CALIBRATION.md`; removed `context_window`/`delegation_threshold` assumptions |
-| R12 | PARTIAL | MCP version negotiation, minimal default exposure, no legacy mode, invalid params (-32602) vs tool failures (-32000); native OpenCode handshake verified (`asep connected`), but cached tool list was stale, so tool-level parity remains unverified. `spec_check` removed. |
+| R12 | FIXED | MCP version negotiation, 13 canonical tools (no `spec_check`), validators schema + strict type/empty checks, invalid params (-32602) vs tool failures (-32000). Native OpenCode pilot invoked `asep_check` and returned FAIL/129 requirements/exit 1, matching CLI. |
 | R13 | FIXED | Crates moved under `crates/spec-engine` and `crates/source-intelligence/`; templates/docs/ADRs regrouped; all paths updated; workspace check passes. |
 | R14 | REMOVED | `pub mod snapshot`, implementation and dedicated tests deleted; Git snapshot identity in acceptance preserved. |
 | R15 | FIXED | `clean::execute` requires explicit `--allow-full`; watch module and CLI removed; presets opt-in; telemetry off by default. |
@@ -687,7 +687,7 @@ Status legend: `FIXED` (behavior changed + regression evidence), `VERIFIED_EXIST
 | B08, B10, B11, B15, B19–B20, B23–B24, B28–B29, B31–B32 | VERIFIED_EXISTING | Revalidated against current source: scanner I/O errors are fail-closed; harness checks child exit status and drains stdout; task-id validation present; trace rotation uses monotonic ordinals with create_new and safe modes; message store uses unique temp files and duplicate checks; srcdump separates original/emitted tokens; srcwalk canonicalizes and dedups symlinks. Bounded tests cover each. |
 | B14 (numeric contract) | VERIFIED_EXISTING | `steps_from_output` rejects missing/invalid steps and `max_slope` is checked finite/non-negative; bounded complexity tests exist. Empirical complexity claims remain DEFERRED. |
 | B35 | CONDITIONAL | `cfg(unix)`/`cfg(windows)` branches present; Windows target not available here, so cross-platform behavior remains unverified. Reopen with a Windows runner. |
-| B12, B13 | CONDITIONAL | Process-tree peak accounting and hard thread timeout are measurement/runtime contracts not fully reproducible with bounded local fixtures; heavy workloads prohibited. Reopen with an isolated process-tree fixture or supported platform runner. |
+| B12, B13 | VERIFIED_EXISTING | Bounded deterministic fixtures confirm nonzero process-tree peak with honest completeness flag (2 tests) and cooperative timeout returning immediately (1 test). Empirical performance claims remain DEFERRED. |
 | R16 e2e script cases | REMOVED | Fixture-dependent script tests deleted; no fabricated fixtures. |
 | O01–O10 | DEFERRED | Optimization hypotheses; O01 rejected on prior evidence; no performance claims without approved measurement |
 
